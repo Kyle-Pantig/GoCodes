@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useMemo, useTransition } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Controller, Control, FieldError } from 'react-hook-form'
 import { Search } from 'lucide-react'
@@ -60,7 +60,6 @@ export function EmployeeSelectField({
   queryKey = ['employees'],
 }: EmployeeSelectFieldProps) {
   const [searchTerm, setSearchTerm] = useState('')
-  const [isPending, startTransition] = useTransition()
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Fetch employees
@@ -94,41 +93,8 @@ export function EmployeeSelectField({
     })
   }, [employees, searchTerm])
 
-  // If using react-hook-form
-  if (control && name) {
-    return (
-      <Field>
-        <FieldLabel htmlFor={name}>
-          {label} {required && <span className="text-destructive">*</span>}
-        </FieldLabel>
-        <FieldContent>
-          <Controller
-            name={name}
-            control={control}
-            render={({ field }) => (
-              <Select
-                value={field.value || ''}
-                onValueChange={(value) => {
-                  field.onChange(value)
-                  // Clear search when employee is selected
-                  setSearchTerm('')
-                }}
-                onOpenChange={(open) => {
-                  if (open) {
-                    // Focus search input when select opens
-                    setTimeout(() => {
-                      searchInputRef.current?.focus()
-                    }, 100)
-                  } else {
-                    // Clear search when select closes
-                    setSearchTerm('')
-                  }
-                }}
-                disabled={disabled || isLoadingEmployees}
-              >
-                <SelectTrigger className="w-full" aria-invalid={error ? 'true' : 'false'}>
-                  <SelectValue placeholder={placeholder} />
-                </SelectTrigger>
+  // Shared SelectContent to avoid duplication
+  const renderSelectContent = () => (
                 <SelectContent className="max-h-[300px] w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]" position="popper">
                   <div className="sticky -top-1 z-50 -mx-1 -mt-1 px-3 py-1.5 bg-popover border-b border-border mb-1 backdrop-blur-sm">
                     <div className="relative">
@@ -137,38 +103,10 @@ export function EmployeeSelectField({
                         ref={searchInputRef}
                         placeholder="Search employees..."
                         value={searchTerm}
-                        onChange={(e) => {
-                          const value = e.target.value
-                          startTransition(() => {
-                            setSearchTerm(value)
-                          })
-                        }}
-                        onKeyDown={(e) => {
-                          // Handle arrow keys - let Select component handle navigation
-                          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                            // Don't prevent default or stop propagation
-                            // Let the event bubble to Select so it can handle navigation
-                            // Blur the input so Select can focus the items
-                            setTimeout(() => {
-                              e.currentTarget.blur()
-                            }, 0)
-                            return
-                          }
-                          // For other keys, prevent closing the select
-                          e.stopPropagation()
-                          // Prevent selecting an item when pressing Enter on search
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                          }
-                        }}
-                        onClick={(e) => {
-                          // Prevent closing the select when clicking on search input
-                          e.stopPropagation()
-                        }}
-                        onFocus={(e) => {
-                          // Keep focus on search input
-                          e.stopPropagation()
-                        }}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        onFocus={(e) => e.stopPropagation()}
                         className="pl-8 h-8"
                         autoComplete="off"
                       />
@@ -214,6 +152,44 @@ export function EmployeeSelectField({
                     })
                   )}
                 </SelectContent>
+  )
+
+  // If using react-hook-form
+  if (control && name) {
+    return (
+      <Field>
+        <FieldLabel htmlFor={name}>
+          {label} {required && <span className="text-destructive">*</span>}
+        </FieldLabel>
+        <FieldContent>
+          <Controller
+            name={name}
+            control={control}
+            render={({ field }) => (
+              <Select
+                value={field.value || ''}
+                onValueChange={(value) => {
+                  field.onChange(value)
+                  // Clear search when employee is selected
+                  setSearchTerm('')
+                }}
+                onOpenChange={(open) => {
+                  if (open) {
+                    // Focus search input when select opens
+                    setTimeout(() => {
+                      searchInputRef.current?.focus()
+                    }, 100)
+                  } else {
+                    // Clear search when select closes
+                    setSearchTerm('')
+                  }
+                }}
+                disabled={disabled || isLoadingEmployees}
+              >
+                <SelectTrigger className="w-full" aria-invalid={error ? 'true' : 'false'}>
+                  <SelectValue placeholder={placeholder} />
+                </SelectTrigger>
+                {renderSelectContent()}
               </Select>
             )}
           />
@@ -253,91 +229,7 @@ export function EmployeeSelectField({
           <SelectTrigger className="w-full">
             <SelectValue placeholder={placeholder} />
           </SelectTrigger>
-          <SelectContent className="max-h-[300px] w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]" position="popper">
-            <div className="sticky top-0 z-50 -mx-1  px-3 py-1.5 bg-popover border-b border-border mb-1 backdrop-blur-sm">
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  ref={searchInputRef}
-                  placeholder="Search employees..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    const value = e.target.value
-                    startTransition(() => {
-                      setSearchTerm(value)
-                    })
-                  }}
-                  onKeyDown={(e) => {
-                    // Handle arrow keys - let Select component handle navigation
-                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                      // Don't prevent default or stop propagation
-                      // Let the event bubble to Select so it can handle navigation
-                      // Blur the input so Select can focus the items
-                      setTimeout(() => {
-                        e.currentTarget.blur()
-                      }, 0)
-                      return
-                    }
-                    // For other keys, prevent closing the select
-                    e.stopPropagation()
-                    // Prevent selecting an item when pressing Enter on search
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                    }
-                  }}
-                  onClick={(e) => {
-                    // Prevent closing the select when clicking on search input
-                    e.stopPropagation()
-                  }}
-                  onFocus={(e) => {
-                    // Keep focus on search input
-                    e.stopPropagation()
-                  }}
-                  className="pl-8 h-8"
-                  autoComplete="off"
-                />
-              </div>
-            </div>
-            {filteredEmployees.length === 0 ? (
-              <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                No employees found
-              </div>
-            ) : (
-              filteredEmployees.map((employee) => {
-                const activeCheckouts = employee.checkouts || []
-                const hasCheckedOutAssets = activeCheckouts.length > 0
-                const assetTagIds = hasCheckedOutAssets
-                  ? activeCheckouts.map((co) => co.asset.assetTagId).join(', ')
-                  : ''
-                const isCurrentEmployee = currentEmployeeId === employee.id
-
-                return (
-                  <SelectItem
-                    key={employee.id}
-                    value={employee.id}
-                    className={isCurrentEmployee ? 'bg-primary' : ''}
-                  >
-                    <span>
-                      {employee.name} ({employee.email})
-                      {employee.department && (
-                        <span className="text-muted-foreground"> - {employee.department}</span>
-                      )}
-                      {isCurrentEmployee && (
-                        <span className="ml-2 text-xs text-muted-foreground font-medium">
-                          (Current)
-                        </span>
-                      )}
-                      {hasCheckedOutAssets && (
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          - Checked out: {assetTagIds}
-                        </span>
-                      )}
-                    </span>
-                  </SelectItem>
-                )
-              })
-            )}
-          </SelectContent>
+          {renderSelectContent()}
         </Select>
       </FieldContent>
     </Field>
