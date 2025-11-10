@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { retryDbOperation } from '@/lib/db-utils'
 
 export async function POST(request: Request) {
   try {
@@ -13,7 +14,25 @@ export async function POST(request: Request) {
       )
     }
 
-    const supabase = await createClient()
+    // Validate environment variables
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.error('[LOGIN API] Missing Supabase environment variables')
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      )
+    }
+
+    let supabase
+    try {
+      supabase = await createClient()
+    } catch (clientError) {
+      console.error('[LOGIN API] Failed to create Supabase client:', clientError)
+      return NextResponse.json(
+        { error: 'Authentication service unavailable' },
+        { status: 500 }
+      )
+    }
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -21,6 +40,7 @@ export async function POST(request: Request) {
     })
 
     if (error) {
+      console.error('[LOGIN API] Supabase auth error:', error.message)
       return NextResponse.json(
         { error: error.message },
         { status: 401 }
@@ -29,10 +49,13 @@ export async function POST(request: Request) {
 
     // Check if user account is active
     if (data.user) {
-      const assetUser = await prisma.assetUser.findUnique({
+      try {
+        const assetUser = await retryDbOperation(() => 
+          prisma.assetUser.findUnique({
         where: { userId: data.user.id },
         select: { isActive: true },
       })
+        )
 
       if (assetUser && !assetUser.isActive) {
         // Sign out the user from Supabase session to prevent any access
@@ -45,6 +68,12 @@ export async function POST(request: Request) {
           },
           { status: 403 }
         )
+        }
+      } catch (dbError) {
+        console.error('[LOGIN API] Database error (non-blocking):', dbError)
+        // If database query fails after retries, log but don't block login
+        // User exists in Supabase, so allow login
+        // This prevents database issues from blocking authentication
       }
     }
 
@@ -55,7 +84,8 @@ export async function POST(request: Request) {
       },
       { status: 200 }
     )
-  } catch {
+  } catch (error) {
+    console.error('[LOGIN API] Unexpected error:', error)
     return NextResponse.json(
       { error: 'An unexpected error occurred' },
       { status: 500 }

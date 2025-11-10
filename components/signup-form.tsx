@@ -2,15 +2,19 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import Link from "next/link"
-import { Dog } from "lucide-react"
+import { Dog, Eye, EyeOff } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
+import { signupSchema, type SignupFormData } from "@/lib/validations/auth"
 import { Button } from "@/components/ui/button"
 import {
   Field,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field"
@@ -21,43 +25,34 @@ export function SignUpForm({
   ...props
 }: React.ComponentProps<"div">) {
   const router = useRouter()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  
+  const form = useForm<SignupFormData>({
+    resolver: zodResolver(signupSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+      confirmPassword: "",
+    },
+  })
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    setIsLoading(true)
+  const isLoading = form.formState.isSubmitting
 
-    // Validate passwords match
-    if (password !== confirmPassword) {
-      toast.error("Passwords do not match")
-      setIsLoading(false)
-      return
-    }
-
-    // Validate password length
-    if (password.length < 6) {
-      toast.error("Password must be at least 6 characters long")
-      setIsLoading(false)
-      return
-    }
-
+  const onSubmit = async (data: SignupFormData) => {
     try {
       const response = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: data.email, password: data.password }),
       })
 
-      const data = await response.json()
+      const responseData = await response.json()
 
       if (!response.ok) {
-        toast.error(data.error || 'Failed to create account')
-        setIsLoading(false)
+        toast.error(responseData.error || 'Failed to create account')
         return
       }
 
@@ -66,13 +61,12 @@ export function SignUpForm({
       router.push("/login")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "An unexpected error occurred")
-      setIsLoading(false)
     }
   }
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={form.handleSubmit(onSubmit)}>
         <FieldGroup>
           <div className="flex flex-col items-center gap-2 text-center">
             <a
@@ -94,44 +88,89 @@ export function SignUpForm({
               id="email"
               type="email"
               placeholder="m@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
+              {...form.register("email")}
+              aria-invalid={form.formState.errors.email ? "true" : "false"}
               disabled={isLoading}
             />
+            {form.formState.errors.email && (
+              <FieldError>{form.formState.errors.email.message}</FieldError>
+            )}
           </Field>
+          
           <Field>
             <FieldLabel htmlFor="password">Password</FieldLabel>
-            <Input
-              id="password"
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={isLoading}
-              minLength={6}
-            />
-            
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter your password"
+                autoComplete="new-password"
+                {...form.register("password")}
+                aria-invalid={form.formState.errors.password ? "true" : "false"}
+                disabled={isLoading}
+                className="pr-10"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-0 top-0 h-full w-10 hover:bg-transparent"
+                onClick={() => setShowPassword(!showPassword)}
+                disabled={isLoading}
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+                <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
+              </Button>
+            </div>
+            {form.formState.errors.password && (
+              <FieldError>{form.formState.errors.password.message}</FieldError>
+            )}
           </Field>
+          
           <Field>
             <FieldLabel htmlFor="confirmPassword">Confirm Password</FieldLabel>
-            <Input
-              id="confirmPassword"
-              type="password"
-              placeholder="Confirm your password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              disabled={isLoading}
-              minLength={6}
-            />
+            <div className="relative">
+              <Input
+                id="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                placeholder="Confirm your password"
+                autoComplete="new-password"
+                {...form.register("confirmPassword")}
+                aria-invalid={form.formState.errors.confirmPassword ? "true" : "false"}
+                disabled={isLoading}
+                className="pr-10"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-0 top-0 h-full w-10 hover:bg-transparent"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                disabled={isLoading}
+              >
+                {showConfirmPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+                <span className="sr-only">{showConfirmPassword ? "Hide password" : "Show password"}</span>
+              </Button>
+            </div>
+            {form.formState.errors.confirmPassword && (
+              <FieldError>{form.formState.errors.confirmPassword.message}</FieldError>
+            )}
           </Field>
+          
           <Field>
             <Button type="submit" disabled={isLoading}>
               {isLoading ? "Creating account..." : "Sign up"}
             </Button>
           </Field>
+          
           <FieldDescription>
             Already have an account? <Link href="/login" className="text-primary hover:underline">Login</Link>
           </FieldDescription>

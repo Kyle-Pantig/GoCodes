@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Trash2, RotateCcw, AlertTriangle, Package, Search, RotateCw } from 'lucide-react'
+import { Trash2, RotateCcw, AlertTriangle, Package, Search, RotateCw, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -188,9 +188,6 @@ export default function TrashPage() {
     updateURL({ page: newPage })
   }
 
-  // Combine loading states
-  const isLoadingData = permissionsLoading || isLoading
-
   // Restore mutation
   const restoreMutation = useMutation({
     mutationFn: async (assetId: string) => {
@@ -274,23 +271,6 @@ export default function TrashPage() {
     return Math.max(0, 30 - daysSinceDeleted)
   }
 
-  if (isLoadingData) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Trash</h1>
-          <p className="text-muted-foreground">
-            View and manage deleted assets
-          </p>
-        </div>
-        <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
-          <Spinner className="h-8 w-8" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    )
-  }
-
   if (!canViewAssets && !canManageTrash && !permissionsLoading) {
     return (
       <div className="space-y-6">
@@ -342,6 +322,7 @@ export default function TrashPage() {
                   toast.success('Deleted assets list refreshed')
                 }}
                 disabled={isLoading}
+                size='sm'
               >
                 <RotateCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               </Button>
@@ -349,23 +330,36 @@ export default function TrashPage() {
           </div>
           <div className="relative flex-1 mt-3 w-full md:w-sm">
             <div className="relative flex-1 sm:flex-initial sm:min-w-[250px]">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              {searchInput ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchInput('')
+                    updateURL({ search: '', page: 1 })
+                  }}
+                  className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : (
+                <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+              )}
               <Input
                 placeholder="Search by asset tag, description, category, location..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-8"
+                className="pl-8 h-8"
               />
             </div>
           </div>
         </CardHeader>
 
         <CardContent className="px-0">
-          {isLoadingData ? (
-            <div className="flex items-center justify-center py-12 h-[calc(100vh-25rem)] min-h-[500px]">
+          {permissionsLoading || isLoading ? (
+            <div className="h-[calc(100vh-25rem)] min-h-[500px] flex items-center justify-center py-12">
               <div className="flex flex-col items-center gap-3">
                 <Spinner className="h-8 w-8" />
-                <p className="text-sm text-muted-foreground">Loading deleted assets...</p>
+                <p className="text-sm text-muted-foreground">Loading...</p>
               </div>
             </div>
           ) : deletedAssets.length === 0 ? (
@@ -486,7 +480,7 @@ export default function TrashPage() {
                     handlePageChange(Math.max(1, page - 1))
                   }
                 }}
-                disabled={!pagination?.hasPreviousPage || isLoadingData}
+                disabled={!pagination?.hasPreviousPage || isLoading}
                 className="h-8 px-2 sm:px-3"
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -494,10 +488,10 @@ export default function TrashPage() {
               <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
                 <span className="text-muted-foreground">Page</span>
                 <div className="px-1.5 sm:px-2 py-1 rounded-md bg-primary/10 text-primary font-medium text-xs sm:text-sm">
-                  {isLoadingData ? '...' : (pagination?.page || page)}
+                  {isLoading ? '...' : (pagination?.page || page)}
                 </div>
                 <span className="text-muted-foreground">of</span>
-                <span className="text-muted-foreground">{isLoadingData ? '...' : (pagination?.totalPages || 1)}</span>
+                <span className="text-muted-foreground">{isLoading ? '...' : (pagination?.totalPages || 1)}</span>
               </div>
               <Button
                 variant="outline"
@@ -507,14 +501,14 @@ export default function TrashPage() {
                     handlePageChange(Math.min(pagination.totalPages, page + 1))
                   }
                 }}
-                disabled={!pagination?.hasNextPage || isLoadingData}
+                disabled={!pagination?.hasNextPage || isLoading}
                 className="h-8 px-2 sm:px-3"
               >
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
             <div className="flex items-center justify-center sm:justify-end gap-2 sm:gap-4">
-              <Select value={pageSize.toString()} onValueChange={handlePageSizeChange} disabled={isLoadingData}>
+              <Select value={pageSize.toString()} onValueChange={handlePageSizeChange} disabled={isLoading}>
                 <SelectTrigger className="h-8 w-auto min-w-[90px] sm:min-w-[100px] text-xs sm:text-sm border-primary/20 bg-primary/10 text-primary font-medium hover:bg-primary/20">
                   <SelectValue />
                 </SelectTrigger>
@@ -527,7 +521,7 @@ export default function TrashPage() {
                 </SelectContent>
               </Select>
               <div className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
-                {isLoadingData ? (
+                {isLoading ? (
                   <Spinner className="h-4 w-4" />
                 ) : (
                   <>

@@ -26,13 +26,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { EmployeeSelectField } from "@/components/employee-select-field"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
@@ -108,20 +102,6 @@ export default function ReserveAssetPage() {
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
 
-  // Fetch employees
-  const { data: employees = [] } = useQuery<EmployeeUser[]>({
-    queryKey: ["employees", "reserve"],
-    queryFn: async () => {
-      const response = await fetch("/api/employees")
-      if (!response.ok) {
-        throw new Error('Failed to fetch employees')
-      }
-      const data = await response.json()
-      return (data.employees || []) as EmployeeUser[]
-    },
-    retry: 2,
-    retryDelay: 1000,
-  })
 
 
   // Fetch reservation statistics
@@ -739,47 +719,14 @@ export default function ReserveAssetPage() {
                 </Field>
 
                 {reservationType === 'Employee' && (
-                  <Field>
-                    <FieldLabel htmlFor="employee">
-                      Employee <span className="text-destructive">*</span>
-                    </FieldLabel>
-                    <FieldContent>
-                      <Select
-                        value={selectedEmployeeId}
-                        onValueChange={setSelectedEmployeeId}
-                        disabled={!canViewAssets || !canReserve}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select an employee" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {employees.map((employee) => {
-                            const activeCheckouts = employee.checkouts || []
-                            const hasCheckedOutAssets = activeCheckouts.length > 0
-                            const assetTagIds = hasCheckedOutAssets 
-                              ? activeCheckouts.map(co => co.asset.assetTagId).join(', ')
-                              : ''
-                            
-                            return (
-                              <SelectItem 
-                                key={employee.id} 
-                                value={employee.id}
-                              >
-                                <span>
-                                  {employee.name} ({employee.email}){employee.department && <span className="text-muted-foreground"> - {employee.department}</span>}
-                                  {hasCheckedOutAssets && (
-                                    <span className="ml-2 text-xs text-muted-foreground">
-                                      - Checked out: {assetTagIds}
-                                    </span>
-                                  )}
-                                </span>
-                              </SelectItem>
-                            )
-                          })}
-                        </SelectContent>
-                      </Select>
-                    </FieldContent>
-                  </Field>
+                  <EmployeeSelectField
+                    value={selectedEmployeeId}
+                    onValueChange={setSelectedEmployeeId}
+                    label="Employee"
+                    required
+                    disabled={!canViewAssets || !canReserve}
+                    queryKey={["employees", "reserve"]}
+                  />
                 )}
 
                 {reservationType === 'Department' && (

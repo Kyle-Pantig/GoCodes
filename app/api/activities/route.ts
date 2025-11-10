@@ -50,26 +50,16 @@ export async function GET(request: NextRequest) {
           break
       }
     } else {
-      // Count all activity types
-      const [
-        checkoutCount,
-        checkinCount,
-        moveCount,
-        reserveCount,
-        leaseCount,
-        leaseReturnCount,
-        disposeCount,
-        maintenanceCount
-      ] = await Promise.all([
-        retryDbOperation(() => prisma.assetsCheckout.count()),
-        retryDbOperation(() => prisma.assetsCheckin.count()),
-        retryDbOperation(() => prisma.assetsMove.count()),
-        retryDbOperation(() => prisma.assetsReserve.count()),
-        retryDbOperation(() => prisma.assetsLease.count()),
-        retryDbOperation(() => prisma.assetsLeaseReturn.count()),
-        retryDbOperation(() => prisma.assetsDispose.count()),
-        retryDbOperation(() => prisma.assetsMaintenance.count()),
-      ])
+      // Count all activity types - run sequentially to avoid connection pool exhaustion
+      const checkoutCount = await retryDbOperation(() => prisma.assetsCheckout.count())
+      const checkinCount = await retryDbOperation(() => prisma.assetsCheckin.count())
+      const moveCount = await retryDbOperation(() => prisma.assetsMove.count())
+      const reserveCount = await retryDbOperation(() => prisma.assetsReserve.count())
+      const leaseCount = await retryDbOperation(() => prisma.assetsLease.count())
+      const leaseReturnCount = await retryDbOperation(() => prisma.assetsLeaseReturn.count())
+      const disposeCount = await retryDbOperation(() => prisma.assetsDispose.count())
+      const maintenanceCount = await retryDbOperation(() => prisma.assetsMaintenance.count())
+      
       totalActivities = checkoutCount + checkinCount + moveCount + reserveCount + 
                         leaseCount + leaseReturnCount + disposeCount + maintenanceCount
     }

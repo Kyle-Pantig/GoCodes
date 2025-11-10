@@ -650,6 +650,7 @@ export default function ImportPage() {
               <Button
                 variant="outline"
                 onClick={() => setIsTemplateDialogOpen(true)}
+                size='sm'
               >
                 <Download className="mr-2 h-4 w-4" />
                 Download Template
@@ -707,6 +708,7 @@ export default function ImportPage() {
                 fileInputRef.current?.click()
               }}
               className="w-full sm:w-auto"
+              size='sm'
             >
               <Upload className="mr-2 h-4 w-4" />
               Choose File

@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { retryDbOperation } from '@/lib/db-utils'
 
 export async function GET() {
   try {
@@ -24,7 +25,7 @@ export async function GET() {
     // Fetch user role and permissions from AssetUser table
     let userData = null
     try {
-      const assetUser = await prisma.assetUser.findUnique({
+      const assetUser = await retryDbOperation(() => prisma.assetUser.findUnique({
         where: { userId: user.id },
         select: {
           role: true,
@@ -50,7 +51,7 @@ export async function GET() {
           canManageTrash: true,
           canManageUsers: true,
         },
-      })
+      }))
 
       // Check if user account is inactive
       if (assetUser && !assetUser.isActive) {

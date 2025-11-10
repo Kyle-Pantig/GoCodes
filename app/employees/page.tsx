@@ -45,7 +45,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { MoreHorizontal, Trash2, Edit, Search, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, Calendar, MapPin } from 'lucide-react'
+import { MoreHorizontal, Trash2, Edit, Search, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, Calendar, MapPin, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
@@ -603,6 +603,7 @@ export default function EmployeesPage() {
                 }
                 setIsCreateDialogOpen(true)
               }}
+              size='sm'
             >
               <UserPlus className="mr-2 h-4 w-4" />
               Add Employee
@@ -612,12 +613,25 @@ export default function EmployeesPage() {
         <CardContent className="flex-1 px-0">
           <div className="flex items-center p-4">
             <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              {searchInput ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchInput('')
+                    updateURL({ search: '', page: 1 })
+                  }}
+                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : (
+                <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+              )}
               <Input
                 placeholder="Search employees..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-8"
+                className="pl-8 h-8"
               />
             </div>
           </div>

@@ -31,9 +31,6 @@ import {
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -57,6 +54,9 @@ import Image from 'next/image'
 import { EditAssetDialog } from '@/components/edit-asset-dialog'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { ManagerDialog } from '@/components/manager-dialog'
+import { AuditHistoryManager } from '@/components/audit-history-manager'
+import { CheckoutManager } from '@/components/checkout-manager'
+import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 
 interface Asset {
   id: string
@@ -69,6 +69,8 @@ interface Asset {
   subCategory: {
     name: string
   } | null
+  categoryId: string | null
+  subCategoryId: string | null
   location: string | null
   brand: string | null
   model: string | null
@@ -1244,8 +1246,10 @@ const createColumns = (): ColumnDef<Asset>[] => [
 // Component for asset images icon with dialog
 function AssetImagesCell({ asset }: { asset: Asset }) {
   const [imagesDialogOpen, setImagesDialogOpen] = useState(false)
-  const [images, setImages] = useState<Array<{ id: string; imageUrl: string; assetTagId: string }>>([])
+  const [images, setImages] = useState<Array<{ id: string; imageUrl: string; assetTagId: string; fileName?: string; createdAt?: string }>>([])
   const [loadingImages, setLoadingImages] = useState(false)
+  const [previewImageIndex, setPreviewImageIndex] = useState(0)
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
 
   const fetchImages = async () => {
     if (!imagesDialogOpen) return
@@ -1279,6 +1283,18 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
     return <span className="text-muted-foreground">-</span>
   }
 
+  const handleImageClick = (index: number) => {
+    setPreviewImageIndex(index)
+    setImagesDialogOpen(false) // Close the grid dialog first
+    setIsPreviewOpen(true)
+  }
+
+  const existingImagesForPreview = images.map((img) => ({
+    id: img.id,
+    imageUrl: img.imageUrl,
+    fileName: img.fileName || `Image ${img.id}`,
+  }))
+
   return (
     <>
       <Button
@@ -1308,8 +1324,12 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
               </p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                {images.map((image) => (
-                  <div key={image.id} className="relative group border rounded-lg overflow-hidden">
+                {images.map((image, index) => (
+                  <div
+                    key={image.id}
+                    className="relative group border rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => handleImageClick(index)}
+                  >
                     <div className="aspect-square bg-muted relative">
                       <Image
                         src={image.imageUrl}
@@ -1326,6 +1346,16 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Image Preview Dialog */}
+      <ImagePreviewDialog
+        open={isPreviewOpen}
+        onOpenChange={setIsPreviewOpen}
+        existingImages={existingImagesForPreview}
+        title={`Asset Images - ${asset.assetTagId}`}
+        maxHeight="h-[70vh] max-h-[600px]"
+        initialIndex={previewImageIndex}
+      />
     </>
   )
 }
@@ -1339,8 +1369,6 @@ function AssetActions({ asset }: { asset: Asset }) {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
   const [isAuditOpen, setIsAuditOpen] = useState(false)
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false)
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
-  const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false)
 
   async function deleteAsset(id: string) {
     const response = await fetch(`/api/assets/${id}`, {
@@ -1443,33 +1471,7 @@ function AssetActions({ asset }: { asset: Asset }) {
         asset={asset}
         open={isEditOpen}
         onOpenChange={setIsEditOpen}
-        onPreviewImage={(imageUrl) => {
-          setPreviewImageUrl(imageUrl)
-          setIsPreviewDialogOpen(true)
-        }}
       />
-
-      {/* Image Preview Dialog */}
-      <Dialog open={isPreviewDialogOpen} onOpenChange={setIsPreviewDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle>Image Preview</DialogTitle>
-          </DialogHeader>
-          {previewImageUrl && (
-            <div className="flex items-center justify-center">
-              <div className="relative w-full h-[70vh] max-h-[600px]">
-                <Image
-                  src={previewImageUrl}
-                  alt="Preview"
-                  fill
-                  className="object-contain"
-                  unoptimized
-                />
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* Delete Dialog */}
       <DeleteConfirmationDialog
@@ -1500,589 +1502,13 @@ function AssetActions({ asset }: { asset: Asset }) {
         title={`Checkout History - ${asset.assetTagId}`}
         description="View and assign employees to checkout records"
       >
-        <CheckoutManager assetId={asset.id} assetTagId={asset.assetTagId} />
+        <CheckoutManager assetId={asset.id} assetTagId={asset.assetTagId} invalidateQueryKey={['assets-list']} />
       </ManagerDialog>
     </>
   )
 }
 
-// Audit History Manager Component
-function AuditHistoryManager({ assetId }: { assetId: string; assetTagId: string }) {
-  const queryClient = useQueryClient()
-  const [isAdding, setIsAdding] = useState(false)
 
-  // Fetch audit history
-  const { data: auditData, isLoading } = useQuery({
-    queryKey: ['auditHistory', assetId],
-    queryFn: async () => {
-      const response = await fetch(`/api/assets/${assetId}/audit`)
-      if (!response.ok) throw new Error('Failed to fetch audit history')
-      return response.json()
-    },
-  })
-
-  const audits = auditData?.audits || []
-
-  // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: async (auditId: string) => {
-      const response = await fetch(`/api/assets/audit/${auditId}`, {
-        method: 'DELETE',
-      })
-      if (!response.ok) throw new Error('Failed to delete audit')
-      return response.json()
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['auditHistory', assetId] })
-      toast.success('Audit record deleted')
-    },
-    onError: () => {
-      toast.error('Failed to delete audit record')
-    },
-  })
-  
-  // Add mutation
-  const addMutation = useMutation({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mutationFn: async (data: any) => {
-      const response = await fetch(`/api/assets/${assetId}/audit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
-      if (!response.ok) throw new Error('Failed to create audit')
-      return response.json()
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['auditHistory', assetId] })
-      setIsAdding(false)
-      toast.success('Audit record created')
-    },
-    onError: () => {
-      toast.error('Failed to create audit record')
-    },
-  })
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const formData = new FormData(e.currentTarget)
-    
-    const auditData = {
-      auditType: formData.get('auditType') as string,
-      auditDate: formData.get('auditDate') as string,
-      auditor: formData.get('auditor') as string || null,
-      status: formData.get('status') as string || 'Completed',
-      notes: formData.get('notes') as string || null,
-    }
-
-    addMutation.mutate(auditData)
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div className="text-sm text-muted-foreground">
-          {audits.length} audit record{audits.length !== 1 ? 's' : ''}
-        </div>
-        {!isAdding && (
-          <Button onClick={() => setIsAdding(true)} size="sm" className="gap-2">
-            <CheckCircle2 className="h-4 w-4" />
-            Add Audit Record
-          </Button>
-        )}
-      </div>
-
-      {/* Add Form */}
-      {isAdding && (
-        <Card className="border-2 border-primary/20 bg-card">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-primary" />
-              New Audit Record
-            </CardTitle>
-            <CardDescription>Fill in the details for this audit</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="auditType" className="text-sm font-medium">
-                    Audit Type <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="auditType"
-                    name="auditType"
-                    required
-                    placeholder="e.g., October Audit, Annual Audit"
-                    className="w-full"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="auditDate" className="text-sm font-medium">
-                    Audit Date <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="auditDate"
-                    name="auditDate"
-                    type="date"
-                    required
-                    defaultValue={new Date().toISOString().split('T')[0]}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="status" className="text-sm font-medium">Status</Label>
-                  <Select name="status" defaultValue="Completed">
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Completed">Completed</SelectItem>
-                      <SelectItem value="Pending">Pending</SelectItem>
-                      <SelectItem value="In Progress">In Progress</SelectItem>
-                      <SelectItem value="Failed">Failed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="auditor" className="text-sm font-medium">Auditor</Label>
-                  <Input
-                    id="auditor"
-                    name="auditor"
-                    placeholder="Auditor name"
-                    className="w-full"
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="notes" className="text-sm font-medium">Notes</Label>
-                <Textarea
-                  id="notes"
-                  name="notes"
-                  placeholder="Additional notes or observations..."
-                  rows={3}
-                  className="resize-none"
-                />
-              </div>
-
-              <div className="flex gap-2 justify-end pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsAdding(false)}
-                  className="min-w-[100px]"
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={addMutation.isPending} className="min-w-[100px]">
-                  {addMutation.isPending ? (
-                    <>
-                      <Spinner className="mr-2 h-4 w-4" />
-                      Adding...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="mr-2 h-4 w-4" />
-                      Add Audit
-                    </>
-                  )}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Audit List */}
-      <ScrollArea className="h-[450px] pr-4">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <Spinner className="h-8 w-8 mb-2" />
-            <p className="text-sm text-muted-foreground">Loading audit history...</p>
-          </div>
-        ) : audits.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="rounded-full bg-muted p-3 mb-4">
-              <CheckCircle2 className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <p className="text-sm font-medium text-foreground mb-1">No audit records yet</p>
-            <p className="text-xs text-muted-foreground">Add your first audit record to get started</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            {audits.map((audit: any) => {
-              const auditDate = audit.auditDate ? new Date(audit.auditDate) : null
-              const formattedDate = auditDate ? auditDate.toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              }) : '-'
-              
-              return (
-                <Card key={audit.id} className="hover:bg-accent/50 transition-colors border-border/50 py-2">
-                  <CardContent className="py-2.5 px-4">
-                    <div className="flex justify-between items-start gap-3">
-                      <div className="space-y-1.5 flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline" className="font-medium text-xs">
-                            {audit.auditType}
-                          </Badge>
-                          {audit.status && (
-                            <Badge
-                              variant={
-                                audit.status === 'Completed'
-                                  ? 'default'
-                                  : audit.status === 'Pending'
-                                  ? 'secondary'
-                                  : audit.status === 'In Progress'
-                                  ? 'outline'
-                                  : 'destructive'
-                              }
-                              className="font-medium text-xs"
-                            >
-                              {audit.status}
-                            </Badge>
-                          )}
-                        </div>
-                        
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5 text-sm">
-                            <div className="h-1 w-1 rounded-full bg-muted-foreground/40" />
-                            <span className="text-muted-foreground text-xs">Date:</span>
-                            <span className="text-foreground text-sm">{formattedDate}</span>
-                          </div>
-                          
-                          {audit.auditor && (
-                            <div className="flex items-center gap-1.5 text-sm">
-                              <div className="h-1 w-1 rounded-full bg-muted-foreground/40" />
-                              <span className="text-muted-foreground text-xs">Auditor:</span>
-                              <span className="text-foreground text-sm">{audit.auditor}</span>
-                            </div>
-                          )}
-                          
-                          {audit.notes && (
-                            <div className="pt-1 mt-1 border-t border-border/50">
-                              <p className="text-sm text-foreground leading-snug">{audit.notes}</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          if (confirm(`Delete audit record "${audit.auditType}"?`)) {
-                            deleteMutation.mutate(audit.id)
-                          }
-                        }}
-                        disabled={deleteMutation.isPending}
-                        className="shrink-0 text-muted-foreground hover:text-destructive h-7 w-7"
-                      >
-                        {deleteMutation.isPending ? (
-                          <Spinner className="h-3.5 w-3.5" />
-                        ) : (
-                          <Trash2 className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        )}
-      </ScrollArea>
-    </div>
-  )
-}
-
-// Checkout Manager Component
-function CheckoutManager({ assetId }: { assetId: string; assetTagId: string }) {
-  const queryClient = useQueryClient()
-  const [editingCheckoutId, setEditingCheckoutId] = useState<string | null>(null)
-  const [employeeSearch, setEmployeeSearch] = useState<Record<string, string>>({})
-
-  // Fetch checkout records
-  const { data: checkoutData, isLoading } = useQuery({
-    queryKey: ['checkoutHistory', assetId],
-    queryFn: async () => {
-      const response = await fetch(`/api/assets/${assetId}/checkout`)
-      if (!response.ok) throw new Error('Failed to fetch checkout history')
-      return response.json()
-    },
-  })
-
-  const checkouts = checkoutData?.checkouts || []
-
-  // Fetch employees
-  const { data: employees = [] } = useQuery({
-    queryKey: ['employees', 'checkout-manager'],
-    queryFn: async () => {
-      const response = await fetch('/api/employees')
-      if (!response.ok) throw new Error('Failed to fetch employees')
-      const data = await response.json()
-      return data.employees || []
-    },
-  })
-
-  // Update checkout mutation
-  const updateMutation = useMutation({
-    mutationFn: async ({ checkoutId, employeeUserId }: { checkoutId: string; employeeUserId: string | null }) => {
-      const response = await fetch(`/api/assets/checkout/${checkoutId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeUserId }),
-      })
-      if (!response.ok) throw new Error('Failed to update checkout')
-      return response.json()
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['checkoutHistory', assetId] })
-      queryClient.invalidateQueries({ queryKey: ['assets-list'] })
-      setEditingCheckoutId(null)
-      toast.success('Employee assigned successfully')
-    },
-    onError: () => {
-      toast.error('Failed to assign employee')
-    },
-  })
-
-  const handleAssignEmployee = (checkoutId: string, employeeUserId: string | null) => {
-    updateMutation.mutate({ checkoutId, employeeUserId })
-  }
-
-  // Filter employees based on search
-  const getFilteredEmployees = (checkoutId: string) => {
-    const searchTerm = employeeSearch[checkoutId]?.toLowerCase() || ''
-    if (!searchTerm) return employees
-    return employees.filter((emp: { id: string; name: string; email: string; department?: string | null }) =>
-      emp.name.toLowerCase().includes(searchTerm) || 
-      emp.email.toLowerCase().includes(searchTerm) ||
-      (emp.department && emp.department.toLowerCase().includes(searchTerm))
-    )
-  }
-
-  // Sort checkouts: active first, then by date
-  const sortedCheckouts = [...checkouts].sort((a, b) => {
-    const aCheckedIn = a.checkins.length > 0
-    const bCheckedIn = b.checkins.length > 0
-    if (aCheckedIn !== bCheckedIn) return aCheckedIn ? 1 : -1
-    return new Date(b.checkoutDate).getTime() - new Date(a.checkoutDate).getTime()
-  })
-
-  return (
-    <div className="flex flex-col gap-4">
-      {checkouts.length > 0 && (
-        <div className="flex items-center justify-between px-1">
-          <div className="text-sm text-muted-foreground">
-            {checkouts.length} checkout record{checkouts.length !== 1 ? 's' : ''}
-            {sortedCheckouts.filter(c => !c.checkins.length && !c.employeeUser).length > 0 && (
-              <span className="ml-2 text-yellow-600 dark:text-yellow-500 font-medium">
-                ({sortedCheckouts.filter(c => !c.checkins.length && !c.employeeUser).length} need assignment)
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      <ScrollArea>
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <Spinner className="h-8 w-8 mb-3" />
-            <p className="text-sm text-muted-foreground">Loading checkout history...</p>
-          </div>
-        ) : checkouts.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <ArrowRight className="h-16 w-16 mx-auto mb-4 opacity-30" />
-            <p className="font-medium text-base mb-1">No checkout records found</p>
-            <p className="text-sm">Checkout records will appear here when assets are checked out</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {sortedCheckouts.map((checkout: {
-              id: string
-              checkoutDate: string
-              expectedReturnDate: string | null
-              employeeUser: { id: string; name: string; email: string; department: string | null } | null
-              checkins: Array<{ id: string }>
-            }) => {
-              const checkoutDate = checkout.checkoutDate ? new Date(checkout.checkoutDate) : null
-              const formattedDate = checkoutDate ? checkoutDate.toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric'
-              }) : '-'
-              
-              const expectedReturnDate = checkout.expectedReturnDate ? new Date(checkout.expectedReturnDate) : null
-              const formattedReturnDate = expectedReturnDate ? expectedReturnDate.toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric'
-              }) : '-'
-
-              const isCheckedIn = checkout.checkins.length > 0
-              const needsAssignment = !checkout.employeeUser && !isCheckedIn
-              const isEditing = editingCheckoutId === checkout.id
-              const filteredEmployees = getFilteredEmployees(checkout.id)
-
-              return (
-                <Card 
-                  key={checkout.id} 
-                  className={`hover:bg-accent/50 transition-all border-2 ${
-                    needsAssignment 
-                      ? 'border-yellow-500/60 bg-yellow-50/30 dark:bg-yellow-950/20 shadow-sm' 
-                      : isCheckedIn
-                      ? 'border-border/40 bg-muted/20'
-                      : 'border-border/50'
-                  }`}
-                >
-                  <CardContent className="p-5 relative">
-                    <div className="space-y-4">
-                      {/* Header: Status badges */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant="outline" className="font-medium text-xs gap-1.5 px-2.5 py-1">
-                          <Calendar className="h-3 w-3" />
-                          {formattedDate}
-                        </Badge>
-                        {isCheckedIn ? (
-                          <Badge variant="default" className="text-xs gap-1 px-2.5 py-1">
-                            <CheckCircle className="h-3 w-3" />
-                            Checked In
-                          </Badge>
-                        ) : (
-                          <Badge variant="destructive" className="text-xs gap-1 px-2.5 py-1">
-                            <Clock className="h-3 w-3" />
-                            Active
-                          </Badge>
-                        )}
-                        {needsAssignment && (
-                          <Badge variant="secondary" className="text-xs gap-1 px-2.5 py-1 bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 border-yellow-300 dark:border-yellow-700">
-                            <UserPlus className="h-3 w-3" />
-                            Needs Assignment
-                          </Badge>
-                        )}
-                        {!isCheckedIn && !isEditing && checkout.employeeUser && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 shrink-0 ml-auto"
-                            onClick={() => {
-                              setEditingCheckoutId(checkout.id)
-                              setEmployeeSearch(prev => ({ ...prev, [checkout.id]: '' }))
-                            }}
-                            disabled={updateMutation.isPending}
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        {isEditing && checkout.employeeUser && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 shrink-0 ml-auto"
-                            onClick={() => {
-                              setEditingCheckoutId(null)
-                              setEmployeeSearch(prev => ({ ...prev, [checkout.id]: '' }))
-                            }}
-                            disabled={updateMutation.isPending}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                      
-                      {/* Divider */}
-                      <div className="h-px bg-border/50" />
-                      
-                      {/* Details Section */}
-                      <div className="space-y-3">
-                        {/* Expected Return Date */}
-                        {checkout.expectedReturnDate && (
-                          <div className="flex items-center gap-2 text-sm">
-                            <div className="h-1 w-1 rounded-full bg-muted-foreground/40 shrink-0" />
-                            <span className="text-muted-foreground text-xs">Expected Return:</span>
-                            <span className="text-foreground">{formattedReturnDate}</span>
-                          </div>
-                        )}
-                        
-                        {/* Employee Assignment */}
-                        {isEditing ? (
-                          <div className="space-y-2 p-3 bg-muted/50 rounded-md border border-primary/20">
-                            <Label className="text-xs font-medium">Search Employee</Label>
-                            <Input
-                              placeholder="Search by name, email, or department..."
-                              value={employeeSearch[checkout.id] || ''}
-                              onChange={(e) => setEmployeeSearch(prev => ({ ...prev, [checkout.id]: e.target.value }))}
-                              className="h-8 text-sm"
-                            />
-                            <div className="max-h-48 overflow-y-auto space-y-1">
-                              {filteredEmployees.length === 0 ? (
-                                <p className="text-xs text-muted-foreground text-center py-2">No employees found</p>
-                              ) : (
-                                filteredEmployees.slice(0, 10).map((emp: { id: string; name: string; email: string; department: string | null }) => (
-                                  <Button
-                                    key={emp.id}
-                                    variant="ghost"
-                                    size="sm"
-                                    className="w-full justify-start h-auto py-2 px-3 text-left"
-                                    onClick={() => handleAssignEmployee(checkout.id, emp.id)}
-                                    disabled={updateMutation.isPending}
-                                  >
-                                    <div className="flex flex-col items-start gap-0.5">
-                                      <span className="text-sm font-medium">{emp.name}</span>
-                                      <span className="text-xs text-muted-foreground">{emp.email}</span>
-                                      {emp.department && (
-                                        <span className="text-xs text-muted-foreground">{emp.department}</span>
-                                      )}
-                                    </div>
-                                  </Button>
-                                ))
-                              )}
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="w-full h-8 text-xs"
-                                onClick={() => handleAssignEmployee(checkout.id, null)}
-                                disabled={updateMutation.isPending}
-                              >
-                                Remove Assignment
-                              </Button>
-                            </div>
-                          </div>
-                        ) : checkout.employeeUser ? (
-                          <div className="flex items-center gap-2 text-sm p-2 bg-muted/30 rounded-md">
-                            <UserCircle className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <div className="flex flex-col min-w-0 flex-1">
-                              <span className="font-medium text-sm truncate">{checkout.employeeUser.name}</span>
-                              <span className="text-xs text-muted-foreground truncate">{checkout.employeeUser.email}</span>
-                              {checkout.employeeUser.department && (
-                                <span className="text-xs text-muted-foreground">{checkout.employeeUser.department}</span>
-                              )}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-sm text-muted-foreground p-2 bg-yellow-50/50 dark:bg-yellow-950/10 rounded-md border border-yellow-200 dark:border-yellow-800">
-                            No employee assigned
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        )}
-      </ScrollArea>
-    </div>
-  )
-}
 
 export default function ListOfAssetsPage() {
   const router = useRouter()
@@ -2195,7 +1621,7 @@ export default function ListOfAssetsPage() {
     })
   }, [searchParams, router, startTransition])
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ['assets-list', searchQuery, page, pageSize],
     queryFn: () => fetchAssets(searchQuery || undefined, page, pageSize),
     enabled: canViewAssets, // Only fetch if user has permission
@@ -2388,12 +1814,25 @@ export default function ListOfAssetsPage() {
         <CardContent className="flex-1 px-0">
           <div className="flex items-center justify-between p-4 gap-4">
             <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              {searchInput ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchInput('')
+                    updateURL({ search: '', page: 1 })
+                  }}
+                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : (
+                <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+              )}
               <Input
                 placeholder="Search assets..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-8"
+                className="pl-8 h-8"
               />
             </div>
             <Select 
@@ -2404,7 +1843,7 @@ export default function ListOfAssetsPage() {
                 toggleColumn(value)
               }}
             >
-              <SelectTrigger className="w-full sm:w-[200px]">
+              <SelectTrigger className="w-full sm:w-[200px]" size='sm'>
                 <span className="flex-1 text-left truncate">
                   {visibleColumns.length > 0 
                     ? `${visibleColumns.length} column${visibleColumns.length !== 1 ? 's' : ''} selected`
@@ -2493,6 +1932,12 @@ export default function ListOfAssetsPage() {
             ) : (
               <div className="min-w-full">
                 <ScrollArea className='h-[calc(100vh-27rem)] min-h-[520px]'>
+                <div className="relative">
+                  {isFetching && data && (
+                    <div className="absolute inset-0 bg-background/50 backdrop-blur-sm z-10 flex items-center justify-center">
+                      <Spinner variant="default" size={24} className="text-muted-foreground" />
+                    </div>
+                  )}
                 <Table className='border-t'>
                   <TableHeader>
                     {table.getHeaderGroups().map((headerGroup) => (
@@ -2544,7 +1989,8 @@ export default function ListOfAssetsPage() {
                     )}
                   </TableBody>
                 </Table>
-                <ScrollBar orientation="horizontal" />
+                </div>
+                <ScrollBar orientation="horizontal" className='z-10' />
                 <ScrollBar orientation="vertical" className='z-10' />
                 </ScrollArea>
               </div>

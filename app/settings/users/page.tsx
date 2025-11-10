@@ -928,17 +928,31 @@ export default function UsersPage() {
           </div>
           <div className="relative flex items-center gap-2 mt-3 w-full md:w-sm">
             <div className="relative flex-1 sm:flex-initial sm:min-w-[250px]">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              {searchInput ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchInput('')
+                    updateURL({ search: '', page: 1 })
+                  }}
+                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : (
+                <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+              )}
               <Input
                 placeholder="Search by user ID or email..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-8"
+                className="pl-8 h-8 "
+
               />
               
             </div>
             <Select value={roleFilter} onValueChange={handleRoleFilterChange}>
-                <SelectTrigger className="w-full sm:w-[140px]">
+                <SelectTrigger className="w-full sm:w-[140px]" size='sm'>
                   <SelectValue placeholder="Filter by role" />
                 </SelectTrigger>
                 <SelectContent>

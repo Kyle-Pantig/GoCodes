@@ -526,6 +526,7 @@ export default function ExportPage() {
                     }
                     setIsExportDialogOpen(true)
                   }}
+                  size='sm'
                 >
                   <Download className="mr-2 h-4 w-4" />
                   Select Fields & Export

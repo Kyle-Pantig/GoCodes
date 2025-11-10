@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback, useTransition } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import Image from 'next/image'
 import {
   Dialog,
@@ -25,9 +27,23 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Upload, Image as ImageIcon, Eye, X } from 'lucide-react'
+import { Field, FieldLabel, FieldContent, FieldError } from '@/components/ui/field'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Controller } from 'react-hook-form'
+import { Upload, Image as ImageIcon, Eye, X, PlusIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { ImagePreviewDialog, type ImagePreviewData } from '@/components/image-preview-dialog'
+import { ImagePreviewDialog } from '@/components/image-preview-dialog'
+import { editAssetSchema, type EditAssetFormData } from '@/lib/validations/assets'
+import { useCategories, useSubCategories, useCreateCategory, useCreateSubCategory, type Category, type SubCategory } from '@/hooks/use-categories'
+import { CategoryDialog } from '@/components/category-dialog'
+import { SubCategoryDialog } from '@/components/subcategory-dialog'
+import { usePermissions } from '@/hooks/use-permissions'
 
 async function updateAsset(id: string, data: Partial<Asset>) {
   const response = await fetch(`/api/assets/${id}`, {
@@ -64,6 +80,8 @@ interface Asset {
   xeroAssetNo: string | null
   remarks: string | null
   additionalInformation: string | null
+  categoryId: string | null
+  subCategoryId: string | null
 }
 
 interface EditAssetDialogProps {
@@ -80,8 +98,8 @@ export function EditAssetDialog({
   onPreviewImage,
 }: EditAssetDialogProps) {
   const queryClient = useQueryClient()
-  const [assetTagIdInput, setAssetTagIdInput] = useState<string>(asset.assetTagId)
-  const [assetTagIdError, setAssetTagIdError] = useState<string>('')
+  const { hasPermission } = usePermissions()
+  const canManageCategories = hasPermission('canManageCategories')
   const [isCheckingAssetTag, setIsCheckingAssetTag] = useState(false)
   const [selectedImages, setSelectedImages] = useState<File[]>([])
   const [selectedExistingImages, setSelectedExistingImages] = useState<Array<{ id: string; imageUrl: string; fileName: string }>>([])
@@ -91,27 +109,128 @@ export function EditAssetDialog({
   const [isDeleteImageDialogOpen, setIsDeleteImageDialogOpen] = useState(false)
   const [isDeletingImage, setIsDeletingImage] = useState(false)
   const [mediaBrowserOpen, setMediaBrowserOpen] = useState(false)
-  const [previewImage, setPreviewImage] = useState<ImagePreviewData | null>(null)
+  const [previewImageIndex, setPreviewImageIndex] = useState(0)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false)
+  const [subCategoryDialogOpen, setSubCategoryDialogOpen] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
+
+  // Categories and subcategories
+  const { data: categories = [] } = useCategories()
+  const createCategoryMutation = useCreateCategory()
+  const createSubCategoryMutation = useCreateSubCategory()
+
+  const form = useForm<EditAssetFormData>({
+    resolver: zodResolver(editAssetSchema),
+    defaultValues: {
+      assetTagId: asset.assetTagId,
+      description: asset.description,
+      brand: asset.brand || '',
+      model: asset.model || '',
+      serialNo: asset.serialNo || '',
+      cost: asset.cost?.toString() || '',
+      assetType: asset.assetType || '',
+      location: asset.location || '',
+      department: asset.department || '',
+      site: asset.site || '',
+      owner: asset.owner || '',
+      issuedTo: asset.issuedTo || '',
+      purchasedFrom: asset.purchasedFrom || '',
+      purchaseDate: asset.purchaseDate ? new Date(asset.purchaseDate).toISOString().split('T')[0] : '',
+      poNumber: asset.poNumber || '',
+      xeroAssetNo: asset.xeroAssetNo || '',
+      remarks: asset.remarks || '',
+      additionalInformation: asset.additionalInformation || '',
+      categoryId: asset.categoryId || '',
+      subCategoryId: asset.subCategoryId || '',
+    },
+  })
+
+  // Watch categoryId to sync with selectedCategory state
+  const categoryId = form.watch('categoryId')
+  const selectedCategory = categoryId || ''
+  const { data: subCategories = [] } = useSubCategories(selectedCategory || null)
+
+  // Reset subcategory when category changes
+  const handleCategoryChange = (value: string) => {
+    form.setValue('categoryId', value)
+    form.setValue('subCategoryId', '')
+  }
+
+  const handleCreateCategory = async (data: { name: string; description?: string }) => {
+    if (!canManageCategories) {
+      toast.error('You do not have permission to manage categories')
+      return
+    }
+
+    try {
+      await createCategoryMutation.mutateAsync(data)
+      setCategoryDialogOpen(false)
+      toast.success('Category created successfully')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to create category')
+    }
+  }
+
+  const handleCreateSubCategory = async (data: { name: string; description?: string; categoryId: string }) => {
+    if (!canManageCategories) {
+      toast.error('You do not have permission to manage categories')
+      return
+    }
+
+    if (!selectedCategory) {
+      toast.error('Please select a category first')
+      return
+    }
+
+    try {
+      await createSubCategoryMutation.mutateAsync({
+        ...data,
+        categoryId: selectedCategory,
+      })
+      setSubCategoryDialogOpen(false)
+      toast.success('Sub category created successfully')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to create subcategory')
+    }
+  }
 
   // Create object URLs for selected images
   const selectedImageUrls = useMemo(() => {
     return selectedImages.map(file => URL.createObjectURL(file))
   }, [selectedImages])
 
-  // Reset state when dialog opens/closes
+  // Reset form when dialog opens/closes or asset changes
   useEffect(() => {
     if (open) {
-      setAssetTagIdInput(asset.assetTagId)
-      setAssetTagIdError('')
+      form.reset({
+        assetTagId: asset.assetTagId,
+        description: asset.description,
+        brand: asset.brand || '',
+        model: asset.model || '',
+        serialNo: asset.serialNo || '',
+        cost: asset.cost?.toString() || '',
+        assetType: asset.assetType || '',
+        location: asset.location || '',
+        department: asset.department || '',
+        site: asset.site || '',
+        owner: asset.owner || '',
+        issuedTo: asset.issuedTo || '',
+        purchasedFrom: asset.purchasedFrom || '',
+        purchaseDate: asset.purchaseDate ? new Date(asset.purchaseDate).toISOString().split('T')[0] : '',
+        poNumber: asset.poNumber || '',
+        xeroAssetNo: asset.xeroAssetNo || '',
+        remarks: asset.remarks || '',
+        additionalInformation: asset.additionalInformation || '',
+        categoryId: asset.categoryId || '',
+        subCategoryId: asset.subCategoryId || '',
+      })
     } else {
       setSelectedImages([])
       setSelectedExistingImages([])
-      setAssetTagIdError('')
     }
-  }, [open, asset.assetTagId])
+  }, [open, asset, form])
 
   // Cleanup object URLs when component unmounts or selectedImages change
   useEffect(() => {
@@ -191,7 +310,8 @@ export function EditAssetDialog({
     }
   }, [asset.assetTagId, asset.id])
 
-  // Debounced validation for asset tag ID
+  // Watch assetTagId for uniqueness check
+  const assetTagId = form.watch('assetTagId')
   const assetTagValidationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -201,23 +321,25 @@ export function EditAssetDialog({
       clearTimeout(assetTagValidationTimeoutRef.current)
     }
 
-    if (assetTagIdInput === asset.assetTagId) {
-      setAssetTagIdError('')
+    if (assetTagId === asset.assetTagId) {
+      form.clearErrors('assetTagId')
       return
     }
 
-    if (assetTagIdInput.trim() === '') {
-      setAssetTagIdError('Asset Tag ID is required')
+    if (!assetTagId || assetTagId.trim() === '') {
       return
     }
 
     setIsCheckingAssetTag(true)
     assetTagValidationTimeoutRef.current = setTimeout(async () => {
-      const exists = await checkAssetTagExists(assetTagIdInput)
+      const exists = await checkAssetTagExists(assetTagId)
       if (exists) {
-        setAssetTagIdError('This Asset Tag ID already exists')
+        form.setError('assetTagId', {
+          type: 'manual',
+          message: 'This Asset Tag ID already exists',
+        })
       } else {
-        setAssetTagIdError('')
+        form.clearErrors('assetTagId')
       }
       setIsCheckingAssetTag(false)
     }, 500)
@@ -227,7 +349,7 @@ export function EditAssetDialog({
         clearTimeout(assetTagValidationTimeoutRef.current)
       }
     }
-  }, [assetTagIdInput, open, asset.assetTagId, checkAssetTagExists])
+  }, [assetTagId, open, asset.assetTagId, checkAssetTagExists, form])
 
   const handleDeleteImageClick = (imageId: string) => {
     setImageToDelete(imageId)
@@ -245,6 +367,7 @@ export function EditAssetDialog({
       if (response.ok) {
         queryClient.invalidateQueries({ queryKey: ['assets', 'images', asset.assetTagId] })
         queryClient.invalidateQueries({ queryKey: ['assets'] })
+        queryClient.invalidateQueries({ queryKey: ['assets-list'] })
         queryClient.invalidateQueries({ queryKey: ['assets', 'media'] })
         toast.success('Image deleted successfully')
         setIsDeleteImageDialogOpen(false)
@@ -254,6 +377,7 @@ export function EditAssetDialog({
         if (response.status === 404) {
           queryClient.invalidateQueries({ queryKey: ['assets', 'images', asset.assetTagId] })
           queryClient.invalidateQueries({ queryKey: ['assets'] })
+          queryClient.invalidateQueries({ queryKey: ['assets-list'] })
           queryClient.invalidateQueries({ queryKey: ['assets', 'media'] })
           toast.success('Image removed')
         } else {
@@ -327,56 +451,47 @@ export function EditAssetDialog({
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-
-    if (assetTagIdError) {
-      toast.error('Please fix the Asset Tag ID error before saving')
-      return
-    }
-
-    if (assetTagIdInput !== asset.assetTagId) {
-      const exists = await checkAssetTagExists(assetTagIdInput)
+  const onSubmit = async (data: EditAssetFormData) => {
+    // Final uniqueness check if asset tag changed
+    if (data.assetTagId !== asset.assetTagId) {
+      const exists = await checkAssetTagExists(data.assetTagId)
       if (exists) {
-        setAssetTagIdError('This Asset Tag ID already exists')
+        form.setError('assetTagId', {
+          type: 'manual',
+          message: 'This Asset Tag ID already exists',
+        })
         toast.error('This Asset Tag ID already exists')
         return
       }
     }
 
-    if (!assetTagIdInput || assetTagIdInput.trim() === '') {
-      setAssetTagIdError('Asset Tag ID is required')
-      toast.error('Asset Tag ID is required')
-      return
-    }
-
-    const formData = new FormData(e.currentTarget)
-
-    const data = {
-      assetTagId: assetTagIdInput.trim(),
-      description: formData.get('description') as string,
-      brand: formData.get('brand') as string,
-      model: formData.get('model') as string,
-      serialNo: formData.get('serialNo') as string,
-      cost: formData.get('cost') ? parseFloat(formData.get('cost') as string) : null,
-      assetType: formData.get('assetType') as string,
-      location: formData.get('location') as string,
-      department: formData.get('department') as string,
-      site: formData.get('site') as string,
-      owner: formData.get('owner') as string,
-      issuedTo: formData.get('issuedTo') as string,
-      purchasedFrom: formData.get('purchasedFrom') as string,
-      purchaseDate: formData.get('purchaseDate') as string,
-      poNumber: formData.get('poNumber') as string,
-      xeroAssetNo: formData.get('xeroAssetNo') as string,
-      remarks: formData.get('remarks') as string,
-      additionalInformation: formData.get('additionalInformation') as string,
+    const updateData = {
+      assetTagId: data.assetTagId.trim(),
+      description: data.description,
+      brand: data.brand || null,
+      model: data.model || null,
+      serialNo: data.serialNo || null,
+      cost: data.cost ? parseFloat(data.cost) : null,
+      assetType: data.assetType || null,
+      location: data.location || null,
+      department: data.department || null,
+      site: data.site || null,
+      owner: data.owner || null,
+      issuedTo: data.issuedTo || null,
+      purchasedFrom: data.purchasedFrom || null,
+      purchaseDate: data.purchaseDate || null,
+      poNumber: data.poNumber || null,
+      xeroAssetNo: data.xeroAssetNo || null,
+      remarks: data.remarks || null,
+      additionalInformation: data.additionalInformation || null,
+      categoryId: data.categoryId || null,
+      subCategoryId: data.subCategoryId || null,
     }
 
     try {
-      await updateMutation.mutateAsync({ id: asset.id, data })
+      await updateMutation.mutateAsync({ id: asset.id, data: updateData })
 
-      const updatedAssetTagId = assetTagIdInput.trim()
+      const updatedAssetTagId = data.assetTagId.trim()
       const totalImages = selectedImages.length + selectedExistingImages.length
       if (totalImages > 0 && updatedAssetTagId) {
         setUploadingImages(true)
@@ -419,6 +534,7 @@ export function EditAssetDialog({
           queryClient.invalidateQueries({ queryKey: ['assets', 'media'] })
           refetchExistingImages()
           queryClient.refetchQueries({ queryKey: ['assets'] })
+          queryClient.refetchQueries({ queryKey: ['assets-list'] })
         } catch (error) {
           console.error('Error uploading images:', error)
           toast.error('Asset updated but some images failed to upload')
@@ -434,6 +550,7 @@ export function EditAssetDialog({
         queryClient.invalidateQueries({ queryKey: ['assets', 'images', asset.assetTagId] })
         refetchExistingImages()
         queryClient.refetchQueries({ queryKey: ['assets'] })
+        queryClient.refetchQueries({ queryKey: ['assets-list'] })
       }
     } catch {
       // Error already handled by mutation
@@ -450,120 +567,407 @@ export function EditAssetDialog({
               Update the details of this asset. Click save when you&apos;re done.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={form.handleSubmit(onSubmit)}>
             <ScrollArea>
               <div className="max-h-[70vh]">
                 <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="assetTagId">Asset Tag ID</Label>
-                    <div className="space-y-1">
+                  <Field>
+                    <FieldLabel htmlFor="assetTagId">
+                      Asset Tag ID <span className="text-destructive">*</span>
+                    </FieldLabel>
+                    <FieldContent>
                       <Input
                         id="assetTagId"
-                        name="assetTagId"
-                        value={assetTagIdInput}
-                        onChange={(e) => setAssetTagIdInput(e.target.value)}
-                        className={assetTagIdError ? 'border-destructive' : ''}
+                        {...form.register("assetTagId")}
+                        aria-invalid={form.formState.errors.assetTagId ? "true" : "false"}
+                        className={form.formState.errors.assetTagId ? 'border-destructive' : ''}
                       />
                       {isCheckingAssetTag && (
                         <p className="text-xs text-muted-foreground">Checking availability...</p>
                       )}
-                      {assetTagIdError && (
-                        <p className="text-xs text-destructive">{assetTagIdError}</p>
+                      {form.formState.errors.assetTagId && (
+                        <FieldError>{form.formState.errors.assetTagId.message}</FieldError>
+                      )}
+                    </FieldContent>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="description">
+                      Description <span className="text-destructive">*</span>
+                    </FieldLabel>
+                    <FieldContent>
+                      <Textarea
+                        id="description"
+                        {...form.register("description")}
+                        rows={3}
+                        aria-invalid={form.formState.errors.description ? "true" : "false"}
+                      />
+                      {form.formState.errors.description && (
+                        <FieldError>{form.formState.errors.description.message}</FieldError>
+                      )}
+                    </FieldContent>
+                  </Field>
+
+                  <Field>
+                    <div className="flex items-center justify-between w-full">
+                      <FieldLabel htmlFor="category">
+                        Category <span className="text-destructive">*</span>
+                      </FieldLabel>
+                      {canManageCategories && (
+                        <>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="outline"
+                            className="h-6 w-6"
+                            onClick={() => setCategoryDialogOpen(true)}
+                          >
+                            <PlusIcon className="h-3.5 w-3.5" />
+                          </Button>
+                          <CategoryDialog
+                            open={categoryDialogOpen}
+                            onOpenChange={setCategoryDialogOpen}
+                            onSubmit={handleCreateCategory}
+                            mode="create"
+                            isLoading={createCategoryMutation.isPending}
+                          />
+                        </>
                       )}
                     </div>
-                  </div>
+                    <FieldContent>
+                      <Controller
+                        name="categoryId"
+                        control={form.control}
+                        render={({ field }) => (
+                          <Select
+                            value={field.value || ""}
+                            onValueChange={(value) => {
+                              field.onChange(value)
+                              handleCategoryChange(value)
+                            }}
+                          >
+                            <SelectTrigger className="w-full" aria-invalid={form.formState.errors.categoryId ? "true" : "false"}>
+                              <SelectValue placeholder="Select a category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {categories?.map((category: Category) => (
+                                <SelectItem key={category.id} value={category.id}>
+                                  {category.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {form.formState.errors.categoryId && (
+                        <FieldError>{form.formState.errors.categoryId.message}</FieldError>
+                      )}
+                    </FieldContent>
+                  </Field>
 
-                  <div className="grid gap-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea id="description" name="description" defaultValue={asset.description} rows={3} />
+                  <Field>
+                    <div className="flex items-center justify-between w-full">
+                      <FieldLabel htmlFor="subCategory">
+                        Sub Category <span className="text-destructive">*</span>
+                      </FieldLabel>
+                      {canManageCategories && (
+                        <>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="outline"
+                            disabled={!selectedCategory}
+                            className="h-6 w-6"
+                            onClick={() => setSubCategoryDialogOpen(true)}
+                          >
+                            <PlusIcon className="h-3.5 w-3.5" />
+                          </Button>
+                          <SubCategoryDialog
+                            open={subCategoryDialogOpen}
+                            onOpenChange={setSubCategoryDialogOpen}
+                            onSubmit={handleCreateSubCategory}
+                            mode="create"
+                            categories={categories}
+                            selectedCategoryName={categories.find(c => c.id === selectedCategory)?.name}
+                            isLoading={createSubCategoryMutation.isPending}
+                          />
+                        </>
+                      )}
+                  </div>
+                    <FieldContent>
+                      <Controller
+                        name="subCategoryId"
+                        control={form.control}
+                        render={({ field }) => (
+                          <Select
+                            value={field.value || ""}
+                            onValueChange={field.onChange}
+                            disabled={!selectedCategory}
+                          >
+                            <SelectTrigger className="w-full" disabled={!selectedCategory} aria-invalid={form.formState.errors.subCategoryId ? "true" : "false"}>
+                              <SelectValue 
+                                placeholder={
+                                  selectedCategory 
+                                    ? "Select a sub category" 
+                                    : "Select a category first"
+                                }
+                              />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {subCategories?.map((subCat) => (
+                                <SelectItem key={subCat.id} value={subCat.id}>
+                                  {subCat.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {form.formState.errors.subCategoryId && (
+                        <FieldError>{form.formState.errors.subCategoryId.message}</FieldError>
+                      )}
+                    </FieldContent>
+                  </Field>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field>
+                      <FieldLabel htmlFor="brand">
+                        Brand <span className="text-destructive">*</span>
+                      </FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="brand"
+                          {...form.register("brand")}
+                          aria-invalid={form.formState.errors.brand ? "true" : "false"}
+                        />
+                        {form.formState.errors.brand && (
+                          <FieldError>{form.formState.errors.brand.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="model">
+                        Model <span className="text-destructive">*</span>
+                      </FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="model"
+                          {...form.register("model")}
+                          aria-invalid={form.formState.errors.model ? "true" : "false"}
+                        />
+                        {form.formState.errors.model && (
+                          <FieldError>{form.formState.errors.model.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="brand">Brand</Label>
-                      <Input id="brand" name="brand" defaultValue={asset.brand || ''} />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="model">Model</Label>
-                      <Input id="model" name="model" defaultValue={asset.model || ''} />
-                    </div>
+                    <Field>
+                      <FieldLabel htmlFor="serialNo">Serial No</FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="serialNo"
+                          {...form.register("serialNo")}
+                          aria-invalid={form.formState.errors.serialNo ? "true" : "false"}
+                        />
+                        {form.formState.errors.serialNo && (
+                          <FieldError>{form.formState.errors.serialNo.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="cost">Cost</FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="cost"
+                          type="number"
+                          step="0.01"
+                          {...form.register("cost")}
+                          aria-invalid={form.formState.errors.cost ? "true" : "false"}
+                        />
+                        {form.formState.errors.cost && (
+                          <FieldError>{form.formState.errors.cost.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="serialNo">Serial No</Label>
-                      <Input id="serialNo" name="serialNo" defaultValue={asset.serialNo || ''} />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="cost">Cost</Label>
-                      <Input id="cost" name="cost" type="number" step="0.01" defaultValue={asset.cost?.toString() || ''} />
-                    </div>
+                    <Field>
+                      <FieldLabel htmlFor="assetType">Asset Type</FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="assetType"
+                          {...form.register("assetType")}
+                          aria-invalid={form.formState.errors.assetType ? "true" : "false"}
+                        />
+                        {form.formState.errors.assetType && (
+                          <FieldError>{form.formState.errors.assetType.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="location">Location</FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="location"
+                          {...form.register("location")}
+                          aria-invalid={form.formState.errors.location ? "true" : "false"}
+                        />
+                        {form.formState.errors.location && (
+                          <FieldError>{form.formState.errors.location.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="assetType">Asset Type</Label>
-                      <Input id="assetType" name="assetType" defaultValue={asset.assetType || ''} />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="location">Location</Label>
-                      <Input id="location" name="location" defaultValue={asset.location || ''} />
-                    </div>
+                    <Field>
+                      <FieldLabel htmlFor="department">Department</FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="department"
+                          {...form.register("department")}
+                          aria-invalid={form.formState.errors.department ? "true" : "false"}
+                        />
+                        {form.formState.errors.department && (
+                          <FieldError>{form.formState.errors.department.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="site">Site</FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="site"
+                          {...form.register("site")}
+                          aria-invalid={form.formState.errors.site ? "true" : "false"}
+                        />
+                        {form.formState.errors.site && (
+                          <FieldError>{form.formState.errors.site.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="department">Department</Label>
-                      <Input id="department" name="department" defaultValue={asset.department || ''} />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="site">Site</Label>
-                      <Input id="site" name="site" defaultValue={asset.site || ''} />
-                    </div>
+                    <Field>
+                      <FieldLabel htmlFor="owner">Owner</FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="owner"
+                          {...form.register("owner")}
+                          aria-invalid={form.formState.errors.owner ? "true" : "false"}
+                        />
+                        {form.formState.errors.owner && (
+                          <FieldError>{form.formState.errors.owner.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="issuedTo">Issued To</FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="issuedTo"
+                          {...form.register("issuedTo")}
+                          aria-invalid={form.formState.errors.issuedTo ? "true" : "false"}
+                        />
+                        {form.formState.errors.issuedTo && (
+                          <FieldError>{form.formState.errors.issuedTo.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="owner">Owner</Label>
-                      <Input id="owner" name="owner" defaultValue={asset.owner || ''} />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="issuedTo">Issued To</Label>
-                      <Input id="issuedTo" name="issuedTo" defaultValue={asset.issuedTo || ''} />
-                    </div>
+                    <Field>
+                      <FieldLabel htmlFor="purchasedFrom">Purchased From</FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="purchasedFrom"
+                          {...form.register("purchasedFrom")}
+                          aria-invalid={form.formState.errors.purchasedFrom ? "true" : "false"}
+                        />
+                        {form.formState.errors.purchasedFrom && (
+                          <FieldError>{form.formState.errors.purchasedFrom.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="purchaseDate">Purchase Date</FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="purchaseDate"
+                          type="date"
+                          {...form.register("purchaseDate")}
+                          aria-invalid={form.formState.errors.purchaseDate ? "true" : "false"}
+                        />
+                        {form.formState.errors.purchaseDate && (
+                          <FieldError>{form.formState.errors.purchaseDate.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="purchasedFrom">Purchased From</Label>
-                      <Input id="purchasedFrom" name="purchasedFrom" defaultValue={asset.purchasedFrom || ''} />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="purchaseDate">Purchase Date</Label>
-                      <Input id="purchaseDate" name="purchaseDate" type="date" defaultValue={formatDateForInput(asset.purchaseDate)} />
-                    </div>
+                    <Field>
+                      <FieldLabel htmlFor="poNumber">PO Number</FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="poNumber"
+                          {...form.register("poNumber")}
+                          aria-invalid={form.formState.errors.poNumber ? "true" : "false"}
+                        />
+                        {form.formState.errors.poNumber && (
+                          <FieldError>{form.formState.errors.poNumber.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="xeroAssetNo">Xero Asset No</FieldLabel>
+                      <FieldContent>
+                        <Input
+                          id="xeroAssetNo"
+                          {...form.register("xeroAssetNo")}
+                          aria-invalid={form.formState.errors.xeroAssetNo ? "true" : "false"}
+                        />
+                        {form.formState.errors.xeroAssetNo && (
+                          <FieldError>{form.formState.errors.xeroAssetNo.message}</FieldError>
+                        )}
+                      </FieldContent>
+                    </Field>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="poNumber">PO Number</Label>
-                      <Input id="poNumber" name="poNumber" defaultValue={asset.poNumber || ''} />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="xeroAssetNo">Xero Asset No</Label>
-                      <Input id="xeroAssetNo" name="xeroAssetNo" defaultValue={asset.xeroAssetNo || ''} />
-                    </div>
-                  </div>
+                  <Field>
+                    <FieldLabel htmlFor="remarks">Remarks</FieldLabel>
+                    <FieldContent>
+                      <Textarea
+                        id="remarks"
+                        {...form.register("remarks")}
+                        rows={3}
+                        aria-invalid={form.formState.errors.remarks ? "true" : "false"}
+                      />
+                      {form.formState.errors.remarks && (
+                        <FieldError>{form.formState.errors.remarks.message}</FieldError>
+                      )}
+                    </FieldContent>
+                  </Field>
 
-                  <div className="grid gap-2">
-                    <Label htmlFor="remarks">Remarks</Label>
-                    <Textarea id="remarks" name="remarks" defaultValue={asset.remarks || ''} rows={3} />
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="additionalInformation">Additional Information</Label>
-                    <Textarea id="additionalInformation" name="additionalInformation" defaultValue={asset.additionalInformation || ''} rows={3} />
-                  </div>
+                  <Field>
+                    <FieldLabel htmlFor="additionalInformation">Additional Information</FieldLabel>
+                    <FieldContent>
+                      <Textarea
+                        id="additionalInformation"
+                        {...form.register("additionalInformation")}
+                        rows={3}
+                        aria-invalid={form.formState.errors.additionalInformation ? "true" : "false"}
+                      />
+                      {form.formState.errors.additionalInformation && (
+                        <FieldError>{form.formState.errors.additionalInformation.message}</FieldError>
+                      )}
+                    </FieldContent>
+                  </Field>
 
                   <div className="grid gap-2">
                     <Label htmlFor="images">Asset Images</Label>
@@ -575,24 +979,14 @@ export function EditAssetDialog({
                     ) : (
                       <div className="space-y-2 mb-4">
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                          {existingImages.map((image: { id: string; imageUrl: string; assetTagId: string; fileName?: string; createdAt?: string }) => (
+                          {existingImages.map((image: { id: string; imageUrl: string; assetTagId: string; fileName?: string; createdAt?: string }, index: number) => (
                             <div
                               key={image.id}
                               className="relative group border rounded-lg overflow-visible cursor-pointer"
                               onClick={() => {
-                                // Use the reusable ImagePreviewDialog component
-                                setPreviewImage({
-                                  imageUrl: image.imageUrl,
-                                  fileName: image.fileName,
-                                  assetTagId: image.assetTagId || asset.assetTagId,
-                                  alt: `Asset ${asset.assetTagId} image`,
-                                  createdAt: image.createdAt,
-                                })
+                                // Set the index of the clicked image and open preview
+                                setPreviewImageIndex(index)
                                 setIsPreviewOpen(true)
-                                // Also call the callback for backward compatibility
-                                if (onPreviewImage) {
-                                  onPreviewImage(image.imageUrl)
-                                }
                               }}
                             >
                               <div className="aspect-square bg-muted relative overflow-hidden rounded-lg">
@@ -799,8 +1193,14 @@ export function EditAssetDialog({
       <ImagePreviewDialog
         open={isPreviewOpen}
         onOpenChange={setIsPreviewOpen}
-        image={previewImage}
+        existingImages={existingImages.map((img: { id: string; imageUrl: string; assetTagId: string; fileName?: string; createdAt?: string }) => ({
+          id: img.id,
+          imageUrl: img.imageUrl,
+          fileName: img.fileName || `Image ${img.id}`,
+        }))}
+        title={`Asset Images - ${asset.assetTagId}`}
         maxHeight="h-[70vh] max-h-[600px]"
+        initialIndex={previewImageIndex}
       />
     </>
   )

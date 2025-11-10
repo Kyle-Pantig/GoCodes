@@ -1,15 +1,19 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { Dog } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
+import { loginSchema, type LoginFormData } from "@/lib/validations/auth"
 import { Button } from "@/components/ui/button"
 import {
   Field,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field"
@@ -21,9 +25,16 @@ export function LoginForm({
 }: React.ComponentProps<"div">) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+  
+  const form = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  })
+
+  const isLoading = form.formState.isSubmitting
 
   useEffect(() => {
     const message = searchParams.get('message')
@@ -34,24 +45,20 @@ export function LoginForm({
     }
   }, [searchParams, router])
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    setIsLoading(true)
-
+  const onSubmit = async (data: LoginFormData) => {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(data),
       })
 
-      const data = await response.json()
+      const responseData = await response.json()
 
       if (!response.ok) {
-        toast.error(data.error || 'Failed to login')
-        setIsLoading(false)
+        toast.error(responseData.error || 'Failed to login')
         return
       }
 
@@ -61,13 +68,12 @@ export function LoginForm({
       router.refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "An unexpected error occurred")
-      setIsLoading(false)
     }
   }
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={form.handleSubmit(onSubmit)}>
         <FieldGroup>
           <div className="flex flex-col items-center gap-2 text-center">
             <a
@@ -89,29 +95,37 @@ export function LoginForm({
               id="email"
               type="email"
               placeholder="m@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
+              {...form.register("email")}
+              aria-invalid={form.formState.errors.email ? "true" : "false"}
               disabled={isLoading}
             />
+            {form.formState.errors.email && (
+              <FieldError>{form.formState.errors.email.message}</FieldError>
+            )}
           </Field>
+          
           <Field>
             <FieldLabel htmlFor="password">Password</FieldLabel>
             <Input
               id="password"
               type="password"
               placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
+              autoComplete="off"
+              {...form.register("password")}
+              aria-invalid={form.formState.errors.password ? "true" : "false"}
               disabled={isLoading}
             />
+            {form.formState.errors.password && (
+              <FieldError>{form.formState.errors.password.message}</FieldError>
+            )}
           </Field>
+          
           <Field>
             <Button type="submit" disabled={isLoading}>
               {isLoading ? "Logging in..." : "Login"}
             </Button>
           </Field>
+          
           <FieldDescription>
             Don&apos;t have an account? <a href="/signup" className="text-primary hover:underline">Sign up</a>
           </FieldDescription>

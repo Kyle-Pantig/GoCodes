@@ -8,22 +8,35 @@ const globalForPrisma = globalThis as unknown as {
 // This happens with PgBouncer/connection pooling and dev HMR
 function makeConnectionUrl() {
   const url = process.env.DATABASE_URL || ''
-  if (!url) return url
-  
-  const urlObj = new URL(url)
-  
-  // Add pgbouncer=true to disable prepared statements
-  urlObj.searchParams.set('pgbouncer', 'true')
-  
-  // Add connection timeout settings if not already present
-  if (!urlObj.searchParams.has('connect_timeout')) {
-    urlObj.searchParams.set('connect_timeout', '10')
-  }
-  if (!urlObj.searchParams.has('pool_timeout')) {
-    urlObj.searchParams.set('pool_timeout', '10')
+  if (!url) {
+    console.error('[PRISMA] DATABASE_URL is not set')
+    return url
   }
   
-  return urlObj.toString()
+  try {
+    const urlObj = new URL(url)
+    
+    // Add pgbouncer=true to disable prepared statements (for Supabase pooler)
+    urlObj.searchParams.set('pgbouncer', 'true')
+    
+    // Add connection timeout settings if not already present
+    if (!urlObj.searchParams.has('connect_timeout')) {
+      urlObj.searchParams.set('connect_timeout', '10')
+    }
+    if (!urlObj.searchParams.has('pool_timeout')) {
+      urlObj.searchParams.set('pool_timeout', '10')
+    }
+    
+    // Add statement cache size for better connection pool handling
+    if (!urlObj.searchParams.has('statement_cache_size')) {
+      urlObj.searchParams.set('statement_cache_size', '0')
+    }
+    
+    return urlObj.toString()
+  } catch (error) {
+    console.error('[PRISMA] Invalid DATABASE_URL format:', error)
+    return url
+  }
 }
 
 export const prisma =

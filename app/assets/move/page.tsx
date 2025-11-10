@@ -27,6 +27,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
+import { EmployeeSelectField } from "@/components/employee-select-field"
 import {
   Select,
   SelectContent,
@@ -70,19 +71,7 @@ interface Asset {
   }>
 }
 
-interface EmployeeUser {
-  id: string
-  name: string
-  email: string
-  department: string | null
-  checkouts?: Array<{
-    id: string
-    asset: {
-      id: string
-      assetTagId: string
-    }
-  }>
-}
+
 
 type MoveType = "Location Transfer" | "Employee Assignment" | "Department Transfer" | ""
 
@@ -136,20 +125,6 @@ export default function MoveAssetPage() {
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
 
-  // Fetch employees
-  const { data: employees = [] } = useQuery<EmployeeUser[]>({
-    queryKey: ["employees", "move"],
-    queryFn: async () => {
-      const response = await fetch("/api/employees")
-      if (!response.ok) {
-        throw new Error('Failed to fetch employees')
-      }
-      const data = await response.json()
-      return (data.employees || []) as EmployeeUser[]
-    },
-    retry: 2,
-    retryDelay: 1000,
-  })
 
   // Fetch move statistics
   const { data: moveStats, isLoading: isLoadingMoveStats, error: moveStatsError } = useQuery<{
@@ -808,59 +783,15 @@ export default function MoveAssetPage() {
                 )}
 
                 {moveType === 'Employee Assignment' && (
-                  <Field>
-                    <FieldLabel htmlFor="employee">
-                      Assign To Employee <span className="text-destructive">*</span>
-                      {selectedAsset.checkouts?.[0]?.employeeUser && (
-                        <span className="text-xs text-muted-foreground font-normal ml-2">
-                          (Current: {selectedAsset.checkouts[0].employeeUser.name})
-                        </span>
-                      )}
-                    </FieldLabel>
-                    <FieldContent>
-                      <Select
-                        value={selectedEmployeeId}
-                        onValueChange={setSelectedEmployeeId}
-                        disabled={!canViewAssets || !canMove}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select an employee" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {employees.map((employee) => {
-                            const isCurrentEmployee = selectedAsset.checkouts?.[0]?.employeeUser?.id === employee.id
-                            const activeCheckouts = employee.checkouts || []
-                            const hasCheckedOutAssets = activeCheckouts.length > 0
-                            const assetTagIds = hasCheckedOutAssets 
-                              ? activeCheckouts.map(co => co.asset.assetTagId).join(', ')
-                              : ''
-                            
-                            return (
-                              <SelectItem 
-                                key={employee.id} 
-                                value={employee.id}
-                                className={isCurrentEmployee ? "bg-primary" : ""}
-                              >
-                                <span>
-                                  {employee.name} ({employee.email}){employee.department && <span className="text-muted-foreground"> - {employee.department}</span>}
-                                  {isCurrentEmployee && (
-                                    <span className="ml-2 text-xs text-muted-foreground font-medium">
-                                      (Current)
-                                    </span>
-                                  )}
-                                  {hasCheckedOutAssets && (
-                                    <span className="ml-2 text-xs text-muted-foreground">
-                                      - Checked out: {assetTagIds}
-                                    </span>
-                                  )}
-                                </span>
-                              </SelectItem>
-                            )
-                          })}
-                        </SelectContent>
-                      </Select>
-                    </FieldContent>
-                  </Field>
+                  <EmployeeSelectField
+                    value={selectedEmployeeId}
+                    onValueChange={setSelectedEmployeeId}
+                    label="Assign To Employee"
+                    required
+                    disabled={!canViewAssets || !canMove}
+                    currentEmployeeId={selectedAsset.checkouts?.[0]?.employeeUser?.id}
+                    queryKey={["employees", "move"]}
+                  />
                 )}
 
                 {moveType === 'Department Transfer' && (

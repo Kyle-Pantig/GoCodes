@@ -1,7 +1,9 @@
 "use client"
 
-import { useState, useRef, useMemo } from "react"
+import { useState, useRef, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
+import { useForm, Controller } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { PlusIcon, Sparkles, ImageIcon, Upload, ChevronDown } from "lucide-react"
 import { usePermissions } from '@/hooks/use-permissions'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
@@ -10,7 +12,8 @@ import { useCategories, useSubCategories, useCreateCategory, useCreateSubCategor
 import { CategoryDialog } from "@/components/category-dialog"
 import { SubCategoryDialog } from "@/components/subcategory-dialog"
 import { MediaBrowserDialog } from "@/components/media-browser-dialog"
-import { ImagePreviewDialog } from "@/components/image-preview-dialog"
+import { SelectedImagesListDialog } from "@/components/selected-images-list-dialog"
+import { assetSchema, type AssetFormData } from "@/lib/validations/assets"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import {
@@ -26,7 +29,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
+import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
 import {
   Select,
   SelectContent,
@@ -41,11 +44,9 @@ export default function AddAssetPage() {
   const { hasPermission, isLoading } = usePermissions()
   const canCreateAssets = hasPermission('canCreateAssets')
   const canManageCategories = hasPermission('canManageCategories')
-  const [selectedCategory, setSelectedCategory] = useState<string>("")
   
-  // React Query hooks
+  // React Query hooks - will be set up after form initialization
   const { data: categories = [] } = useCategories()
-  const { data: subCategories = [] } = useSubCategories(selectedCategory || null)
   const createCategoryMutation = useCreateCategory()
   const createSubCategoryMutation = useCreateSubCategory()
   const createAssetMutation = useCreateAsset()
@@ -60,9 +61,13 @@ export default function AddAssetPage() {
   const [uploadingImages, setUploadingImages] = useState(false)
   const [mediaBrowserOpen, setMediaBrowserOpen] = useState(false)
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
+  const [isGeneratingTag, setIsGeneratingTag] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const assetTagIdInputRef = useRef<HTMLInputElement>(null)
 
-  const [formData, setFormData] = useState({
+  const form = useForm<AssetFormData>({
+    resolver: zodResolver(assetSchema),
+    defaultValues: {
     assetTagId: "",
     description: "",
     purchasedFrom: "",
@@ -74,7 +79,7 @@ export default function AddAssetPage() {
     additionalInformation: "",
     xeroAssetNo: "",
     owner: "",
-    status: "",
+      status: "Available",
     issuedTo: "",
     poNumber: "",
     paymentVoucherNumber: "",
@@ -96,12 +101,18 @@ export default function AddAssetPage() {
     department: "",
     site: "",
     location: "",
+    },
   })
+
+  // Watch categoryId to sync with selectedCategory state
+  const categoryId = form.watch("categoryId")
+  const selectedCategory = categoryId || ""
+  const { data: subCategories = [] } = useSubCategories(selectedCategory || null)
 
   // Reset subcategory when category changes
   const handleCategoryChange = (value: string) => {
-    setSelectedCategory(value)
-    setFormData((prev) => ({ ...prev, categoryId: value, subCategoryId: "" }))
+    form.setValue("categoryId", value)
+    form.setValue("subCategoryId", "")
   }
 
   const handleCreateCategory = async (data: { name: string; description?: string }) => {
@@ -179,9 +190,7 @@ export default function AddAssetPage() {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
+  const onSubmit = async (data: AssetFormData) => {
     if (!canCreateAssets) {
       toast.error('You do not have permission to create assets')
       return
@@ -190,25 +199,26 @@ export default function AddAssetPage() {
     try {
       // Create asset first
       await createAssetMutation.mutateAsync({
-        ...formData,
-        categoryId: selectedCategory || null,
+        ...data,
+        categoryId: data.categoryId || null,
+        status: data.status || "Available", // Ensure status defaults to "Available"
       })
 
       // Upload images and link existing images after asset is created
       const totalImages = selectedImages.length + selectedExistingImages.length
-      if (totalImages > 0 && formData.assetTagId) {
+      if (totalImages > 0 && data.assetTagId) {
         setUploadingImages(true)
         try {
           // Upload new images
           if (selectedImages.length > 0) {
           await Promise.all(
-            selectedImages.map(file => uploadImage(file, formData.assetTagId))
+            selectedImages.map(file => uploadImage(file, data.assetTagId))
           )
           }
           // Link existing images
           if (selectedExistingImages.length > 0) {
             await Promise.all(
-              selectedExistingImages.map(img => linkExistingImage(img.imageUrl, formData.assetTagId))
+              selectedExistingImages.map(img => linkExistingImage(img.imageUrl, data.assetTagId))
             )
           }
           toast.success(`Asset created successfully with ${totalImages} image(s)`)
@@ -269,26 +279,6 @@ export default function AddAssetPage() {
     return formatted
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target
-    const checked = (e.target as HTMLInputElement).checked
-    
-    // Apply formatting to asset tag field
-    if (name === 'assetTagId' && type !== 'checkbox') {
-      const formatted = formatAssetTag(value)
-      setFormData((prev) => ({
-        ...prev,
-        [name]: formatted,
-      }))
-      return
-    }
-    
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }))
-  }
-
   // Check if asset tag exists
   const checkAssetTagExists = async (assetTag: string): Promise<boolean> => {
     try {
@@ -303,26 +293,32 @@ export default function AddAssetPage() {
 
   // Generate unique asset tag
   const handleGenerateAssetTag = async () => {
+    setIsGeneratingTag(true)
     try {
       // Check if subcategory is selected
-      if (!formData.subCategoryId) {
+      const subCategoryId = form.getValues("subCategoryId")
+      if (!subCategoryId) {
         toast.error('Please select a subcategory first to generate the asset tag')
+        setIsGeneratingTag(false)
         return
       }
 
       // Get year from purchase date or use current year
+      const purchaseDate = form.getValues("purchaseDate")
       let year: string
-      if (formData.purchaseDate) {
-        const purchaseYear = new Date(formData.purchaseDate).getFullYear()
+      if (purchaseDate) {
+        const purchaseYear = new Date(purchaseDate).getFullYear()
         year = purchaseYear.toString().slice(-2) // Last 2 digits
       } else {
         year = new Date().getFullYear().toString().slice(-2)
       }
 
       // Get first letter of subcategory (required)
-      const selectedSubCategory = subCategories.find(sc => sc.id === formData.subCategoryId)
+      const currentSubCategoryId = form.getValues("subCategoryId")
+      const selectedSubCategory = subCategories.find(sc => sc.id === currentSubCategoryId)
       if (!selectedSubCategory?.name) {
         toast.error('Please select a valid subcategory first')
+        setIsGeneratingTag(false)
         return
       }
       const subCategoryLetter = selectedSubCategory.name.charAt(0).toUpperCase()
@@ -349,99 +345,65 @@ export default function AddAssetPage() {
 
       if (!isUnique) {
         toast.error('Failed to generate unique asset tag. Please try again.')
+        setIsGeneratingTag(false)
         return
       }
 
-      // Set the generated tag
-      setFormData((prev) => ({
-        ...prev,
-        assetTagId: generatedTag,
-      }))
+      // Set the generated tag and trigger validation
+      form.setValue("assetTagId", generatedTag, { shouldValidate: true })
 
       toast.success('Asset tag generated successfully')
     } catch (error) {
       console.error('Error generating asset tag:', error)
       toast.error('Failed to generate asset tag')
+    } finally {
+      setIsGeneratingTag(false)
     }
   }
 
   // Track form changes to show floating buttons
+  const formValues = form.watch()
   const isFormDirty = useMemo(() => {
     return !!(
-      formData.assetTagId.trim() ||
-      formData.description.trim() ||
-      formData.purchasedFrom.trim() ||
-      formData.purchaseDate ||
-      formData.brand.trim() ||
-      formData.cost ||
-      formData.model.trim() ||
-      formData.serialNo.trim() ||
-      formData.additionalInformation.trim() ||
-      formData.xeroAssetNo.trim() ||
-      formData.owner.trim() ||
-      formData.status ||
-      formData.issuedTo.trim() ||
-      formData.poNumber.trim() ||
-      formData.paymentVoucherNumber.trim() ||
-      formData.assetType.trim() ||
-      formData.deliveryDate ||
-      formData.remarks.trim() ||
-      formData.qr ||
-      formData.oldAssetTag.trim() ||
-      formData.depreciableAsset ||
-      formData.depreciableCost ||
-      formData.salvageValue ||
-      formData.assetLifeMonths ||
-      formData.depreciationMethod ||
-      formData.dateAcquired ||
-      formData.pbiNumber.trim() ||
-      formData.unaccountedInventory ||
-      formData.categoryId ||
-      formData.subCategoryId ||
-      formData.department.trim() ||
-      formData.site.trim() ||
-      formData.location.trim()
+      formValues.assetTagId?.trim() ||
+      formValues.description?.trim() ||
+      formValues.purchasedFrom?.trim() ||
+      formValues.purchaseDate ||
+      formValues.brand?.trim() ||
+      formValues.cost ||
+      formValues.model?.trim() ||
+      formValues.serialNo?.trim() ||
+      formValues.additionalInformation?.trim() ||
+      formValues.xeroAssetNo?.trim() ||
+      formValues.owner?.trim() ||
+      formValues.status ||
+      formValues.issuedTo?.trim() ||
+      formValues.poNumber?.trim() ||
+      formValues.paymentVoucherNumber?.trim() ||
+      formValues.assetType?.trim() ||
+      formValues.deliveryDate ||
+      formValues.remarks?.trim() ||
+      formValues.qr ||
+      formValues.oldAssetTag?.trim() ||
+      formValues.depreciableAsset ||
+      formValues.depreciableCost ||
+      formValues.salvageValue ||
+      formValues.assetLifeMonths ||
+      formValues.depreciationMethod ||
+      formValues.dateAcquired ||
+      formValues.pbiNumber?.trim() ||
+      formValues.unaccountedInventory ||
+      formValues.categoryId ||
+      formValues.subCategoryId ||
+      formValues.department?.trim() ||
+      formValues.site?.trim() ||
+      formValues.location?.trim()
     )
-  }, [formData])
+  }, [formValues])
 
   // Clear form function
   const clearForm = () => {
-    setFormData({
-      assetTagId: "",
-      description: "",
-      purchasedFrom: "",
-      purchaseDate: "",
-      brand: "",
-      cost: "",
-      model: "",
-      serialNo: "",
-      additionalInformation: "",
-      xeroAssetNo: "",
-      owner: "",
-      status: "",
-      issuedTo: "",
-      poNumber: "",
-      paymentVoucherNumber: "",
-      assetType: "",
-      deliveryDate: "",
-      remarks: "",
-      qr: "",
-      oldAssetTag: "",
-      depreciableAsset: false,
-      depreciableCost: "",
-      salvageValue: "",
-      assetLifeMonths: "",
-      depreciationMethod: "",
-      dateAcquired: "",
-      pbiNumber: "",
-      unaccountedInventory: false,
-      categoryId: "",
-      subCategoryId: "",
-      department: "",
-      site: "",
-      location: "",
-    })
-    setSelectedCategory("")
+    form.reset()
   }
 
   // Show loading state while permissions are being fetched
@@ -484,7 +446,7 @@ export default function AddAssetPage() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-3">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
         <div className="grid gap-2.5 md:grid-cols-2">
           {/* Basic Information & Asset Details */}
           <Card className="md:col-span-2">
@@ -504,14 +466,66 @@ export default function AddAssetPage() {
                       <div className="flex gap-2">
                         <Input
                           id="assetTagId"
-                          name="assetTagId"
-                          value={formData.assetTagId}
-                          onChange={handleChange}
-                          required
+                          {...(() => {
+                            const { ref, onChange, ...rest } = form.register("assetTagId", {
+                              onChange: (e) => {
+                                const input = e.target as HTMLInputElement
+                                const cursorPosition = input.selectionStart || 0
+                                const oldValue = form.getValues("assetTagId") || ""
+                                const newValue = e.target.value
+                                
+                                const formatted = formatAssetTag(newValue)
+                                
+                                // Calculate new cursor position
+                                // Count characters before cursor in old value
+                                const beforeCursor = oldValue.substring(0, cursorPosition)
+                                // Count non-formatting characters (excluding hyphens)
+                                const nonFormattingBefore = beforeCursor.replace(/-/g, '').length
+                                
+                                // Find position in formatted string
+                                let newCursorPosition = 0
+                                let nonFormattingCount = 0
+                                for (let i = 0; i < formatted.length; i++) {
+                                  if (formatted[i] !== '-') {
+                                    nonFormattingCount++
+                                    if (nonFormattingCount > nonFormattingBefore) {
+                                      newCursorPosition = i
+                                      break
+                                    }
+                                  }
+                                  if (nonFormattingCount === nonFormattingBefore) {
+                                    newCursorPosition = i + 1
+                                    break
+                                  }
+                                }
+                                
+                                // Set the formatted value
+                                form.setValue("assetTagId", formatted, { shouldValidate: false })
+                                
+                                // Restore cursor position after a brief delay to ensure DOM update
+                                setTimeout(() => {
+                                  if (assetTagIdInputRef.current) {
+                                    assetTagIdInputRef.current.setSelectionRange(
+                                      Math.min(newCursorPosition, formatted.length),
+                                      Math.min(newCursorPosition, formatted.length)
+                                    )
+                                  }
+                                }, 0)
+                              }
+                            })
+                            return {
+                              ...rest,
+                              onChange,
+                              ref: (e: HTMLInputElement | null) => {
+                                assetTagIdInputRef.current = e
+                                ref(e)
+                              }
+                            }
+                          })()}
+                          aria-invalid={form.formState.errors.assetTagId ? "true" : "false"}
                           placeholder="e.g., 25-016011U-SA"
                           className="flex-1"
                           maxLength={13}
-                          pattern="[0-9]{2}-[0-9]{6}[A-Z]-SA"
                         />
                         <Button
                           type="button"
@@ -519,10 +533,18 @@ export default function AddAssetPage() {
                           onClick={handleGenerateAssetTag}
                           title="Auto-generate asset tag"
                           className="shrink-0"
+                          disabled={isGeneratingTag}
                         >
-                          <Sparkles className="h-4 w-4" />
+                          {isGeneratingTag ? (
+                            <Spinner className="h-4 w-4" />
+                          ) : (
+                            <Sparkles className="h-4 w-4" />
+                          )}
                         </Button>
                       </div>
+                      {form.formState.errors.assetTagId && (
+                        <FieldError>{form.formState.errors.assetTagId.message}</FieldError>
+                      )}
                     </FieldContent>
                   </Field>
 
@@ -533,48 +555,42 @@ export default function AddAssetPage() {
                     <FieldContent>
                       <textarea
                         id="description"
-                        name="description"
-                        value={formData.description}
-                        onChange={handleChange}
-                        required
+                        {...form.register("description")}
+                        aria-invalid={form.formState.errors.description ? "true" : "false"}
                         className="min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
                         placeholder="Asset description"
                       />
+                      {form.formState.errors.description && (
+                        <FieldError>{form.formState.errors.description.message}</FieldError>
+                      )}
                     </FieldContent>
                   </Field>
 
                   <Field>
                     <FieldLabel htmlFor="status">Status</FieldLabel>
                     <FieldContent>
-                      <Select
-                        value={formData.status}
-                        onValueChange={(value) =>
-                          setFormData((prev) => ({ ...prev, status: value }))
-                        }
-                      >
+                      <Controller
+                        name="status"
+                        control={form.control}
+                        render={({ field }) => (
+                          <Select value={field.value || "Available"} onValueChange={field.onChange}>
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select status" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="Available">Available</SelectItem>
-                          <SelectItem value="Checked out">Checked out</SelectItem>
-                          <SelectItem value="Maintenance">Maintenance</SelectItem>
-                          <SelectItem value="Leased">Leased</SelectItem>
-                          <SelectItem value="Sold">Sold</SelectItem>
-                          <SelectItem value="Donated">Donated</SelectItem>
-                          <SelectItem value="Scrapped">Scrapped</SelectItem>
-                          <SelectItem value="Lost/Missing">Lost/Missing</SelectItem>
-                          <SelectItem value="Destroyed">Destroyed</SelectItem>
-                          <SelectItem value="Inactive">Inactive</SelectItem>
-                          <SelectItem value="Disposed">Disposed</SelectItem>
                         </SelectContent>
                       </Select>
+                        )}
+                      />
                     </FieldContent>
                   </Field>
 
                   <Field>
                     <div className="flex items-center justify-between w-full">
-                      <FieldLabel htmlFor="category">Category</FieldLabel>
+                      <FieldLabel htmlFor="category">
+                        Category <span className="text-destructive">*</span>
+                      </FieldLabel>
                       {canManageCategories && (
                         <>
                           <Button
@@ -597,11 +613,18 @@ export default function AddAssetPage() {
                       )}
                     </div>
                     <FieldContent>
+                      <Controller
+                        name="categoryId"
+                        control={form.control}
+                        render={({ field }) => (
                       <Select
-                        value={selectedCategory}
-                        onValueChange={handleCategoryChange}
+                            value={field.value || ""}
+                            onValueChange={(value) => {
+                              field.onChange(value)
+                              handleCategoryChange(value)
+                            }}
                       >
-                        <SelectTrigger className="w-full">
+                        <SelectTrigger className="w-full" aria-invalid={form.formState.errors.categoryId ? "true" : "false"}>
                           <SelectValue placeholder="Select a category" />
                         </SelectTrigger>
                         <SelectContent>
@@ -612,12 +635,19 @@ export default function AddAssetPage() {
                           ))}
                         </SelectContent>
                       </Select>
+                        )}
+                      />
+                      {form.formState.errors.categoryId && (
+                        <FieldError>{form.formState.errors.categoryId.message}</FieldError>
+                      )}
                     </FieldContent>
                   </Field>
 
                   <Field>
                     <div className="flex items-center justify-between w-full">
-                      <FieldLabel htmlFor="subCategory">Sub Category</FieldLabel>
+                      <FieldLabel htmlFor="subCategory">
+                        Sub Category <span className="text-destructive">*</span>
+                      </FieldLabel>
                       {canManageCategories && (
                         <>
                           <Button
@@ -643,14 +673,16 @@ export default function AddAssetPage() {
                       )}
                     </div>
                     <FieldContent>
+                      <Controller
+                        name="subCategoryId"
+                        control={form.control}
+                        render={({ field }) => (
                       <Select
-                        value={formData.subCategoryId}
-                        onValueChange={(value) =>
-                          setFormData((prev) => ({ ...prev, subCategoryId: value }))
-                        }
+                            value={field.value || ""}
+                            onValueChange={field.onChange}
                         disabled={!selectedCategory}
                       >
-                        <SelectTrigger className="w-full" disabled={!selectedCategory}>
+                        <SelectTrigger className="w-full" disabled={!selectedCategory} aria-invalid={form.formState.errors.subCategoryId ? "true" : "false"}>
                           <SelectValue 
                             placeholder={
                               selectedCategory 
@@ -667,32 +699,45 @@ export default function AddAssetPage() {
                           ))}
                         </SelectContent>
                       </Select>
+                        )}
+                      />
+                      {form.formState.errors.subCategoryId && (
+                        <FieldError>{form.formState.errors.subCategoryId.message}</FieldError>
+                      )}
                     </FieldContent>
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="brand">Brand</FieldLabel>
+                    <FieldLabel htmlFor="brand">
+                      Brand <span className="text-destructive">*</span>
+                    </FieldLabel>
                     <FieldContent>
                       <Input
                         id="brand"
-                        name="brand"
-                        value={formData.brand}
-                        onChange={handleChange}
+                        {...form.register("brand")}
                         placeholder="e.g., Dell, HP"
+                        aria-invalid={form.formState.errors.brand ? "true" : "false"}
                       />
+                      {form.formState.errors.brand && (
+                        <FieldError>{form.formState.errors.brand.message}</FieldError>
+                      )}
                     </FieldContent>
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="model">Model</FieldLabel>
+                    <FieldLabel htmlFor="model">
+                      Model <span className="text-destructive">*</span>
+                    </FieldLabel>
                     <FieldContent>
                       <Input
                         id="model"
-                        name="model"
-                        value={formData.model}
-                        onChange={handleChange}
+                        {...form.register("model")}
                         placeholder="e.g., OptiPlex 3090"
+                        aria-invalid={form.formState.errors.model ? "true" : "false"}
                       />
+                      {form.formState.errors.model && (
+                        <FieldError>{form.formState.errors.model.message}</FieldError>
+                      )}
                     </FieldContent>
                   </Field>
 
@@ -701,9 +746,7 @@ export default function AddAssetPage() {
                     <FieldContent>
                       <Input
                         id="serialNo"
-                        name="serialNo"
-                        value={formData.serialNo}
-                        onChange={handleChange}
+                        {...form.register("serialNo")}
                         placeholder="Serial number"
                       />
                     </FieldContent>
@@ -714,9 +757,7 @@ export default function AddAssetPage() {
                     <FieldContent>
                       <Input
                         id="assetType"
-                        name="assetType"
-                        value={formData.assetType}
-                        onChange={handleChange}
+                        {...form.register("assetType")}
                         placeholder="e.g., Desktop, Laptop, Monitor"
                       />
                     </FieldContent>
@@ -834,9 +875,7 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <Input
                       id="purchasedFrom"
-                      name="purchasedFrom"
-                      value={formData.purchasedFrom}
-                      onChange={handleChange}
+                      {...form.register("purchasedFrom")}
                       placeholder="Vendor name"
                     />
                   </FieldContent>
@@ -847,10 +886,8 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <Input
                       id="purchaseDate"
-                      name="purchaseDate"
                       type="date"
-                      value={formData.purchaseDate}
-                      onChange={handleChange}
+                      {...form.register("purchaseDate")}
                     />
                   </FieldContent>
                 </Field>
@@ -860,13 +897,14 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <Input
                       id="cost"
-                      name="cost"
                       type="number"
                       step="0.01"
-                      value={formData.cost}
-                      onChange={handleChange}
+                      {...form.register("cost")}
                       placeholder="0.00"
                     />
+                    {form.formState.errors.cost && (
+                      <FieldError>{form.formState.errors.cost.message}</FieldError>
+                    )}
                   </FieldContent>
                 </Field>
 
@@ -875,9 +913,7 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <Input
                       id="poNumber"
-                      name="poNumber"
-                      value={formData.poNumber}
-                      onChange={handleChange}
+                      {...form.register("poNumber")}
                       placeholder="Purchase order number"
                     />
                   </FieldContent>
@@ -888,9 +924,7 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <Input
                       id="department"
-                      name="department"
-                      value={formData.department}
-                      onChange={handleChange}
+                      {...form.register("department")}
                       placeholder="Department name"
                     />
                   </FieldContent>
@@ -901,9 +935,7 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <Input
                       id="site"
-                      name="site"
-                      value={formData.site}
-                      onChange={handleChange}
+                      {...form.register("site")}
                       placeholder="Site location"
                     />
                   </FieldContent>
@@ -914,9 +946,7 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <Input
                       id="location"
-                      name="location"
-                      value={formData.location}
-                      onChange={handleChange}
+                      {...form.register("location")}
                       placeholder="Specific location"
                     />
                   </FieldContent>
@@ -927,9 +957,7 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <Input
                       id="owner"
-                      name="owner"
-                      value={formData.owner}
-                      onChange={handleChange}
+                      {...form.register("owner")}
                       placeholder="Asset owner"
                     />
                   </FieldContent>
@@ -940,9 +968,7 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <Input
                       id="issuedTo"
-                      name="issuedTo"
-                      value={formData.issuedTo}
-                      onChange={handleChange}
+                      {...form.register("issuedTo")}
                       placeholder="Person issued to"
                     />
                   </FieldContent>
@@ -953,9 +979,7 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <Input
                       id="xeroAssetNo"
-                      name="xeroAssetNo"
-                      value={formData.xeroAssetNo}
-                      onChange={handleChange}
+                      {...form.register("xeroAssetNo")}
                       placeholder="Xero reference"
                     />
                   </FieldContent>
@@ -964,12 +988,11 @@ export default function AddAssetPage() {
                 <Field>
                   <FieldLabel htmlFor="qr">QR Code</FieldLabel>
                   <FieldContent>
-                    <Select
-                      value={formData.qr}
-                      onValueChange={(value) =>
-                        setFormData((prev) => ({ ...prev, qr: value }))
-                      }
-                    >
+                    <Controller
+                      name="qr"
+                      control={form.control}
+                      render={({ field }) => (
+                        <Select value={field.value || ""} onValueChange={field.onChange}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select option" />
                       </SelectTrigger>
@@ -978,6 +1001,8 @@ export default function AddAssetPage() {
                         <SelectItem value="NO">NO</SelectItem>
                       </SelectContent>
                     </Select>
+                      )}
+                    />
                   </FieldContent>
                 </Field>
 
@@ -986,9 +1011,7 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <Input
                       id="pbiNumber"
-                      name="pbiNumber"
-                      value={formData.pbiNumber}
-                      onChange={handleChange}
+                      {...form.register("pbiNumber")}
                       placeholder="PBI number"
                     />
                   </FieldContent>
@@ -999,9 +1022,7 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <textarea
                       id="additionalInformation"
-                      name="additionalInformation"
-                      value={formData.additionalInformation}
-                      onChange={handleChange}
+                      {...form.register("additionalInformation")}
                       className="min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
                       placeholder="Any additional notes"
                     />
@@ -1013,9 +1034,7 @@ export default function AddAssetPage() {
                   <FieldContent>
                     <textarea
                       id="remarks"
-                      name="remarks"
-                      value={formData.remarks}
-                      onChange={handleChange}
+                      {...form.register("remarks")}
                       className="min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
                       placeholder="Additional remarks"
                     />
@@ -1044,9 +1063,7 @@ export default function AddAssetPage() {
                       <input
                         type="checkbox"
                         id="depreciableAsset"
-                        name="depreciableAsset"
-                        checked={formData.depreciableAsset}
-                        onChange={handleChange}
+                        {...form.register("depreciableAsset")}
                         className="h-4 w-4 rounded border-gray-300 cursor-pointer"
                       />
                       <FieldLabel htmlFor="depreciableAsset" className="cursor-pointer font-medium">
@@ -1060,9 +1077,7 @@ export default function AddAssetPage() {
                       <input
                         type="checkbox"
                         id="unaccountedInventory"
-                        name="unaccountedInventory"
-                        checked={formData.unaccountedInventory}
-                        onChange={handleChange}
+                        {...form.register("unaccountedInventory")}
                         className="h-4 w-4 rounded border-gray-300 cursor-pointer"
                       />
                       <FieldLabel htmlFor="unaccountedInventory" className="cursor-pointer font-medium">
@@ -1079,13 +1094,14 @@ export default function AddAssetPage() {
                     <FieldContent>
                       <Input
                         id="depreciableCost"
-                        name="depreciableCost"
                         type="number"
                         step="0.01"
-                        value={formData.depreciableCost}
-                        onChange={handleChange}
+                        {...form.register("depreciableCost")}
                         placeholder="0.00"
                       />
+                      {form.formState.errors.depreciableCost && (
+                        <FieldError>{form.formState.errors.depreciableCost.message}</FieldError>
+                      )}
                     </FieldContent>
                   </Field>
 
@@ -1094,13 +1110,14 @@ export default function AddAssetPage() {
                     <FieldContent>
                       <Input
                         id="salvageValue"
-                        name="salvageValue"
                         type="number"
                         step="0.01"
-                        value={formData.salvageValue}
-                        onChange={handleChange}
+                        {...form.register("salvageValue")}
                         placeholder="0.00"
                       />
+                      {form.formState.errors.salvageValue && (
+                        <FieldError>{form.formState.errors.salvageValue.message}</FieldError>
+                      )}
                     </FieldContent>
                   </Field>
                 </div>
@@ -1112,12 +1129,13 @@ export default function AddAssetPage() {
                     <FieldContent>
                       <Input
                         id="assetLifeMonths"
-                        name="assetLifeMonths"
                         type="number"
-                        value={formData.assetLifeMonths}
-                        onChange={handleChange}
+                        {...form.register("assetLifeMonths")}
                         placeholder="e.g., 36"
                       />
+                      {form.formState.errors.assetLifeMonths && (
+                        <FieldError>{form.formState.errors.assetLifeMonths.message}</FieldError>
+                      )}
                     </FieldContent>
                   </Field>
 
@@ -1126,10 +1144,8 @@ export default function AddAssetPage() {
                     <FieldContent>
                       <Input
                         id="dateAcquired"
-                        name="dateAcquired"
                         type="date"
-                        value={formData.dateAcquired}
-                        onChange={handleChange}
+                        {...form.register("dateAcquired")}
                       />
                     </FieldContent>
                   </Field>
@@ -1139,12 +1155,11 @@ export default function AddAssetPage() {
                 <Field>
                   <FieldLabel htmlFor="depreciationMethod">Depreciation Method</FieldLabel>
                   <FieldContent>
-                    <Select
-                      value={formData.depreciationMethod}
-                      onValueChange={(value) =>
-                        setFormData((prev) => ({ ...prev, depreciationMethod: value }))
-                      }
-                    >
+                    <Controller
+                      name="depreciationMethod"
+                      control={form.control}
+                      render={({ field }) => (
+                        <Select value={field.value || ""} onValueChange={field.onChange}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select method" />
                       </SelectTrigger>
@@ -1155,6 +1170,8 @@ export default function AddAssetPage() {
                         <SelectItem value="Units of Production">Units of Production</SelectItem>
                       </SelectContent>
                     </Select>
+                      )}
+                    />
                   </FieldContent>
                 </Field>
               </div>
@@ -1208,16 +1225,16 @@ export default function AddAssetPage() {
         pageSize={24}
       />
 
-      {/* Image Preview Dialog */}
-      <ImagePreviewDialog
+      {/* Selected Images List Dialog */}
+      <SelectedImagesListDialog
         open={previewDialogOpen}
         onOpenChange={setPreviewDialogOpen}
         images={selectedImages}
         existingImages={selectedExistingImages}
-        onRemoveImage={(index) => {
+        onRemoveImage={(index: number) => {
           setSelectedImages(prev => prev.filter((_, i) => i !== index))
         }}
-        onRemoveExistingImage={(id) => {
+        onRemoveExistingImage={(id: string) => {
           setSelectedExistingImages(prev => prev.filter(img => img.id !== id))
         }}
         title="Selected Images"

@@ -261,7 +261,7 @@ export default function CategoriesPage() {
             Manage asset categories and their subcategories
           </p>
         </div>
-        <Button onClick={() => setIsCreateCategoryDialogOpen(true)}>
+        <Button onClick={() => setIsCreateCategoryDialogOpen(true)} size='sm'>
           <Plus className="mr-2 h-4 w-4" />
           Add Category
         </Button>

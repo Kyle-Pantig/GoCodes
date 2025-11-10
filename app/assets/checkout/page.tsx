@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
+import { useForm, Controller } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { XIcon, Package, CheckCircle2, Users, History, QrCode } from "lucide-react"
 import { usePermissions } from '@/hooks/use-permissions'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
@@ -26,17 +28,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
+import { EmployeeSelectField } from "@/components/employee-select-field"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { checkoutSchema, type CheckoutFormData } from "@/lib/validations/checkout"
 
 interface Asset {
   id: string
@@ -66,6 +63,11 @@ interface EmployeeUser {
   name: string
   email: string
   department: string | null
+  checkouts?: Array<{
+    asset: {
+      assetTagId: string
+    }
+  }>
 }
 
 interface CheckoutAsset extends Asset {
@@ -99,30 +101,24 @@ export default function CheckoutPage() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1)
   const [selectedAssets, setSelectedAssets] = useState<CheckoutAsset[]>([])
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("")
-  const [checkoutDate, setCheckoutDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  )
-  const [expectedReturnDate, setExpectedReturnDate] = useState<string>("")
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
 
-  // Fetch employees (excluding those with checked out assets)
-  const { data: employees = [], isLoading: isLoadingEmployees } = useQuery<EmployeeUser[]>({
-    queryKey: ["employees", "checkout"],
-    queryFn: async () => {
-      const response = await fetch("/api/employees?excludeWithCheckedOutAssets=true")
-      if (!response.ok) {
-        throw new Error('Failed to fetch employees')
-      }
-      const data = await response.json()
-      return (data.employees || []) as EmployeeUser[]
+  const form = useForm<CheckoutFormData>({
+    resolver: zodResolver(checkoutSchema),
+    defaultValues: {
+      employeeId: "",
+      checkoutDate: new Date().toISOString().split('T')[0],
+      expectedReturnDate: "",
+      department: "",
+      site: "",
+      location: "",
     },
-    enabled: canViewAssets,
-    retry: 2,
-    retryDelay: 1000,
   })
+
+  // Watch checkoutDate to update expectedReturnDate min
+  const checkoutDate = form.watch('checkoutDate')
 
   // Fetch asset suggestions based on input (only Available assets)
   const { data: assetSuggestions = [], isLoading: isLoadingSuggestions } = useQuery<Asset[]>({
@@ -293,9 +289,14 @@ export default function CheckoutPage() {
   const clearForm = () => {
     setSelectedAssets([])
     setAssetIdInput("")
-    setSelectedEmployeeId("")
-    setExpectedReturnDate("")
-    setCheckoutDate(new Date().toISOString().split('T')[0])
+    form.reset({
+      employeeId: "",
+      checkoutDate: new Date().toISOString().split('T')[0],
+      expectedReturnDate: "",
+      department: "",
+      site: "",
+      location: "",
+    })
   }
 
   // Handle QR code scan result
@@ -352,21 +353,9 @@ export default function CheckoutPage() {
   })
 
   // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
+  const onSubmit = async (data: CheckoutFormData) => {
     if (selectedAssets.length === 0) {
       toast.error('Please add at least one asset to checkout')
-      return
-    }
-
-    if (!selectedEmployeeId) {
-      toast.error('Please select an employee')
-      return
-    }
-
-    if (!checkoutDate) {
-      toast.error('Please select a checkout date')
       return
     }
 
@@ -387,9 +376,9 @@ export default function CheckoutPage() {
 
     checkoutMutation.mutate({
       assetIds: selectedAssets.map((a) => a.id),
-      employeeUserId: selectedEmployeeId,
-      checkoutDate,
-      expectedReturnDate: expectedReturnDate || undefined,
+      employeeUserId: data.employeeId,
+      checkoutDate: data.checkoutDate,
+      expectedReturnDate: data.expectedReturnDate || undefined,
       updates,
     })
   }
@@ -416,6 +405,22 @@ export default function CheckoutPage() {
   // Calculate summary statistics
   const totalAvailableAssets = allAssets.filter(a => !a.status || a.status === "Available").length
   const selectedAssetsCount = selectedAssets.length
+  
+  // Fetch employees count for statistics
+  const { data: employees = [] } = useQuery<EmployeeUser[]>({
+    queryKey: ["employees", "checkout-stats"],
+    queryFn: async () => {
+      const response = await fetch("/api/employees")
+      if (!response.ok) {
+        throw new Error('Failed to fetch employees')
+      }
+      const data = await response.json()
+      return (data.employees || []) as EmployeeUser[]
+    },
+    enabled: canViewAssets,
+    retry: 2,
+    retryDelay: 1000,
+  })
   const availableEmployeesCount = employees.length
 
   // Fetch checkout statistics
@@ -572,7 +577,7 @@ export default function CheckoutPage() {
             </div>
           </CardHeader>
           <CardContent className="flex flex-col grow justify-center p-4 pt-0">
-            {permissionsLoading || isLoadingEmployees ? (
+            {permissionsLoading || !employees ? (
               <>
                 <Skeleton className="h-8 w-16 mb-2" />
                 <Skeleton className="h-4 w-32" />
@@ -681,7 +686,7 @@ export default function CheckoutPage() {
         </Card>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6 mt-6">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 mt-6">
         {/* Asset Selection Card */}
         <Card>
           <CardHeader className="pb-3">
@@ -812,31 +817,18 @@ export default function CheckoutPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-2 pb-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-4">
-              <Field>
-                <FieldLabel htmlFor="employee">
-                  Assign To <span className="text-destructive">*</span>
-                </FieldLabel>
-                <FieldContent>
-                  <Select
-                    value={selectedEmployeeId}
-                    onValueChange={setSelectedEmployeeId}
+            <div className="space-y-4">
+              <EmployeeSelectField
+                name="employeeId"
+                control={form.control}
+                error={form.formState.errors.employeeId}
+                label="Assign To"
+                required
                     disabled={!canViewAssets || !canCheckout}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select an employee" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {employees.map((employee) => (
-                        <SelectItem key={employee.id} value={employee.id}>
-                          {employee.name} ({employee.email}){employee.department && <span className="text-muted-foreground"> - {employee.department}</span>}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </FieldContent>
-              </Field>
+                queryKey={["employees", "checkout"]}
+              />
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-4">
               <Field>
                 <FieldLabel htmlFor="checkoutDate">
                   Checkout Date <span className="text-destructive">*</span>
@@ -845,15 +837,17 @@ export default function CheckoutPage() {
                   <Input
                     id="checkoutDate"
                     type="date"
-                    value={checkoutDate}
-                    onChange={(e) => setCheckoutDate(e.target.value)}
-                    required
+                      {...form.register("checkoutDate")}
+                      aria-invalid={form.formState.errors.checkoutDate ? "true" : "false"}
                     disabled={!canViewAssets || !canCheckout}
                   />
+                    {form.formState.errors.checkoutDate && (
+                      <FieldError>{form.formState.errors.checkoutDate.message}</FieldError>
+                    )}
                 </FieldContent>
               </Field>
 
-              <Field className="md:col-span-2">
+                <Field>
                 <FieldLabel htmlFor="expectedReturnDate">
                   Expected Return Date
                 </FieldLabel>
@@ -861,13 +855,17 @@ export default function CheckoutPage() {
                   <Input
                     id="expectedReturnDate"
                     type="date"
-                    value={expectedReturnDate}
-                    onChange={(e) => setExpectedReturnDate(e.target.value)}
+                      {...form.register("expectedReturnDate")}
                     min={checkoutDate}
+                      aria-invalid={form.formState.errors.expectedReturnDate ? "true" : "false"}
                     disabled={!canViewAssets || !canCheckout}
                   />
+                    {form.formState.errors.expectedReturnDate && (
+                      <FieldError>{form.formState.errors.expectedReturnDate.message}</FieldError>
+                    )}
                 </FieldContent>
               </Field>
+              </div>
             </div>
           </CardContent>
         </Card>

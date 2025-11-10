@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { verifyAuth } from '@/lib/auth-utils'
+import { retryDbOperation } from '@/lib/db-utils'
 import { NextResponse } from 'next/server'
 
 interface UserPermissions {
@@ -59,7 +60,7 @@ export async function getUserPermissions(): Promise<{ user: AssetUser | null; er
   }
 
   try {
-    const assetUser = await prisma.assetUser.findUnique({
+    const assetUser = await retryDbOperation(() => prisma.assetUser.findUnique({
       where: { userId: auth.user.id },
       select: {
         role: true,
@@ -85,7 +86,7 @@ export async function getUserPermissions(): Promise<{ user: AssetUser | null; er
         canManageTrash: true,
         canManageUsers: true,
       },
-    })
+    }))
 
     if (!assetUser || !assetUser.isActive) {
       return {

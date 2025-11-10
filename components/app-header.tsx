@@ -60,6 +60,8 @@ const routeLabels: Record<string, string> = {
   '/settings/users': 'Users',
   '/settings/categories': 'Categories',
   '/employees': 'Employees',
+  '/reports': 'Reports',
+  '/reports/assets': 'Asset Reports',
 }
 
 function generateBreadcrumbs(pathname: string) {

@@ -170,6 +170,27 @@ export async function GET(request: NextRequest) {
       }))
     }
 
+    // Check if unique statuses are requested
+    const statusesOnly = searchParams.get('statuses') === 'true'
+    if (statusesOnly) {
+      // Return only unique statuses - fetch only status field (much faster than full assets)
+      const assetsWithStatus = await retryDbOperation(() => prisma.assets.findMany({
+        where: whereClause,
+        select: {
+          status: true,
+        },
+      }))
+      
+      // Extract unique statuses in memory (much faster than fetching 10k full assets)
+      const uniqueStatuses = Array.from(new Set(
+        assetsWithStatus.map(asset => asset.status).filter(Boolean)
+      )).sort()
+      
+      return NextResponse.json({
+        statuses: uniqueStatuses,
+      })
+    }
+
     // Check if summary is requested
     const summaryOnly = searchParams.get('summary') === 'true'
     if (summaryOnly) {
@@ -247,7 +268,7 @@ export async function POST(request: NextRequest) {
         xeroAssetNo: body.xeroAssetNo,
         owner: body.owner,
         pbiNumber: body.pbiNumber,
-        status: body.status,
+        status: body.status || "Available",
         issuedTo: body.issuedTo,
         poNumber: body.poNumber,
         paymentVoucherNumber: body.paymentVoucherNumber,

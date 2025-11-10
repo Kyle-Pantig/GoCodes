@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Search, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, Edit2, Image as ImageIcon } from 'lucide-react'
+import { Search, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, Edit2, Image as ImageIcon, X } from 'lucide-react'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field, FieldLabel, FieldContent } from '@/components/ui/field'
@@ -1985,12 +1985,25 @@ export default function ListOfMaintenancesPage() {
         <CardContent className="flex-1 px-0">
           <div className="flex items-center justify-between p-4 gap-4">
             <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              {searchInput ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchInput('')
+                    updateURL({ search: '', page: 1 })
+                  }}
+                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : (
+                <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+              )}
               <Input
                 placeholder="Search maintenances..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-8"
+                className="pl-8 h-8"
               />
             </div>
             <Select 
@@ -2001,7 +2014,7 @@ export default function ListOfMaintenancesPage() {
                 toggleColumn(value)
               }}
             >
-              <SelectTrigger className="w-full sm:w-[200px]">
+              <SelectTrigger className="w-full sm:w-[200px]" size='sm'>
                 <span className="flex-1 text-left truncate">
                   {visibleColumns.length > 0 
                     ? `${visibleColumns.length} column${visibleColumns.length !== 1 ? 's' : ''} selected`
@@ -2133,7 +2146,7 @@ export default function ListOfMaintenancesPage() {
                     )}
                   </TableBody>
                 </Table>
-                <ScrollBar orientation="horizontal" />
+                <ScrollBar orientation="horizontal" className='z-10' />
                 <ScrollBar orientation="vertical" className='z-10' />
                 </ScrollArea>
               </div>

@@ -9,6 +9,7 @@ import {
   List,
   Settings,
   Wrench,
+  FileText,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 
@@ -146,6 +147,17 @@ const data = {
         {
           title: "Trash",
           url: "/tools/trash",
+        },
+      ],
+    },
+    {
+      title: "Reports",
+      url: "/reports",
+      icon: FileText,
+      items: [
+        {
+          title: "Asset Reports",
+          url: "/reports/assets",
         },
       ],
     },

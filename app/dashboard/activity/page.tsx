@@ -33,9 +33,11 @@ import {
   Wrench, 
   Trash2,
   MapPin,
-  Archive
+  Archive,
+  RefreshCw
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 
 interface ActivityItem {
   id: string
@@ -307,7 +309,7 @@ export default function ActivityPage() {
     })
   }
 
-  const { data, isLoading, error } = useQuery<{ activities: ActivityItem[], pagination: PaginationInfo }>({
+  const { data, isLoading, error, refetch, isFetching } = useQuery<{ activities: ActivityItem[], pagination: PaginationInfo }>({
     queryKey: ['activities', selectedType, page, pageSize],
     queryFn: async () => {
       const params = new URLSearchParams({ 
@@ -325,7 +327,7 @@ export default function ActivityPage() {
     },
     enabled: canViewAssets, // Only fetch if user has permission
     staleTime: 30000, // Cache for 30 seconds
-    refetchInterval: 60000, // Refetch every minute for real-time updates
+    refetchOnWindowFocus: false, // Don't refetch when window regains focus
   })
 
   const activities = data?.activities || []
@@ -375,15 +377,27 @@ export default function ActivityPage() {
       {/* Activity Feed */}
       <Card className="relative flex flex-col flex-1 min-h-0 pb-0">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 flex-wrap">
-            <Activity className="h-5 w-5 shrink-0" />
-            <span className="truncate">Activity Feed</span>
-            {selectedType !== 'all' && (
-              <Badge variant="secondary" className="shrink-0">
-                {activities.length} {activityTypes.find(t => t.value === selectedType)?.label}
-              </Badge>
-            )}
-          </CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2 flex-wrap">
+              <Activity className="h-5 w-5 shrink-0" />
+              <span className="truncate">Activity Feed</span>
+              {selectedType !== 'all' && (
+                <Badge variant="secondary" className="shrink-0">
+                  {activities.length} {activityTypes.find(t => t.value === selectedType)?.label}
+                </Badge>
+              )}
+            </CardTitle>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => refetch()}
+              disabled={isFetching || isLoading}
+              className="h-8 w-8 shrink-0"
+              title="Refresh activities"
+            >
+              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
           <CardDescription className="mt-1.5">
             {selectedType === 'all' 
               ? 'All asset activities across the system'
@@ -391,8 +405,8 @@ export default function ActivityPage() {
             }
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex-1">
-          <div className="h-120 overflow-y-auto overflow-x-auto -mx-6  custom-scrollbar">
+        <CardContent className="flex-1 px-0">
+          <div className="h-120">
           {!canViewAssets ? (
             <div className="flex items-center justify-center py-12">
               <div className="flex flex-col items-center gap-3 text-center">
@@ -421,8 +435,9 @@ export default function ActivityPage() {
               <p className="text-sm">Activities will appear here as they happen</p>
             </div>
           ) : (
-            <div className="border min-w-full">
-              <Table>
+            <div className="min-w-full">
+              <ScrollArea className='h-[calc(100vh-30rem)] min-h-[500px]'>
+              <Table className='border-t'>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[60px]">Type</TableHead>
@@ -514,13 +529,16 @@ export default function ActivityPage() {
                   })}
                 </TableBody>
               </Table>
+              <ScrollBar orientation="horizontal" className='z-10' />
+              <ScrollBar orientation="vertical" className='z-10' />
+              </ScrollArea>
             </div>
           )}
           </div>
         </CardContent>
         
         {/* Pagination Bar - Fixed at Bottom */}
-        <div className="sticky bottom-0 border-t bg-transparent z-10 shadow-sm mt-auto">
+        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-bl-lg rounded-br-lg">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3">
             {/* Left Side - Navigation */}
             <div className="flex items-center justify-center sm:justify-start gap-2">

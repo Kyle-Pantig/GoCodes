@@ -67,6 +67,8 @@ import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialo
 import { ExportFieldsDialog } from '@/components/export-fields-dialog'
 import { BulkDeleteDialog } from '@/components/bulk-delete-dialog'
 import { ManagerDialog } from '@/components/manager-dialog'
+import { AuditHistoryManager } from '@/components/audit-history-manager'
+import { CheckoutManager } from '@/components/checkout-manager'
 import { EditAssetDialog } from '@/components/edit-asset-dialog'
 import {
   DropdownMenu,
@@ -87,6 +89,8 @@ interface Asset {
   subCategory: {
     name: string
   } | null
+  categoryId: string | null
+  subCategoryId: string | null
   location: string | null
   issuedTo: string | null
   purchasedFrom: string | null
@@ -1335,8 +1339,10 @@ const createColumns = (AssetActionsComponent: React.ComponentType<{ asset: Asset
 // Component for asset images icon with dialog
 function AssetImagesCell({ asset }: { asset: Asset }) {
   const [imagesDialogOpen, setImagesDialogOpen] = useState(false)
-  const [images, setImages] = useState<Array<{ id: string; imageUrl: string; assetTagId: string }>>([])
+  const [images, setImages] = useState<Array<{ id: string; imageUrl: string; assetTagId: string; fileName?: string; createdAt?: string }>>([])
   const [loadingImages, setLoadingImages] = useState(false)
+  const [previewImageIndex, setPreviewImageIndex] = useState(0)
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
 
   const fetchImages = async () => {
     if (!imagesDialogOpen) return
@@ -1370,6 +1376,18 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
     return <span className="text-muted-foreground">-</span>
   }
 
+  const handleImageClick = (index: number) => {
+    setPreviewImageIndex(index)
+    setImagesDialogOpen(false) // Close the grid dialog first
+    setIsPreviewOpen(true)
+  }
+
+  const existingImagesForPreview = images.map((img) => ({
+    id: img.id,
+    imageUrl: img.imageUrl,
+    fileName: img.fileName || `Image ${img.id}`,
+  }))
+
   return (
     <>
       <Button
@@ -1385,7 +1403,7 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
           <DialogHeader>
             <DialogTitle>Asset Images - {asset.assetTagId}</DialogTitle>
             <DialogDescription>
-              Images for {asset.description}
+              Images for {asset.category?.name} - {asset.subCategory?.name}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[70vh] overflow-y-auto">
@@ -1399,8 +1417,12 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
               </p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                {images.map((image) => (
-                  <div key={image.id} className="relative group border rounded-lg overflow-hidden">
+                {images.map((image, index) => (
+                  <div
+                    key={image.id}
+                    className="relative group border rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => handleImageClick(index)}
+                  >
                     <div className="aspect-square bg-muted relative">
                       <Image
                         src={image.imageUrl}
@@ -1417,6 +1439,16 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Image Preview Dialog */}
+      <ImagePreviewDialog
+        open={isPreviewOpen}
+        onOpenChange={setIsPreviewOpen}
+        existingImages={existingImagesForPreview}
+        title={`Asset Images - ${asset.assetTagId}`}
+        maxHeight="h-[70vh] max-h-[600px]"
+        initialIndex={previewImageIndex}
+      />
     </>
   )
 }
@@ -1589,631 +1621,13 @@ function AssetActions({ asset }: { asset: Asset }) {
         title={`Checkout History - ${asset.assetTagId}`}
         description="View and assign employees to checkout records"
       >
-          <CheckoutManager assetId={asset.id} assetTagId={asset.assetTagId} />
+          <CheckoutManager assetId={asset.id} assetTagId={asset.assetTagId} invalidateQueryKey={['assets']} />
       </ManagerDialog>
     </>
   )
 }
 
-// Audit History Manager Component
-function AuditHistoryManager({ assetId }: { assetId: string; assetTagId: string }) {
-  const queryClient = useQueryClient()
-  const [isAdding, setIsAdding] = useState(false)
 
-  // Fetch audit history
-  const { data: auditData, isLoading } = useQuery({
-    queryKey: ['auditHistory', assetId],
-    queryFn: async () => {
-      const response = await fetch(`/api/assets/${assetId}/audit`)
-      if (!response.ok) throw new Error('Failed to fetch audit history')
-      return response.json()
-    },
-  })
-
-  const audits = auditData?.audits || []
-
-  // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: async (auditId: string) => {
-      const response = await fetch(`/api/assets/audit/${auditId}`, {
-        method: 'DELETE',
-      })
-      if (!response.ok) throw new Error('Failed to delete audit')
-      return response.json()
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['auditHistory', assetId] })
-      toast.success('Audit record deleted')
-    },
-    onError: () => {
-      toast.error('Failed to delete audit record')
-    },
-  })
-  
-  // Add mutation
-  const addMutation = useMutation({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mutationFn: async (data: any) => {
-      const response = await fetch(`/api/assets/${assetId}/audit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
-      if (!response.ok) throw new Error('Failed to create audit')
-      return response.json()
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['auditHistory', assetId] })
-      setIsAdding(false)
-      toast.success('Audit record created')
-    },
-    onError: () => {
-      toast.error('Failed to create audit record')
-    },
-  })
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const formData = new FormData(e.currentTarget)
-    
-    const auditData = {
-      auditType: formData.get('auditType') as string,
-      auditDate: formData.get('auditDate') as string,
-      auditor: formData.get('auditor') as string || null,
-      status: formData.get('status') as string || 'Completed',
-      notes: formData.get('notes') as string || null,
-    }
-
-    addMutation.mutate(auditData)
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div className="text-sm text-muted-foreground">
-          {audits.length} audit record{audits.length !== 1 ? 's' : ''}
-        </div>
-        {!isAdding && (
-          <Button onClick={() => setIsAdding(true)} size="sm" className="gap-2">
-            <CheckCircle2 className="h-4 w-4" />
-            Add Audit Record
-          </Button>
-        )}
-      </div>
-
-      {/* Add Form */}
-      {isAdding && (
-        <Card className="border-2 border-primary/20 bg-card">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-primary" />
-              New Audit Record
-            </CardTitle>
-            <CardDescription>Fill in the details for this audit</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="auditType" className="text-sm font-medium">
-                    Audit Type <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="auditType"
-                    name="auditType"
-                    required
-                    placeholder="e.g., October Audit, Annual Audit"
-                    className="w-full"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="auditDate" className="text-sm font-medium">
-                    Audit Date <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="auditDate"
-                    name="auditDate"
-                    type="date"
-                    required
-                    defaultValue={new Date().toISOString().split('T')[0]}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="status" className="text-sm font-medium">Status</Label>
-                  <Select name="status" defaultValue="Completed">
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Completed">Completed</SelectItem>
-                      <SelectItem value="Pending">Pending</SelectItem>
-                      <SelectItem value="In Progress">In Progress</SelectItem>
-                      <SelectItem value="Failed">Failed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="auditor" className="text-sm font-medium">Auditor</Label>
-                  <Input
-                    id="auditor"
-                    name="auditor"
-                    placeholder="Auditor name"
-                    className="w-full"
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="notes" className="text-sm font-medium">Notes</Label>
-                <Textarea
-                  id="notes"
-                  name="notes"
-                  placeholder="Additional notes or observations..."
-                  rows={3}
-                  className="resize-none"
-                />
-              </div>
-
-              <div className="flex gap-2 justify-end pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsAdding(false)}
-                  className="min-w-[100px]"
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={addMutation.isPending} className="min-w-[100px]">
-                  {addMutation.isPending ? (
-                    <>
-                      <Spinner className="mr-2 h-4 w-4" />
-                      Adding...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="mr-2 h-4 w-4" />
-                      Add Audit
-                    </>
-                  )}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Audit List */}
-      <ScrollArea className="h-[450px] pr-4">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <Spinner className="h-8 w-8 mb-2" />
-            <p className="text-sm text-muted-foreground">Loading audit history...</p>
-          </div>
-        ) : audits.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="rounded-full bg-muted p-3 mb-4">
-              <CheckCircle2 className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <p className="text-sm font-medium text-foreground mb-1">No audit records yet</p>
-            <p className="text-xs text-muted-foreground">Add your first audit record to get started</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            {audits.map((audit: any) => {
-              const auditDate = audit.auditDate ? new Date(audit.auditDate) : null
-              const formattedDate = auditDate ? auditDate.toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              }) : '-'
-              
-              return (
-                <Card key={audit.id} className="hover:bg-accent/50 transition-colors border-border/50 py-2">
-                  <CardContent className="py-2.5 px-4">
-                    <div className="flex justify-between items-start gap-3">
-                      <div className="space-y-1.5 flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline" className="font-medium text-xs">
-                            {audit.auditType}
-                          </Badge>
-                          {audit.status && (
-                            <Badge
-                              variant={
-                                audit.status === 'Completed'
-                                  ? 'default'
-                                  : audit.status === 'Pending'
-                                  ? 'secondary'
-                                  : audit.status === 'In Progress'
-                                  ? 'outline'
-                                  : 'destructive'
-                              }
-                              className="font-medium text-xs"
-                            >
-                              {audit.status}
-                            </Badge>
-                          )}
-                        </div>
-                        
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5 text-sm">
-                            <div className="h-1 w-1 rounded-full bg-muted-foreground/40" />
-                            <span className="text-muted-foreground text-xs">Date:</span>
-                            <span className="text-foreground text-sm">{formattedDate}</span>
-                          </div>
-                          
-                          {audit.auditor && (
-                            <div className="flex items-center gap-1.5 text-sm">
-                              <div className="h-1 w-1 rounded-full bg-muted-foreground/40" />
-                              <span className="text-muted-foreground text-xs">Auditor:</span>
-                              <span className="text-foreground text-sm">{audit.auditor}</span>
-                            </div>
-                          )}
-                          
-                          {audit.notes && (
-                            <div className="pt-1 mt-1 border-t border-border/50">
-                              <p className="text-sm text-foreground leading-snug">{audit.notes}</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          if (confirm(`Delete audit record "${audit.auditType}"?`)) {
-                            deleteMutation.mutate(audit.id)
-                          }
-                        }}
-                        disabled={deleteMutation.isPending}
-                        className="shrink-0 text-muted-foreground hover:text-destructive h-7 w-7"
-                      >
-                        {deleteMutation.isPending ? (
-                          <Spinner className="h-3.5 w-3.5" />
-                        ) : (
-                          <Trash2 className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        )}
-      </ScrollArea>
-    </div>
-  )
-}
-
-// Checkout Manager Component
-function CheckoutManager({ assetId }: { assetId: string; assetTagId: string }) {
-  const queryClient = useQueryClient()
-  const [editingCheckoutId, setEditingCheckoutId] = useState<string | null>(null)
-  const [employeeSearch, setEmployeeSearch] = useState<Record<string, string>>({})
-
-  // Fetch checkout records
-  const { data: checkoutData, isLoading } = useQuery({
-    queryKey: ['checkoutHistory', assetId],
-    queryFn: async () => {
-      const response = await fetch(`/api/assets/${assetId}/checkout`)
-      if (!response.ok) throw new Error('Failed to fetch checkout history')
-      return response.json()
-    },
-  })
-
-  const checkouts = checkoutData?.checkouts || []
-
-  // Fetch employees
-  const { data: employees = [] } = useQuery({
-    queryKey: ['employees', 'checkout-manager'],
-    queryFn: async () => {
-      const response = await fetch('/api/employees')
-      if (!response.ok) throw new Error('Failed to fetch employees')
-      const data = await response.json()
-      return data.employees || []
-    },
-  })
-
-  // Update checkout mutation
-  const updateMutation = useMutation({
-    mutationFn: async ({ checkoutId, employeeUserId }: { checkoutId: string; employeeUserId: string | null }) => {
-      const response = await fetch(`/api/assets/checkout/${checkoutId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeUserId }),
-      })
-      if (!response.ok) throw new Error('Failed to update checkout')
-      return response.json()
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['checkoutHistory', assetId] })
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      setEditingCheckoutId(null)
-      toast.success('Employee assigned successfully')
-    },
-    onError: () => {
-      toast.error('Failed to assign employee')
-    },
-  })
-
-  const handleAssignEmployee = (checkoutId: string, employeeUserId: string | null) => {
-    updateMutation.mutate({ checkoutId, employeeUserId })
-  }
-
-  // Filter employees based on search
-  const getFilteredEmployees = (checkoutId: string) => {
-    const searchTerm = employeeSearch[checkoutId]?.toLowerCase() || ''
-    if (!searchTerm) return employees
-    return employees.filter((emp: { id: string; name: string; email: string; department?: string | null }) =>
-      emp.name.toLowerCase().includes(searchTerm) || 
-      emp.email.toLowerCase().includes(searchTerm) ||
-      (emp.department && emp.department.toLowerCase().includes(searchTerm))
-    )
-  }
-
-  // Sort checkouts: active first, then by date
-  const sortedCheckouts = [...checkouts].sort((a, b) => {
-    const aCheckedIn = a.checkins.length > 0
-    const bCheckedIn = b.checkins.length > 0
-    if (aCheckedIn !== bCheckedIn) return aCheckedIn ? 1 : -1
-    return new Date(b.checkoutDate).getTime() - new Date(a.checkoutDate).getTime()
-  })
-
-  return (
-    <div className="flex flex-col gap-4">
-      {checkouts.length > 0 && (
-        <div className="flex items-center justify-between px-1">
-          <div className="text-sm text-muted-foreground">
-            {checkouts.length} checkout record{checkouts.length !== 1 ? 's' : ''}
-            {sortedCheckouts.filter(c => !c.checkins.length && !c.employeeUser).length > 0 && (
-              <span className="ml-2 text-yellow-600 dark:text-yellow-500 font-medium">
-                ({sortedCheckouts.filter(c => !c.checkins.length && !c.employeeUser).length} need assignment)
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      <ScrollArea>
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <Spinner className="h-8 w-8 mb-3" />
-            <p className="text-sm text-muted-foreground">Loading checkout history...</p>
-          </div>
-        ) : checkouts.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <ArrowRight className="h-16 w-16 mx-auto mb-4 opacity-30" />
-            <p className="font-medium text-base mb-1">No checkout records found</p>
-            <p className="text-sm">Checkout records will appear here when assets are checked out</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {sortedCheckouts.map((checkout: {
-              id: string
-              checkoutDate: string
-              expectedReturnDate: string | null
-              employeeUser: { id: string; name: string; email: string; department: string | null } | null
-              checkins: Array<{ id: string }>
-            }) => {
-              const checkoutDate = checkout.checkoutDate ? new Date(checkout.checkoutDate) : null
-              const formattedDate = checkoutDate ? checkoutDate.toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric'
-              }) : '-'
-              
-              const expectedReturnDate = checkout.expectedReturnDate ? new Date(checkout.expectedReturnDate) : null
-              const formattedReturnDate = expectedReturnDate ? expectedReturnDate.toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric'
-              }) : '-'
-
-              const isCheckedIn = checkout.checkins.length > 0
-              const needsAssignment = !checkout.employeeUser && !isCheckedIn
-              const isEditing = editingCheckoutId === checkout.id
-              const filteredEmployees = getFilteredEmployees(checkout.id)
-
-              return (
-                <Card 
-                  key={checkout.id} 
-                  className={`hover:bg-accent/50 transition-all border-2 ${
-                    needsAssignment 
-                      ? 'border-yellow-500/60 bg-yellow-50/30 dark:bg-yellow-950/20 shadow-sm' 
-                      : isCheckedIn
-                      ? 'border-border/40 bg-muted/20'
-                      : 'border-border/50'
-                  }`}
-                >
-                  <CardContent className="p-5 relative">
-                    <div className="space-y-4">
-                      {/* Header: Status badges */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline" className="font-medium text-xs gap-1.5 px-2.5 py-1">
-                            <Calendar className="h-3 w-3" />
-                            {formattedDate}
-                          </Badge>
-                          {isCheckedIn ? (
-                            <Badge variant="default" className="text-xs gap-1 px-2.5 py-1">
-                              <CheckCircle className="h-3 w-3" />
-                              Checked In
-                            </Badge>
-                          ) : (
-                            <Badge variant="destructive" className="text-xs gap-1 px-2.5 py-1">
-                              <Clock className="h-3 w-3" />
-                              Active
-                            </Badge>
-                          )}
-                          {needsAssignment && (
-                            <Badge variant="secondary" className="text-xs gap-1 px-2.5 py-1 bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 border-yellow-300 dark:border-yellow-700">
-                              <UserPlus className="h-3 w-3" />
-                              Needs Assignment
-                            </Badge>
-                          )}
-                        {!isCheckedIn && !isEditing && checkout.employeeUser && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 shrink-0 ml-auto"
-                            onClick={() => {
-                              setEditingCheckoutId(checkout.id)
-                              setEmployeeSearch(prev => ({ ...prev, [checkout.id]: '' }))
-                            }}
-                            disabled={updateMutation.isPending}
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        {isEditing && checkout.employeeUser && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 shrink-0 ml-auto"
-                            onClick={() => {
-                              setEditingCheckoutId(null)
-                              setEmployeeSearch(prev => ({ ...prev, [checkout.id]: '' }))
-                            }}
-                            disabled={updateMutation.isPending}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        </div>
-                        
-                      
-                      {/* Divider */}
-                      <div className="h-px bg-border/50" />
-                      
-                      {/* Details Section */}
-                      <div className="space-y-3">
-                        {/* Expected Return Date */}
-                          {expectedReturnDate && (
-                          <div className="flex items-center gap-3 text-sm">
-                            <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted/50 shrink-0">
-                              <Clock className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                            <div className="flex-1">
-                              <div className="text-xs text-muted-foreground mb-0.5">Expected Return</div>
-                              <div className="font-medium text-foreground">{formattedReturnDate}</div>
-                            </div>
-                            </div>
-                          )}
-
-                          {/* Employee Assignment */}
-                        <div className="flex items-start gap-3 text-sm pt-1 relative">
-                          <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted/50 shrink-0">
-                            {checkout.employeeUser ? (
-                              <UserCircle className="h-4 w-4 text-muted-foreground" />
-                            ) : (
-                              <UserPlus className="h-4 w-4 text-muted-foreground" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            {checkout.employeeUser && !isEditing ? (
-                              <>
-                                <div className="text-xs text-muted-foreground mb-2">
-                                  Assigned to: {checkout.employeeUser.name}
-                                </div>
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <Badge variant="outline" className="gap-1.5 px-2.5 py-1">
-                                    {checkout.employeeUser.email}
-                                    {checkout.employeeUser.department && (
-                                      <span className="text-muted-foreground"> - {checkout.employeeUser.department}</span>
-                                    )}
-                                  </Badge>
-                                  </div>
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                <div className="text-xs text-muted-foreground mb-2">
-                                  {checkout.employeeUser ? 'Change assignment' : 'Assign employee'}
-                                </div>
-                                <Select
-                                  value={checkout.employeeUser?.id || ""}
-                                  onValueChange={(value) => {
-                                    handleAssignEmployee(checkout.id, value === 'none' || value === '' ? null : value)
-                                    if (value === 'none' || value === '') {
-                                      setEditingCheckoutId(null)
-                                    }
-                                  }}
-                                  disabled={updateMutation.isPending || isCheckedIn}
-                                  onOpenChange={(open) => {
-                                    if (!open && isEditing) {
-                                      setEditingCheckoutId(null)
-                                    }
-                                  }}
-                                >
-                                  <SelectTrigger className="h-12 w-full">
-                                    <SelectValue placeholder={checkout.employeeUser ? "Change employee..." : "Select an employee..."} />
-                                  </SelectTrigger>
-                                  <SelectContent className="max-h-[300px]" position="popper">
-                                    {employees.length === 0 ? (
-                                      <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                                        No employees found
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <div className="sticky -top-1 z-50 -mx-1 -mt-1 px-3 py-1.5 bg-popover border-b border-border mb-1 backdrop-blur-sm">
-                                          <Input
-                                            placeholder="Search employees..."
-                                            value={employeeSearch[checkout.id] || ''}
-                                            onChange={(e) => setEmployeeSearch(prev => ({ ...prev, [checkout.id]: e.target.value }))}
-                                            className="h-8"
-                                            onClick={(e) => e.stopPropagation()}
-                                            onKeyDown={(e) => e.stopPropagation()}
-                                          />
-                                        </div>
-                                        <SelectItem value="none" className="cursor-pointer">
-                                          <div className="flex items-center gap-2">
-                                            <X className="h-4 w-4 text-muted-foreground" />
-                                            <span>Unassign employee</span>
-                                          </div>
-                                        </SelectItem>
-                                        {filteredEmployees.length === 0 ? (
-                                          <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                                            No employees match your search
-                                          </div>
-                                        ) : (
-                                          filteredEmployees.map((emp: { id: string; name: string; email: string; department?: string | null }) => (
-                                            <SelectItem key={emp.id} value={emp.id} className="cursor-pointer">
-                                              <div className="flex items-center gap-2">
-                                                <span className="font-medium">{emp.name}</span>
-                                                <span className="text-xs text-muted-foreground">({emp.email})</span>
-                                                {emp.department && (
-                                                  <span className="text-xs text-muted-foreground">- {emp.department}</span>
-                                                )}
-                                              </div>
-                                            </SelectItem>
-                                          ))
-                                        )}
-                                      </>
-                                    )}
-                                  </SelectContent>
-                                </Select>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        )}
-      </ScrollArea>
-    </div>
-  )
-}
 
 export default function AssetsPage() {
   const queryClient = useQueryClient()
@@ -2305,6 +1719,7 @@ export default function AssetsPage() {
   const canViewAssets = hasPermission('canViewAssets')
   
   // Fetch assets with server-side pagination and filtering
+  // Run in parallel with summary query - both start immediately
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ['assets', pagination.pageIndex + 1, pagination.pageSize, searchQuery, categoryFilter, statusFilter],
     queryFn: () => fetchAssets(
@@ -2317,10 +1732,43 @@ export default function AssetsPage() {
     enabled: canViewAssets, // Only fetch if user has permission
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
+    // Ensure this query runs in parallel with the summary query
+    refetchOnMount: true,
   })
 
   const assets = useMemo(() => data?.assets || [], [data?.assets])
   const totalCount = data?.pagination?.total || 0
+
+  // Fetch summary statistics for all assets (not just paginated)
+  // Define immediately after table query to ensure parallel execution
+  const { data: summaryData, isLoading: isLoadingSummary } = useQuery({
+    queryKey: ['assets', 'summary', searchQuery, categoryFilter, statusFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        summary: 'true',
+      })
+      if (searchQuery) params.append('search', searchQuery)
+      if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter)
+      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter)
+      
+      const response = await fetch(`/api/assets?${params.toString()}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch summary')
+      }
+      const data = await response.json()
+      return data.summary as {
+        totalAssets: number
+        totalValue: number
+        availableAssets: number
+        checkedOutAssets: number
+      }
+    },
+    enabled: canViewAssets, // Only fetch if user has permission
+    staleTime: 30000, // Cache for 30 seconds
+    placeholderData: (previousData) => previousData, // Keep previous data during refetch to avoid flashing
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+  })
 
   // Fetch all categories for filter dropdown (not filtered by current selection)
   const { data: categoriesData } = useQuery({
@@ -2335,22 +1783,18 @@ export default function AssetsPage() {
     staleTime: 10 * 60 * 1000, // Cache for 10 minutes
   })
 
-  // Fetch all unique statuses for filter dropdown (not filtered by current selection)
+  // Lazy load statuses - only fetch when status dropdown is opened
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false)
   const { data: allStatusesData } = useQuery({
     queryKey: ['assets', 'all-statuses'],
     queryFn: async () => {
-      // Fetch a large page of assets without filters to get all unique statuses
-      const response = await fetch('/api/assets?page=1&pageSize=10000')
+      // Use optimized endpoint that returns only unique statuses
+      const response = await fetch('/api/assets?statuses=true')
       if (!response.ok) throw new Error('Failed to fetch statuses')
       const data = await response.json()
-      const allAssets = data.assets as Asset[]
-      // Extract unique statuses
-      const uniqueStatuses = Array.from(new Set(
-        allAssets.map(asset => asset.status).filter(Boolean)
-      )).sort()
-      return uniqueStatuses as string[]
+      return data.statuses as string[]
     },
-    enabled: canViewAssets,
+    enabled: canViewAssets && isStatusDropdownOpen, // Only fetch when dropdown is opened
     staleTime: 10 * 60 * 1000, // Cache for 10 minutes
   })
 
@@ -2404,7 +1848,7 @@ export default function AssetsPage() {
     
     const newUrl = params.toString() ? `/assets?${params.toString()}` : '/assets'
     startTransition(() => {
-      router.replace(newUrl, { scroll: false })
+    router.replace(newUrl, { scroll: false })
     })
   }, [pagination, searchQuery, categoryFilter, statusFilter, router, startTransition])
   
@@ -2984,34 +2428,6 @@ export default function AssetsPage() {
     }
   }
 
-  // Fetch summary statistics for all assets (not just paginated)
-  const { data: summaryData, isLoading: isLoadingSummary } = useQuery({
-    queryKey: ['assets', 'summary', searchQuery, categoryFilter, statusFilter],
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        summary: 'true',
-      })
-      if (searchQuery) params.append('search', searchQuery)
-      if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter)
-      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter)
-      
-      const response = await fetch(`/api/assets?${params.toString()}`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch summary')
-      }
-      const data = await response.json()
-      return data.summary as {
-        totalAssets: number
-        totalValue: number
-        availableAssets: number
-        checkedOutAssets: number
-      }
-    },
-    enabled: canViewAssets, // Only fetch if user has permission
-    staleTime: 30000, // Cache for 30 seconds
-    placeholderData: (previousData) => previousData, // Keep previous data during refetch to avoid flashing
-  })
-
   // Calculate summary statistics from API - use 0 only if no data exists yet
   const totalAssets = summaryData?.totalAssets ?? 0
   const availableAssets = summaryData?.availableAssets ?? 0
@@ -3035,6 +2451,7 @@ export default function AssetsPage() {
                 toast.error('You do not have permission to create assets')
               }
             }}
+            size='sm'
           >
             Add Asset
           </Button>
@@ -3215,7 +2632,7 @@ export default function AssetsPage() {
               <Select value={table.getState().pagination.pageSize.toString()} onValueChange={(value) => {
                 table.setPageSize(Number(value))
               }}>
-                <SelectTrigger className="w-full sm:w-[120px]">
+                <SelectTrigger className="w-full sm:w-[120px]" size='sm'>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -3234,7 +2651,7 @@ export default function AssetsPage() {
                 toggleColumn(value)
               }}
             >
-              <SelectTrigger className="w-full sm:w-[200px]">
+              <SelectTrigger className="w-full sm:w-[200px]" size='sm'>
                 <span className="flex-1 text-left truncate">
                   {visibleColumns.length > 0 
                     ? `${visibleColumns.length} column${visibleColumns.length !== 1 ? 's' : ''} selected`
@@ -3304,7 +2721,7 @@ export default function AssetsPage() {
                       placeholder="Search assets by tag, description, category..."
                       value={searchInput}
                       onChange={(e) => setSearchInput(e.target.value)}
-                      className={cn("pl-10", searchInput && "pr-10")}
+                      className={cn("pl-10 h-8", searchInput && "pr-10")}
                     />
                     {searchInput && (
                       <Button
@@ -3331,7 +2748,7 @@ export default function AssetsPage() {
                   <div className="flex gap-3 sm:gap-4">
                     {/* Category Filter */}
                     <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                      <SelectTrigger className="w-full sm:w-[180px]">
+                      <SelectTrigger className="w-full sm:w-[180px]" size='sm'>
                         <span className="flex-1 text-left truncate">
                           {categoryFilter === 'all' || !categoryFilter ? 'All Categories' : categoryFilter}
                         </span>
@@ -3345,8 +2762,13 @@ export default function AssetsPage() {
                     </Select>
 
                     {/* Status Filter */}
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="w-full sm:w-[150px]">
+                    <Select 
+                      value={statusFilter} 
+                      onValueChange={setStatusFilter}
+                      open={isStatusDropdownOpen}
+                      onOpenChange={setIsStatusDropdownOpen}
+                    >
+                      <SelectTrigger className="w-full sm:w-[150px]" size='sm'>
                         <span className="flex-1 text-left truncate">
                           {statusFilter === 'all' || !statusFilter ? 'All Status' : statusFilter}
                         </span>
@@ -3356,6 +2778,9 @@ export default function AssetsPage() {
                         {allStatusesData?.map(status => (
                           <SelectItem key={status} value={status}>{status}</SelectItem>
                         ))}
+                        {isStatusDropdownOpen && !allStatusesData && (
+                          <SelectItem value="loading" disabled>Loading statuses...</SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
