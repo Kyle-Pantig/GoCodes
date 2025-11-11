@@ -43,7 +43,10 @@ export async function POST(request: NextRequest) {
       // Check if at least one dispose value is provided (common or per-asset)
       const hasCommonValue = disposeValue && parseFloat(disposeValue.toString()) > 0
       const hasPerAssetValues = updates && Object.values(updates).some(
-        (update: any) => update.disposeValue && parseFloat(update.disposeValue.toString()) > 0
+        (update) => {
+          const typedUpdate = update as { disposeValue?: string | number }
+          return typedUpdate.disposeValue && parseFloat(typedUpdate.disposeValue.toString()) > 0
+        }
       )
       
       if (!hasCommonValue && !hasPerAssetValues) {
@@ -62,6 +65,18 @@ export async function POST(request: NextRequest) {
         // Check if asset exists and is not already disposed
         const asset = await tx.assets.findUnique({
           where: { id: assetId },
+          include: {
+            checkouts: {
+              where: {
+                checkins: {
+                  none: {}
+                }
+              },
+              include: {
+                employeeUser: true,
+              },
+            },
+          },
         })
 
         if (!asset) {
@@ -75,6 +90,26 @@ export async function POST(request: NextRequest) {
         // Get update data for this asset (notes)
         const assetUpdate = updates?.[assetId] || {}
         const disposeValueForAsset = updates?.[assetId]?.disposeValue || disposeValue
+
+        // End any active checkouts by creating checkin records
+        // This removes the employee assignment when disposing
+        for (const activeCheckout of asset.checkouts) {
+          // Only create checkin if checkout has an employeeUserId (required for checkin)
+          // If no employeeUserId, the checkout will be effectively closed by the asset status change
+          if (activeCheckout.employeeUserId) {
+            // Create checkin record to close the checkout
+            await tx.assetsCheckin.create({
+              data: {
+                assetId,
+                checkoutId: activeCheckout.id,
+                employeeUserId: activeCheckout.employeeUserId,
+                checkinDate: parseDate(disposeDate)!, // Use dispose date as checkin date
+                condition: null,
+                notes: `Asset disposed (${disposalMethod})`,
+              },
+            })
+          }
+        }
 
         // Create disposal record
         const disposal = await tx.assetsDispose.create({
@@ -98,10 +133,15 @@ export async function POST(request: NextRequest) {
         })
 
         // Update asset status to the disposal method (e.g., "Sold", "Donated", "Scrapped", "Lost/Missing", "Destroyed")
+        // Also clear location info since asset is disposed
+        // Note: Employee assignment is cleared by creating checkin records above
         await tx.assets.update({
           where: { id: assetId },
           data: {
             status: disposalMethod,
+            location: null, // Clear location
+            department: null, // Clear department
+            site: null, // Clear site
           },
         })
 
@@ -115,10 +155,11 @@ export async function POST(request: NextRequest) {
       success: true,
       disposals: results,
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error disposing assets:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Failed to dispose assets'
     return NextResponse.json(
-      { error: error.message || 'Failed to dispose assets' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

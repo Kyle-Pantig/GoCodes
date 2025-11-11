@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Search, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, Edit2, Image as ImageIcon, X } from 'lucide-react'
+import { Search, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, Edit2, Image as ImageIcon, X, RefreshCw } from 'lucide-react'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field, FieldLabel, FieldContent } from '@/components/ui/field'
@@ -41,6 +41,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import Image from 'next/image'
+import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 
 interface Asset {
   id: string
@@ -1497,8 +1498,10 @@ const createColumns = (
 // Component for asset images icon with dialog
 function AssetImagesCell({ asset }: { asset: Asset }) {
   const [imagesDialogOpen, setImagesDialogOpen] = useState(false)
-  const [images, setImages] = useState<Array<{ id: string; imageUrl: string; assetTagId: string }>>([])
+  const [images, setImages] = useState<Array<{ id: string; imageUrl: string; assetTagId: string; fileName?: string; createdAt?: string }>>([])
   const [loadingImages, setLoadingImages] = useState(false)
+  const [previewImageIndex, setPreviewImageIndex] = useState(0)
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
 
   const fetchImages = async () => {
     if (!imagesDialogOpen) return
@@ -1532,6 +1535,18 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
     return <span className="text-muted-foreground">-</span>
   }
 
+  const handleImageClick = (index: number) => {
+    setPreviewImageIndex(index)
+    setImagesDialogOpen(false) // Close the grid dialog first
+    setIsPreviewOpen(true)
+  }
+
+  const existingImagesForPreview = images.map((img) => ({
+    id: img.id,
+    imageUrl: img.imageUrl,
+    fileName: img.fileName || `Image ${img.id}`,
+  }))
+
   return (
     <>
       <Button
@@ -1561,8 +1576,12 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
               </p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                {images.map((image) => (
-                  <div key={image.id} className="relative group border rounded-lg overflow-hidden">
+                {images.map((image, index) => (
+                  <div
+                    key={image.id}
+                    className="relative group border rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => handleImageClick(index)}
+                  >
                     <div className="aspect-square bg-muted relative">
                       <Image
                         src={image.imageUrl}
@@ -1579,6 +1598,16 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Image Preview Dialog */}
+      <ImagePreviewDialog
+        open={isPreviewOpen}
+        onOpenChange={setIsPreviewOpen}
+        existingImages={existingImagesForPreview}
+        title={`Asset Images - ${asset.assetTagId}`}
+        maxHeight="h-[70vh] max-h-[600px]"
+        initialIndex={previewImageIndex}
+      />
     </>
   )
 }
@@ -1642,7 +1671,7 @@ export default function ListOfMaintenancesPage() {
   })
   const [isSelectOpen, setIsSelectOpen] = useState(false)
   const [shouldCloseSelect, setShouldCloseSelect] = useState(false)
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   
   // Edit maintenance dialog state
   const [editingMaintenance, setEditingMaintenance] = useState<{
@@ -1712,7 +1741,7 @@ export default function ListOfMaintenancesPage() {
     })
   }, [searchParams, router, startTransition])
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ['maintenances-list', searchQuery, page, pageSize],
     queryFn: () => fetchMaintenances(searchQuery || undefined, page, pageSize),
     enabled: canViewAssets, // Only fetch if user has permission
@@ -1975,14 +2004,27 @@ export default function ListOfMaintenancesPage() {
         </p>
       </div>
 
-      <Card className="relative flex flex-col flex-1 min-h-0 pb-0">
+      <Card className="relative flex flex-col flex-1 min-h-0 pb-0 gap-0">
         <CardHeader>
           <div>
-            <CardTitle>List of Maintenances</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>List of Maintenances</CardTitle>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ['maintenances-list'] })
+                }}
+                className="h-8 w-8"
+                title="Refresh table"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
             <CardDescription>View and manage all assets with Maintenance status</CardDescription>
           </div>
         </CardHeader>
-        <CardContent className="flex-1 px-0">
+        <CardContent className="flex-1 px-0 relative max-h-screen">
           <div className="flex items-center justify-between p-4 gap-4">
             <div className="relative flex-1 max-w-sm">
               {searchInput ? (
@@ -2068,7 +2110,13 @@ export default function ListOfMaintenancesPage() {
             </Select>
           </div>
 
-          <div className="h-125">
+          {isFetching && data && (
+            <div className="absolute inset-x-0 top-[65px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+              <Spinner variant="default" size={24} className="text-muted-foreground" />
+            </div>
+          )}
+
+          <div className='h-130'>
             {permissionsLoading || isLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="flex flex-col items-center gap-3">
@@ -2094,7 +2142,7 @@ export default function ListOfMaintenancesPage() {
               </div>
             ) : (
               <div className="min-w-full ">
-                <ScrollArea className='h-[calc(100vh-27rem)] min-h-[520px]'>
+                <ScrollArea className='h-130'>
                 <Table className='border-t'>
                   <TableHeader>
                     {table.getHeaderGroups().map((headerGroup) => (

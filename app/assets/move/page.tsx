@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
+import { useForm, Controller, useWatch } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { XIcon, History, QrCode } from "lucide-react"
 import { usePermissions } from '@/hooks/use-permissions'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
@@ -26,7 +28,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
+import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
 import { EmployeeSelectField } from "@/components/employee-select-field"
 import {
   Select,
@@ -38,6 +40,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
+import { moveSchema, type MoveFormData } from "@/lib/validations/assets"
 
 interface Asset {
   id: string
@@ -112,18 +115,29 @@ export default function MoveAssetPage() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1)
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
-  const [moveType, setMoveType] = useState<MoveType>("")
-  const [moveDate, setMoveDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  )
-  const [location, setLocation] = useState<string>("")
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("")
-  const [department, setDepartment] = useState<string>("")
-  const [reason, setReason] = useState<string>("")
-  const [notes, setNotes] = useState<string>("")
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
+
+  const form = useForm<MoveFormData>({
+    resolver: zodResolver(moveSchema),
+    defaultValues: {
+      assetId: '',
+      moveType: '',
+      moveDate: new Date().toISOString().split('T')[0],
+      location: '',
+      employeeUserId: '',
+      department: '',
+      reason: '',
+      notes: '',
+    },
+  })
+
+  // Watch moveType to handle conditional fields
+  const moveType = useWatch({
+    control: form.control,
+    name: 'moveType',
+  })
 
 
   // Fetch move statistics
@@ -159,6 +173,17 @@ export default function MoveAssetPage() {
     retry: 2,
     retryDelay: 1000,
   })
+
+  // Format date for display
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'N/A'
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString()
+    } catch {
+      return 'N/A'
+    }
+  }
 
   // Calculate time ago
   const getTimeAgo = (dateString: string): string => {
@@ -285,6 +310,7 @@ export default function MoveAssetPage() {
     }
 
     setSelectedAsset(assetToAdd)
+    form.setValue('assetId', assetToAdd.id)
     setAssetIdInput("")
     setShowSuggestions(false)
     setSelectedSuggestionIndex(-1)
@@ -293,7 +319,7 @@ export default function MoveAssetPage() {
     if (moveType === 'Employee Assignment') {
       const currentEmployeeId = assetToAdd.checkouts?.[0]?.employeeUser?.id
       if (currentEmployeeId) {
-        setSelectedEmployeeId(currentEmployeeId)
+        form.setValue('employeeUserId', currentEmployeeId)
       }
     }
     
@@ -373,13 +399,16 @@ export default function MoveAssetPage() {
   const clearForm = () => {
     setSelectedAsset(null)
     setAssetIdInput("")
-    setMoveType("")
-    setLocation("")
-    setSelectedEmployeeId("")
-    setDepartment("")
-    setMoveDate(new Date().toISOString().split('T')[0])
-    setReason("")
-    setNotes("")
+    form.reset({
+      assetId: '',
+      moveType: '',
+      moveDate: new Date().toISOString().split('T')[0],
+      location: '',
+      employeeUserId: '',
+      department: '',
+      reason: '',
+      notes: '',
+    })
   }
 
   // Handle QR code scan result
@@ -395,22 +424,24 @@ export default function MoveAssetPage() {
 
   // Handle move type change - reset conditional fields
   const handleMoveTypeChange = (value: MoveType) => {
-    setMoveType(value)
+    form.setValue('moveType', value as 'Location Transfer' | 'Employee Assignment' | 'Department Transfer')
     // Reset conditional fields when changing move type
-    setLocation("")
-    setDepartment("")
+    form.setValue('location', '')
+    form.setValue('department', '')
     
     // For Employee Assignment, pre-select current employee if asset is checked out
     if (value === 'Employee Assignment' && selectedAsset) {
       const currentEmployeeId = selectedAsset.checkouts?.[0]?.employeeUser?.id
       if (currentEmployeeId) {
-        setSelectedEmployeeId(currentEmployeeId)
+        form.setValue('employeeUserId', currentEmployeeId)
       } else {
-        setSelectedEmployeeId("")
+        form.setValue('employeeUserId', '')
       }
     } else {
-      setSelectedEmployeeId("")
+      form.setValue('employeeUserId', '')
     }
+    // Trigger validation for conditional fields
+    form.trigger(['location', 'employeeUserId', 'department'])
   }
 
   // Move mutation
@@ -450,51 +481,23 @@ export default function MoveAssetPage() {
   })
 
   // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
+  const handleSubmit = form.handleSubmit(async (data) => {
     if (!selectedAsset) {
       toast.error('Please select an asset')
       return
     }
 
-    if (!moveType) {
-      toast.error('Please select a move type')
-      return
-    }
-
-    if (!moveDate) {
-      toast.error('Please select a move date')
-      return
-    }
-
-    // Validate move type specific requirements
-    if (moveType === 'Location Transfer' && !location.trim()) {
-      toast.error('Please enter a location')
-      return
-    }
-
-    if (moveType === 'Employee Assignment' && !selectedEmployeeId) {
-      toast.error('Please select an employee')
-      return
-    }
-
-    if (moveType === 'Department Transfer' && !department.trim()) {
-      toast.error('Please enter a department')
-      return
-    }
-
     moveMutation.mutate({
-      assetId: selectedAsset.id,
-      moveType,
-      moveDate,
-      location: moveType === 'Location Transfer' ? location : undefined,
-      employeeUserId: moveType === 'Employee Assignment' ? selectedEmployeeId : undefined,
-      department: moveType === 'Department Transfer' ? department : undefined,
-      reason: reason || undefined,
-      notes: notes || undefined,
+      assetId: data.assetId,
+      moveType: data.moveType,
+      moveDate: data.moveDate,
+      location: data.moveType === 'Location Transfer' ? data.location : undefined,
+      employeeUserId: data.moveType === 'Employee Assignment' ? data.employeeUserId : undefined,
+      department: data.moveType === 'Department Transfer' ? data.department : undefined,
+      reason: data.reason || undefined,
+      notes: data.notes || undefined,
     })
-  }
+  })
 
   const recentMoves = moveStats?.recentMoves || []
 
@@ -549,6 +552,7 @@ export default function MoveAssetPage() {
                         <TableHead className="h-8 text-xs bg-card">Description</TableHead>
                         <TableHead className="h-8 text-xs bg-card">Type</TableHead>
                         <TableHead className="h-8 text-xs bg-card">Employee</TableHead>
+                        <TableHead className="h-8 text-xs bg-card">Move Date</TableHead>
                         <TableHead className="h-8 text-xs text-right bg-card">Time Ago</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -577,6 +581,9 @@ export default function MoveAssetPage() {
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground">
                           {move.employeeUser ? move.employeeUser.name : '-'}
+                        </TableCell>
+                        <TableCell className="py-1.5 text-xs text-muted-foreground">
+                          {formatDate(move.moveDate)}
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground text-right">
                           {getTimeAgo(move.createdAt)}
@@ -726,35 +733,49 @@ export default function MoveAssetPage() {
         </Card>
 
         {/* Move Details */}
-        {selectedAsset && (
-          <>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Move Details</CardTitle>
-                <CardDescription className="text-xs">
-                  Select the type of move and provide the required information
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-2 pb-4 space-y-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Move Details</CardTitle>
+            <CardDescription className="text-xs">
+              {selectedAsset 
+                ? "Select the type of move and provide the required information"
+                : "Select an asset first to enable move options"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-2 pb-4 space-y-4">
                 <Field>
                   <FieldLabel htmlFor="moveType">
                     Type of Move <span className="text-destructive">*</span>
                   </FieldLabel>
                   <FieldContent>
-                    <Select
-                      value={moveType}
-                      onValueChange={handleMoveTypeChange}
-                      disabled={!canViewAssets || !canMove}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select move type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Location Transfer">Location Transfer</SelectItem>
-                        <SelectItem value="Employee Assignment">Employee Assignment</SelectItem>
-                        <SelectItem value="Department Transfer">Department Transfer</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Controller
+                      name="moveType"
+                      control={form.control}
+                      render={({ field, fieldState }) => (
+                        <>
+                          <Select
+                            value={field.value || ""}
+                            onValueChange={(value) => {
+                              field.onChange(value)
+                              handleMoveTypeChange(value as MoveType)
+                            }}
+                            disabled={!canViewAssets || !canMove || !selectedAsset}
+                          >
+                            <SelectTrigger className="w-full" aria-invalid={fieldState.error ? 'true' : 'false'}>
+                              <SelectValue placeholder="Select move type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Location Transfer">Location Transfer</SelectItem>
+                              <SelectItem value="Employee Assignment">Employee Assignment</SelectItem>
+                              <SelectItem value="Department Transfer">Department Transfer</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {fieldState.error && (
+                            <FieldError>{fieldState.error.message}</FieldError>
+                          )}
+                        </>
+                      )}
+                    />
                   </FieldContent>
                 </Field>
 
@@ -763,34 +784,55 @@ export default function MoveAssetPage() {
                   <Field>
                     <FieldLabel htmlFor="location">
                       Location <span className="text-destructive">*</span>
-                      {selectedAsset.location && (
+                      {selectedAsset?.location && (
                         <span className="text-xs text-muted-foreground font-normal ml-2">
                           (Current: {selectedAsset.location})
                         </span>
                       )}
                     </FieldLabel>
                     <FieldContent>
-                      <Input
-                        id="location"
-                        placeholder={selectedAsset.location || "Enter location"}
-                        value={location}
-                        onChange={(e) => setLocation(e.target.value)}
-                        required
-                        disabled={!canViewAssets || !canMove}
+                      <Controller
+                        name="location"
+                        control={form.control}
+                        render={({ field, fieldState }) => (
+                          <>
+                            <Input
+                              id="location"
+                              placeholder={selectedAsset?.location || "Enter location"}
+                              {...field}
+                              disabled={!canViewAssets || !canMove || !selectedAsset}
+                              aria-invalid={fieldState.error ? 'true' : 'false'}
+                              aria-required="true"
+                            />
+                            {fieldState.error && (
+                              <FieldError>{fieldState.error.message}</FieldError>
+                            )}
+                          </>
+                        )}
                       />
                     </FieldContent>
                   </Field>
                 )}
 
                 {moveType === 'Employee Assignment' && (
-                  <EmployeeSelectField
-                    value={selectedEmployeeId}
-                    onValueChange={setSelectedEmployeeId}
-                    label="Assign To Employee"
-                    required
-                    disabled={!canViewAssets || !canMove}
-                    currentEmployeeId={selectedAsset.checkouts?.[0]?.employeeUser?.id}
-                    queryKey={["employees", "move"]}
+                  <Controller
+                    name="employeeUserId"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <EmployeeSelectField
+                        value={field.value || ""}
+                        onValueChange={(value) => {
+                          field.onChange(value)
+                          form.trigger('employeeUserId')
+                        }}
+                        label="Assign To Employee"
+                        required
+                        disabled={!canViewAssets || !canMove || !selectedAsset}
+                        currentEmployeeId={selectedAsset?.checkouts?.[0]?.employeeUser?.id}
+                        queryKey={["employees", "move"]}
+                        error={fieldState.error}
+                      />
+                    )}
                   />
                 )}
 
@@ -798,20 +840,31 @@ export default function MoveAssetPage() {
                   <Field>
                     <FieldLabel htmlFor="department">
                       Department <span className="text-destructive">*</span>
-                      {selectedAsset.department && (
+                      {selectedAsset?.department && (
                         <span className="text-xs text-muted-foreground font-normal ml-2">
                           (Current: {selectedAsset.department})
                         </span>
                       )}
                     </FieldLabel>
                     <FieldContent>
-                      <Input
-                        id="department"
-                        placeholder={selectedAsset.department || "Enter department"}
-                        value={department}
-                        onChange={(e) => setDepartment(e.target.value)}
-                        required
-                        disabled={!canViewAssets || !canMove}
+                      <Controller
+                        name="department"
+                        control={form.control}
+                        render={({ field, fieldState }) => (
+                          <>
+                            <Input
+                              id="department"
+                              placeholder={selectedAsset?.department || "Enter department"}
+                              {...field}
+                              disabled={!canViewAssets || !canMove || !selectedAsset}
+                              aria-invalid={fieldState.error ? 'true' : 'false'}
+                              aria-required="true"
+                            />
+                            {fieldState.error && (
+                              <FieldError>{fieldState.error.message}</FieldError>
+                            )}
+                          </>
+                        )}
                       />
                     </FieldContent>
                   </Field>
@@ -822,13 +875,24 @@ export default function MoveAssetPage() {
                     Move Date <span className="text-destructive">*</span>
                   </FieldLabel>
                   <FieldContent>
-                    <Input
-                      id="moveDate"
-                      type="date"
-                      value={moveDate}
-                      onChange={(e) => setMoveDate(e.target.value)}
-                      required
-                      disabled={!canViewAssets || !canMove}
+                    <Controller
+                      name="moveDate"
+                      control={form.control}
+                      render={({ field, fieldState }) => (
+                        <>
+                          <Input
+                            id="moveDate"
+                            type="date"
+                            {...field}
+                            disabled={!canViewAssets || !canMove || !selectedAsset}
+                            aria-invalid={fieldState.error ? 'true' : 'false'}
+                            aria-required="true"
+                          />
+                          {fieldState.error && (
+                            <FieldError>{fieldState.error.message}</FieldError>
+                          )}
+                        </>
+                      )}
                     />
                   </FieldContent>
                 </Field>
@@ -838,13 +902,24 @@ export default function MoveAssetPage() {
                     Reason for Move
                   </FieldLabel>
                   <FieldContent>
-                    <Textarea
-                      id="reason"
-                      placeholder="Explain the reason for this move"
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                      rows={3}
-                      disabled={!canViewAssets || !canMove}
+                    <Controller
+                      name="reason"
+                      control={form.control}
+                      render={({ field, fieldState }) => (
+                        <>
+                          <Textarea
+                            id="reason"
+                            placeholder="Explain the reason for this move"
+                            {...field}
+                            rows={3}
+                            disabled={!canViewAssets || !canMove || !selectedAsset}
+                            aria-invalid={fieldState.error ? 'true' : 'false'}
+                          />
+                          {fieldState.error && (
+                            <FieldError>{fieldState.error.message}</FieldError>
+                          )}
+                        </>
+                      )}
                     />
                   </FieldContent>
                 </Field>
@@ -854,20 +929,29 @@ export default function MoveAssetPage() {
                     Notes <span className="text-xs text-muted-foreground font-normal">(Optional)</span>
                   </FieldLabel>
                   <FieldContent>
-                    <Textarea
-                      id="notes"
-                      placeholder="Any additional notes about this move"
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      rows={3}
-                      disabled={!canViewAssets || !canMove}
+                    <Controller
+                      name="notes"
+                      control={form.control}
+                      render={({ field, fieldState }) => (
+                        <>
+                          <Textarea
+                            id="notes"
+                            placeholder="Any additional notes about this move"
+                            {...field}
+                            rows={3}
+                            disabled={!canViewAssets || !canMove || !selectedAsset}
+                            aria-invalid={fieldState.error ? 'true' : 'false'}
+                          />
+                          {fieldState.error && (
+                            <FieldError>{fieldState.error.message}</FieldError>
+                          )}
+                        </>
+                      )}
                     />
                   </FieldContent>
                 </Field>
-              </CardContent>
-            </Card>
-          </>
-        )}
+          </CardContent>
+        </Card>
       </form>
 
       {/* Floating Action Buttons - Only show when form has changes */}

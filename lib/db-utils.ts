@@ -8,64 +8,73 @@ import { PrismaClientInitializationError, PrismaClientKnownRequestError } from '
  * Retry operation with exponential backoff for transient database connection errors
  * @param operation - The async operation to retry
  * @param maxRetries - Maximum number of retry attempts (default: 3)
- * @param delay - Initial delay in milliseconds (default: 500)
+ * @param delay - Initial delay in milliseconds (default: 1000)
  * @returns The result of the operation
  */
 export async function retryDbOperation<T>(
   operation: () => Promise<T>,
   maxRetries = 3,
-  delay = 500
+  delay = 1000
 ): Promise<T> {
   let lastError: unknown
+  
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       return await operation()
     } catch (error: unknown) {
       lastError = error
       
-      // Check if it's a Prisma initialization error (connection failure)
-      if (error instanceof PrismaClientInitializationError) {
-        const isRetryable = attempt < maxRetries - 1
-        if (isRetryable) {
-          console.warn(`[DB] Connection error (attempt ${attempt + 1}/${maxRetries}):`, error.message)
-          // Exponential backoff: 500ms, 1000ms, 2000ms
-          await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt)))
-          continue
-        }
-      }
-      
-      // Check for Prisma error codes
-      if (error instanceof PrismaClientKnownRequestError) {
-        const isRetryableError = (error.code === 'P1001' || error.code === 'P2024') && attempt < maxRetries - 1
-        if (isRetryableError) {
-          console.warn(`[DB] Retryable error ${error.code} (attempt ${attempt + 1}/${maxRetries})`)
-          // Exponential backoff: 500ms, 1000ms, 2000ms
-          await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt)))
-          continue
-        }
-      }
-      
-      // Check for generic connection errors by message (more specific patterns)
+      // Extract error message and check error type
       const errorMessage = error instanceof Error ? error.message : String(error)
+      const errorName = error instanceof Error ? error.name : ''
+      
+      // Check if it's a connection-related error
       const isConnectionError = 
+        // Prisma error types
+        error instanceof PrismaClientInitializationError ||
+        (error instanceof PrismaClientKnownRequestError && 
+         (error.code === 'P1001' || error.code === 'P2024' || error.code === 'P1017')) ||
+        // Error message patterns
         errorMessage.includes("Can't reach database server") ||
         errorMessage.includes("Can't reach database") ||
         errorMessage.includes("Connection timeout") ||
+        errorMessage.includes("connection pool") ||
+        errorMessage.includes("Timed out fetching") ||
         errorMessage.includes("ECONNREFUSED") ||
         errorMessage.includes("ETIMEDOUT") ||
         errorMessage.includes("ENOTFOUND") ||
-        (errorMessage.includes("timeout") && errorMessage.includes("connection"))
+        errorMessage.includes("Connection closed") ||
+        errorMessage.includes("Connection terminated") ||
+        (errorMessage.includes("timeout") && errorMessage.includes("connection")) ||
+        // Error name patterns
+        errorName.includes("PrismaClientInitializationError") ||
+        errorName.includes("ConnectionError")
       
+      // Only retry if it's a connection error and we have retries left
       if (isConnectionError && attempt < maxRetries - 1) {
-        console.warn(`[DB] Connection error detected (attempt ${attempt + 1}/${maxRetries}):`, errorMessage)
-        // Exponential backoff: 500ms, 1000ms, 2000ms
-        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt)))
+        const attemptNum = attempt + 1
+        const errorCode = error instanceof PrismaClientKnownRequestError ? error.code : 
+                         error instanceof PrismaClientInitializationError ? 'INIT_ERROR' : 'CONN_ERROR'
+        
+        // Log with minimal detail to avoid noise (Prisma already logs the full error)
+        console.warn(`[DB] Connection error (attempt ${attemptNum}/${maxRetries}, code: ${errorCode})`)
+        
+        // Exponential backoff with jitter: 1000ms, 2000ms, 4000ms
+        // Add small random jitter to prevent thundering herd
+        const baseDelay = delay * Math.pow(2, attempt)
+        const jitter = Math.random() * 200 // 0-200ms random jitter
+        const backoffDelay = baseDelay + jitter
+        
+        await new Promise(resolve => setTimeout(resolve, backoffDelay))
         continue
       }
       
+      // If not retryable or out of retries, throw the error
       throw error
     }
   }
+  
+  // If we exhausted all retries, throw the last error
   throw lastError
 }
 

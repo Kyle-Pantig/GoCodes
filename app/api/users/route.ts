@@ -4,6 +4,7 @@ import { verifyAuth } from '@/lib/auth-utils'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { requirePermission } from '@/lib/permission-utils'
 import { Prisma } from '@prisma/client'
+import { sendWelcomeEmail } from '@/lib/email'
 
 export async function GET(request: NextRequest) {
   const auth = await verifyAuth()
@@ -15,6 +16,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search')
+    const searchType = searchParams.get('searchType') || 'unified'
     const role = searchParams.get('role')
     const page = parseInt(searchParams.get('page') || '1', 10)
     const pageSize = parseInt(searchParams.get('pageSize') || '100', 10)
@@ -31,10 +33,11 @@ export async function GET(request: NextRequest) {
     let users: Array<{ id: string; userId: string; role: string; email?: string | null; [key: string]: unknown }> = []
     let totalCount = 0
 
-    // If there's a search term, we need to search by both email and userId
+    // If there's a search term, we need to search by email, userId, or role based on searchType
     // Since emails are in Supabase Auth, we'll fetch users and filter by email
     if (search) {
-      // Fetch all users (or a reasonable limit) to search by email and userId
+      // Fetch all users (or a reasonable limit) to search
+      // We'll filter in JavaScript since we need to check email from Supabase Auth anyway
       const allUsers = await prisma.assetUser.findMany({
         where: baseWhereClause,
         orderBy: {
@@ -61,12 +64,22 @@ export async function GET(request: NextRequest) {
         })
       )
 
-      // Filter by email OR userId containing search term (case-insensitive)
+      // Filter by searchType (case-insensitive)
       const searchLower = search.toLowerCase()
       const filteredUsers = usersWithEmailData.filter(user => {
-        const emailMatch = user.email?.toLowerCase().includes(searchLower) ?? false
-        const userIdMatch = user.userId.toLowerCase().includes(searchLower)
-        return emailMatch || userIdMatch
+        if (searchType === 'email') {
+          return user.email?.toLowerCase().includes(searchLower) ?? false
+        } else if (searchType === 'userId') {
+          return user.userId.toLowerCase().includes(searchLower)
+        } else if (searchType === 'role') {
+          return user.role.toLowerCase().includes(searchLower)
+        } else {
+          // unified search - search by email OR userId OR role
+          const emailMatch = user.email?.toLowerCase().includes(searchLower) ?? false
+          const userIdMatch = user.userId.toLowerCase().includes(searchLower)
+          const roleMatch = user.role.toLowerCase().includes(searchLower)
+          return emailMatch || userIdMatch || roleMatch
+        }
       })
 
       totalCount = filteredUsers.length
@@ -246,17 +259,40 @@ export async function POST(request: NextRequest) {
     } : {}
 
     // Create asset_users record
+    // When admin creates an account, automatically approve it
     const user = await prisma.assetUser.create({
       data: {
         userId,
         role,
+        isApproved: true, // Automatically approve accounts created by admin
         ...permissionsData,
       },
     })
 
+    // Always send welcome email with password when user is created
+    // The password is either auto-generated or provided by admin, but we send it via email either way
+    let emailSent = false
+    let emailError: string | undefined = undefined
+    
+    try {
+      const emailResult = await sendWelcomeEmail(email, userPassword, role)
+      emailSent = emailResult.success
+      emailError = emailResult.error
+      
+      if (!emailResult.success) {
+        // Log error but don't fail user creation
+        console.error('[USER CREATION] Failed to send welcome email:', emailResult.error)
+      }
+    } catch (emailErr) {
+      console.error('[USER CREATION] Exception while sending email:', emailErr)
+      emailError = emailErr instanceof Error ? emailErr.message : 'Unknown error'
+    }
+
     return NextResponse.json({ 
       user,
       generatedPassword: password ? undefined : userPassword,
+      emailSent: emailSent, // Email sent status
+      emailError: !emailSent ? emailError : undefined,
     }, { status: 201 })
   } catch (error: unknown) {
     const prismaError = error as { code?: string; message?: string }

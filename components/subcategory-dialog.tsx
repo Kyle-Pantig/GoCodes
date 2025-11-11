@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
+import { useForm, Controller } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import {
   Dialog,
   DialogContent,
@@ -18,8 +20,10 @@ import {
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
+import { Field, FieldLabel, FieldContent, FieldError } from '@/components/ui/field'
+import { Textarea } from '@/components/ui/textarea'
+import { subcategorySchema, type SubcategoryFormData } from '@/lib/validations/categories'
 import type { Category } from '@/hooks/use-categories'
 
 interface SubCategoryDialogProps {
@@ -47,29 +51,40 @@ export function SubCategoryDialog({
   selectedCategoryName,
   isLoading = false,
 }: SubCategoryDialogProps) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [categoryId, setCategoryId] = useState('')
+  const form = useForm<SubcategoryFormData>({
+    resolver: zodResolver(subcategorySchema),
+    defaultValues: {
+      name: '',
+      description: '',
+      categoryId: '',
+    },
+  })
 
   // Reset form when dialog opens/closes or initialData changes
   useEffect(() => {
     if (!open) {
       // Reset on close
-      setName('')
-      setDescription('')
-      setCategoryId('')
+      form.reset({
+        name: '',
+        description: '',
+        categoryId: '',
+      })
       return
     }
 
     // Only update when dialog opens and we have initialData
     if (initialData) {
-      setName(initialData.name || '')
-      setDescription(initialData.description || '')
-      setCategoryId(initialData.categoryId || '')
+      form.reset({
+        name: initialData.name || '',
+        description: initialData.description || '',
+        categoryId: initialData.categoryId || '',
+      })
     } else {
-      setName('')
-      setDescription('')
-      setCategoryId('')
+      form.reset({
+        name: '',
+        description: '',
+        categoryId: '',
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -77,23 +92,19 @@ export function SubCategoryDialog({
   // Update form when initialData changes while dialog is open
   useEffect(() => {
     if (open && initialData) {
-      if (initialData.name !== undefined) {
-        setName(initialData.name)
-      }
-      if (initialData.description !== undefined) {
-        setDescription(initialData.description)
-      }
-      setCategoryId(initialData.categoryId)
+      form.reset({
+        name: initialData.name || '',
+        description: initialData.description || '',
+        categoryId: initialData.categoryId || '',
+      })
     }
-  }, [open, initialData])
+  }, [open, initialData, form])
 
-  const handleSubmit = async () => {
-    if (!name.trim() || !categoryId) return
-    
+  const handleSubmit = async (data: SubcategoryFormData) => {
     await onSubmit({
-      name: name.trim(),
-      description: description.trim() || undefined,
-      categoryId,
+      name: data.name.trim(),
+      description: data.description?.trim() || undefined,
+      categoryId: data.categoryId,
     })
   }
 
@@ -118,74 +129,92 @@ export function SubCategoryDialog({
               : 'Create a new subcategory for the selected category'}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          {mode === 'edit' && (
-            <div className="space-y-2">
-              <Label htmlFor="subcategory-category">Category</Label>
-              <Select
-                value={categoryId}
-                onValueChange={setCategoryId}
-                disabled={isLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor="subcategory-name">
-              Name <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="subcategory-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Subcategory name"
-              disabled={isLoading}
-            />
+        <form onSubmit={form.handleSubmit(handleSubmit)}>
+          <div className="space-y-4">
+            <Field>
+              <FieldLabel htmlFor="subcategory-category">
+                Category <span className="text-destructive">*</span>
+              </FieldLabel>
+              <FieldContent>
+                <Controller
+                  name="categoryId"
+                  control={form.control}
+                  render={({ field }) => (
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      disabled={isLoading}
+                    >
+                      <SelectTrigger id="subcategory-category" aria-invalid={form.formState.errors.categoryId ? 'true' : 'false'}>
+                        <SelectValue placeholder="Select a category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </FieldContent>
+              <FieldError>{form.formState.errors.categoryId?.message}</FieldError>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="subcategory-name">
+                Name <span className="text-destructive">*</span>
+              </FieldLabel>
+              <FieldContent>
+                <Input
+                  id="subcategory-name"
+                  {...form.register('name')}
+                  placeholder="Subcategory name"
+                  disabled={isLoading}
+                  aria-invalid={form.formState.errors.name ? 'true' : 'false'}
+                />
+              </FieldContent>
+              <FieldError>{form.formState.errors.name?.message}</FieldError>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="subcategory-description">Description</FieldLabel>
+              <FieldContent>
+                <Textarea
+                  id="subcategory-description"
+                  {...form.register('description')}
+                  placeholder="Subcategory description (optional)"
+                  disabled={isLoading}
+                  className="min-h-[80px]"
+                  aria-invalid={form.formState.errors.description ? 'true' : 'false'}
+                />
+              </FieldContent>
+              <FieldError>{form.formState.errors.description?.message}</FieldError>
+            </Field>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="subcategory-description">Description</Label>
-            <textarea
-              id="subcategory-description"
-              className="min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Subcategory description (optional)"
+          <DialogFooter className="mt-6">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleOpenChange(false)}
               disabled={isLoading}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => handleOpenChange(false)}
-            disabled={isLoading}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!name.trim() || !categoryId || isLoading}
-          >
-            {isLoading ? (
-              <>
-                <Spinner className="mr-2 h-4 w-4" />
-                {mode === 'edit' ? 'Updating...' : 'Creating...'}
-              </>
-            ) : (
-              mode === 'edit' ? 'Update' : 'Create'
-            )}
-          </Button>
-        </DialogFooter>
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <Spinner className="mr-2 h-4 w-4" />
+                  {mode === 'edit' ? 'Updating...' : 'Creating...'}
+                </>
+              ) : (
+                mode === 'edit' ? 'Update' : 'Create'
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )

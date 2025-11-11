@@ -31,7 +31,19 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Protect root and dashboard routes
+  // Handle password reset code on root path
+  if (request.nextUrl.pathname === '/') {
+    const code = request.nextUrl.searchParams.get('code')
+    if (code) {
+      // Redirect to reset password page with code
+      const url = request.nextUrl.clone()
+      url.pathname = '/reset-password'
+      url.searchParams.set('code', code)
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // Protect root and dashboard routes (but allow reset-password page)
   if (request.nextUrl.pathname === '/' || request.nextUrl.pathname.startsWith('/dashboard')) {
     if (!user) {
       const url = request.nextUrl.clone()

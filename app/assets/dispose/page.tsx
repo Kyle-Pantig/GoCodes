@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
+import { useForm, Controller, useWatch } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { XIcon, History, QrCode } from "lucide-react"
 import { usePermissions } from '@/hooks/use-permissions'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
@@ -34,9 +36,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
+import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
 import { cn } from "@/lib/utils"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
+import { disposeSchema, type DisposeFormData } from "@/lib/validations/assets"
 
 interface Asset {
   id: string
@@ -61,7 +64,6 @@ interface DisposeAsset extends Asset {
   notes?: string
 }
 
-type DisposalMethod = "Sold" | "Donated" | "Scrapped" | "Lost/Missing" | "Destroyed" | ""
 
 // Helper function to get status badge with colors
 const getStatusBadge = (status: string | null) => {
@@ -125,14 +127,27 @@ export default function DisposeAssetPage() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1)
   const [selectedAssets, setSelectedAssets] = useState<DisposeAsset[]>([])
-  const [disposeDate, setDisposeDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  )
-  const [disposalMethod, setDisposalMethod] = useState<DisposalMethod>("")
-  const [disposeReason, setDisposeReason] = useState<string>("")
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
+
+  const form = useForm<DisposeFormData>({
+    // @ts-expect-error - Zod resolver type mismatch with optional field that has default
+    resolver: zodResolver(disposeSchema),
+    defaultValues: {
+      assetIds: [],
+      disposeDate: new Date().toISOString().split('T')[0],
+      disposalMethod: '',
+      disposeReason: '',
+      assetUpdates: [],
+    },
+  })
+
+  // Watch disposalMethod to handle conditional fields
+  const disposalMethod = useWatch({
+    control: form.control,
+    name: 'disposalMethod',
+  })
 
   // Fetch dispose statistics
   const { data: disposeStats, isLoading: isLoadingDisposeStats, error: disposeStatsError } = useQuery<{
@@ -173,6 +188,17 @@ export default function DisposeAssetPage() {
     retry: 2,
     retryDelay: 1000,
   })
+
+  // Format date for display
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'N/A'
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString()
+    } catch {
+      return 'N/A'
+    }
+  }
 
   // Calculate time ago
   const getTimeAgo = (dateString: string): string => {
@@ -408,12 +434,18 @@ export default function DisposeAssetPage() {
     toast.success('Asset removed from disposal list')
   }
 
+  // Watch disposeReason for form dirty check
+  const disposeReason = useWatch({
+    control: form.control,
+    name: 'disposeReason',
+  })
+
   // Track form changes to show floating buttons
   const isFormDirty = useMemo(() => {
     return !!(
       selectedAssets.length > 0 ||
       disposalMethod ||
-      disposeReason.trim()
+      (disposeReason && disposeReason.trim())
     )
   }, [selectedAssets, disposalMethod, disposeReason])
 
@@ -421,8 +453,13 @@ export default function DisposeAssetPage() {
   const clearForm = () => {
     setSelectedAssets([])
     setAssetIdInput("")
-    setDisposalMethod("")
-    setDisposeReason("")
+    form.reset({
+      assetIds: [],
+      disposeDate: new Date().toISOString().split('T')[0],
+      disposalMethod: '',
+      disposeReason: '',
+      assetUpdates: [],
+    })
   }
 
   // Handle QR code scan result
@@ -448,10 +485,18 @@ export default function DisposeAssetPage() {
 
   // Update asset field
   const handleUpdateAsset = (assetId: string, field: keyof DisposeAsset, value: string) => {
-    setSelectedAssets(prev =>
-      prev.map(a => (a.id === assetId ? { ...a, [field]: value } : a))
-    )
+    setSelectedAssets(prev => prev.map(a => (a.id === assetId ? { ...a, [field]: value } : a)))
   }
+
+  // Sync selectedAssets with form state using useEffect to avoid render issues
+  useEffect(() => {
+    form.setValue('assetIds', selectedAssets.map(a => a.id))
+    form.setValue('assetUpdates', selectedAssets.map(a => ({
+      assetId: a.id,
+      disposeValue: a.disposeValue || '',
+      notes: a.notes || '',
+    })), { shouldValidate: false })
+  }, [selectedAssets, form])
 
   // Format currency in PHP
   const formatCurrency = (value: number) => {
@@ -497,57 +542,35 @@ export default function DisposeAssetPage() {
   })
 
   // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
+  const handleSubmit = form.handleSubmit(async (data) => {
     if (selectedAssets.length === 0) {
       toast.error('Please select at least one asset to dispose')
       return
     }
 
-    if (!disposeDate) {
-      toast.error('Please enter a dispose date')
-      return
-    }
-
-    if (!disposalMethod) {
-      toast.error('Please select a disposal method')
-      return
-    }
-
-    // Validate dispose value for "Sold" method
-    if (disposalMethod === 'Sold') {
-      const invalidAssets = selectedAssets.filter(a => !a.disposeValue || parseFloat(a.disposeValue) <= 0)
-      if (invalidAssets.length > 0) {
-        toast.error('Please enter a valid dispose value for all sold assets')
-        return
-      }
-    }
-
-    const assetIds = selectedAssets.map(a => a.id)
+    // Build updates object from form data
     const updates: Record<string, { disposeValue?: string; notes?: string }> = {}
-    
-    selectedAssets.forEach(asset => {
-      updates[asset.id] = {
-        disposeValue: asset.disposeValue,
-        notes: asset.notes,
+    data.assetUpdates.forEach((update: { assetId: string; disposeValue?: string; notes?: string }) => {
+      updates[update.assetId] = {
+        disposeValue: update.disposeValue || undefined,
+        notes: update.notes || undefined,
       }
     })
 
     // Use the common dispose value for all assets, but allow individual dispose values and notes
-    const commonDisposeValue = disposalMethod === 'Sold' && selectedAssets.length === 1 
-      ? selectedAssets[0].disposeValue 
+    const commonDisposeValue = data.disposalMethod === 'Sold' && selectedAssets.length === 1 
+      ? data.assetUpdates[0]?.disposeValue 
       : undefined
 
     disposeMutation.mutate({
-      assetIds,
-      disposeDate,
-      disposeReason: disposalMethod, // API still expects disposeReason for the method
+      assetIds: data.assetIds,
+      disposeDate: data.disposeDate,
+      disposeReason: data.disposalMethod, // API still expects disposeReason for the method
       disposeValue: commonDisposeValue,
-      disposeReasonText: disposeReason, // Additional text reason
+      disposeReasonText: data.disposeReason || undefined, // Additional text reason
       updates,
     })
-  }
+  })
 
   return (
     <div className={isFormDirty ? "pb-16" : ""}>
@@ -559,7 +582,7 @@ export default function DisposeAssetPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 grid-cols-1">
+      <div className="grid gap-4 grid-cols-1 mt-6">
         {/* Recent History */}
         <Card className="flex flex-col py-0 gap-2">
           <CardHeader className="p-4 pb-2">
@@ -636,7 +659,7 @@ export default function DisposeAssetPage() {
                           {disposal.disposeValue ? formatCurrency(Number(disposal.disposeValue)) : '-'}
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground">
-                          {new Date(disposal.disposeDate).toLocaleDateString()}
+                          {formatDate(disposal.disposeDate)}
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground text-right">
                           {getTimeAgo(disposal.createdAt)}
@@ -800,50 +823,104 @@ export default function DisposeAssetPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field>
-                <FieldLabel>Dispose Date</FieldLabel>
+                <FieldLabel htmlFor="disposeDate">
+                  Dispose Date <span className="text-destructive">*</span>
+                </FieldLabel>
                 <FieldContent>
-                  <Input
-                    type="date"
-                    value={disposeDate}
-                    onChange={(e) => setDisposeDate(e.target.value)}
-                    required
-                    disabled={!canViewAssets || !canDispose}
+                  <Controller
+                    name="disposeDate"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <>
+                        <Input
+                          id="disposeDate"
+                          type="date"
+                          {...field}
+                          disabled={!canViewAssets || !canDispose || selectedAssets.length === 0}
+                          aria-invalid={fieldState.error ? 'true' : 'false'}
+                          aria-required="true"
+                        />
+                        {fieldState.error && (
+                          <FieldError>{fieldState.error.message}</FieldError>
+                        )}
+                      </>
+                    )}
                   />
                 </FieldContent>
               </Field>
 
               <Field>
-                <FieldLabel>Disposal Method</FieldLabel>
+                <FieldLabel htmlFor="disposalMethod">
+                  Disposal Method <span className="text-destructive">*</span>
+                </FieldLabel>
                 <FieldContent>
-                  <Select
-                    value={disposalMethod}
-                    onValueChange={(value) => setDisposalMethod(value as DisposalMethod)}
-                    disabled={!canViewAssets || !canDispose}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select disposal method" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Sold">Sold</SelectItem>
-                      <SelectItem value="Donated">Donated</SelectItem>
-                      <SelectItem value="Scrapped">Scrapped</SelectItem>
-                      <SelectItem value="Lost/Missing">Lost/Missing</SelectItem>
-                      <SelectItem value="Destroyed">Destroyed</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Controller
+                    name="disposalMethod"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <>
+                        <Select
+                          value={field.value || ""}
+                          onValueChange={(value) => {
+                            field.onChange(value)
+                            // Clear dispose values if switching away from "Sold"
+                            if (value !== 'Sold') {
+                              selectedAssets.forEach((asset, index) => {
+                                handleUpdateAsset(asset.id, 'disposeValue', '')
+                                form.setValue(`assetUpdates.${index}.disposeValue` as const, '')
+                              })
+                            }
+                            // Trigger validation for assetUpdates when method changes
+                            if (value === 'Sold') {
+                              form.trigger('assetUpdates')
+                            }
+                          }}
+                          disabled={!canViewAssets || !canDispose || selectedAssets.length === 0}
+                        >
+                          <SelectTrigger className="w-full" aria-invalid={fieldState.error ? 'true' : 'false'}>
+                            <SelectValue placeholder="Select disposal method" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Sold">Sold</SelectItem>
+                            <SelectItem value="Donated">Donated</SelectItem>
+                            <SelectItem value="Scrapped">Scrapped</SelectItem>
+                            <SelectItem value="Lost/Missing">Lost/Missing</SelectItem>
+                            <SelectItem value="Destroyed">Destroyed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {fieldState.error && (
+                          <FieldError>{fieldState.error.message}</FieldError>
+                        )}
+                      </>
+                    )}
+                  />
                 </FieldContent>
               </Field>
             </div>
 
             <Field>
-              <FieldLabel>Dispose Reason</FieldLabel>
+              <FieldLabel htmlFor="disposeReason">
+                Dispose Reason
+              </FieldLabel>
               <FieldContent>
-                <Textarea
-                  placeholder="Enter the reason for disposal (optional)"
-                  value={disposeReason || ""}
-                  onChange={(e) => setDisposeReason(e.target.value)}
-                  rows={3}
-                  disabled={!canViewAssets || !canDispose}
+                <Controller
+                  name="disposeReason"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
+                      <Textarea
+                        id="disposeReason"
+                        placeholder="Enter the reason for disposal (optional)"
+                        {...field}
+                        rows={3}
+                        disabled={!canViewAssets || !canDispose || selectedAssets.length === 0}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                      />
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
                 />
               </FieldContent>
             </Field>
@@ -859,30 +936,57 @@ export default function DisposeAssetPage() {
                             {asset.subCategory?.name && ` - ${asset.subCategory.name}`}
                           </span>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className={`grid gap-4 ${disposalMethod === 'Sold' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+                          {disposalMethod === 'Sold' && (
+                            <Field>
+                              <FieldLabel htmlFor={`disposeValue-${asset.id}`}>
+                                Dispose Value <span className="text-destructive">*</span>
+                              </FieldLabel>
+                              <FieldContent>
+                                <Controller
+                                  name={`assetUpdates.${selectedAssets.findIndex(a => a.id === asset.id)}.disposeValue` as const}
+                                  control={form.control}
+                                  render={({ field, fieldState }) => (
+                                    <>
+                                      <Input
+                                        id={`disposeValue-${asset.id}`}
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        placeholder="0.00"
+                                        value={asset.disposeValue || field.value || ""}
+                                        onChange={(e) => {
+                                          handleUpdateAsset(asset.id, 'disposeValue', e.target.value)
+                                          field.onChange(e.target.value)
+                                          // Trigger validation after change
+                                          form.trigger(`assetUpdates.${selectedAssets.findIndex(a => a.id === asset.id)}.disposeValue`)
+                                          form.trigger('assetUpdates')
+                                        }}
+                                        disabled={!canViewAssets || !canDispose || selectedAssets.length === 0}
+                                        aria-required="true"
+                                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                                      />
+                                      {fieldState.error && (
+                                        <FieldError>{fieldState.error.message}</FieldError>
+                                      )}
+                                    </>
+                                  )}
+                                />
+                              </FieldContent>
+                            </Field>
+                          )}
                           <Field>
-                            <FieldLabel>Dispose Value {disposalMethod === 'Sold' && '(Required)'}</FieldLabel>
-                            <FieldContent>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                placeholder="0.00"
-                                value={asset.disposeValue || ""}
-                                onChange={(e) => handleUpdateAsset(asset.id, 'disposeValue', e.target.value)}
-                                disabled={disposalMethod !== 'Sold' || !canViewAssets || !canDispose}
-                              />
-                            </FieldContent>
-                          </Field>
-                          <Field>
-                            <FieldLabel>Notes</FieldLabel>
+                            <FieldLabel htmlFor={`notes-${asset.id}`}>
+                              Notes
+                            </FieldLabel>
                             <FieldContent>
                               <Textarea
+                                id={`notes-${asset.id}`}
                                 placeholder="Additional notes..."
                                 value={asset.notes || ""}
                                 onChange={(e) => handleUpdateAsset(asset.id, 'notes', e.target.value)}
                                 rows={2}
-                                disabled={!canViewAssets || !canDispose}
+                                disabled={!canViewAssets || !canDispose || selectedAssets.length === 0}
                               />
                             </FieldContent>
                           </Field>

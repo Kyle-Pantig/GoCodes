@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useMemo, useCallback } from "react"
+import { useState, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -447,7 +447,7 @@ export default function AddAssetPage() {
       </div>
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
-        <div className="grid gap-2.5 md:grid-cols-2">
+        <div className="grid gap-2.5 md:grid-cols-2 mt-6">
           {/* Basic Information & Asset Details */}
           <Card className="md:col-span-2">
             <CardHeader className="pb-3">

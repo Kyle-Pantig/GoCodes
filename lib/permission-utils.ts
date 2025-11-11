@@ -3,6 +3,11 @@ import { verifyAuth } from '@/lib/auth-utils'
 import { retryDbOperation } from '@/lib/db-utils'
 import { NextResponse } from 'next/server'
 
+// Simple in-memory cache for user permissions (TTL: 30 seconds)
+// This reduces database connection usage for permission checks
+const permissionCache = new Map<string, { user: AssetUser; expiresAt: number }>()
+const CACHE_TTL = 30000 // 30 seconds
+
 interface UserPermissions {
   canDeleteAssets: boolean
   canManageImport: boolean
@@ -52,11 +57,19 @@ interface AssetUser {
 
 /**
  * Get current user's permissions from database
+ * Uses in-memory cache to reduce database connection usage
  */
 export async function getUserPermissions(): Promise<{ user: AssetUser | null; error: NextResponse | null }> {
   const auth = await verifyAuth()
   if (auth.error) {
     return { user: null, error: auth.error }
+  }
+
+  // Check cache first
+  const cacheKey = auth.user.id
+  const cached = permissionCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) {
+    return { user: cached.user, error: null }
   }
 
   try {
@@ -89,6 +102,8 @@ export async function getUserPermissions(): Promise<{ user: AssetUser | null; er
     }))
 
     if (!assetUser || !assetUser.isActive) {
+      // Clear cache if user is inactive
+      permissionCache.delete(cacheKey)
       return {
         user: null,
         error: NextResponse.json(
@@ -98,8 +113,30 @@ export async function getUserPermissions(): Promise<{ user: AssetUser | null; er
       }
     }
 
+    // Cache the result
+    permissionCache.set(cacheKey, {
+      user: assetUser,
+      expiresAt: Date.now() + CACHE_TTL,
+    })
+
     return { user: assetUser, error: null }
   } catch (error) {
+    // Handle connection pool errors specifically
+    if (error instanceof Error && (
+      error.message.includes('connection pool') ||
+      error.message.includes('Timed out fetching') ||
+      error.message.includes('Can\'t reach database server')
+    )) {
+      console.error('[Permission Utils] Connection pool error:', error.message)
+      return {
+        user: null,
+        error: NextResponse.json(
+          { error: 'Database connection limit reached. Please try again in a moment.' },
+          { status: 503 }
+        ),
+      }
+    }
+    
     console.error('Error fetching user permissions:', error)
     return {
       user: null,
@@ -167,5 +204,13 @@ export async function requireAdmin(): Promise<{ allowed: boolean; error: NextRes
   }
 
   return { allowed: true, error: null }
+}
+
+/**
+ * Clear permission cache for a specific user
+ * Useful when user permissions are updated
+ */
+export function clearPermissionCache(userId: string): void {
+  permissionCache.delete(userId)
 }
 

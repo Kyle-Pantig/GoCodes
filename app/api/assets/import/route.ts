@@ -351,6 +351,71 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // After batch creation, process images for assets with image URLs
+    const assetsWithImages = assets
+      .filter(asset => {
+        const assetTagId = asset.assetTagId as string
+        const hasImages = asset.images && typeof asset.images === 'string' && asset.images.trim() !== ''
+        return assetTagId && !existingAssetTags.has(assetTagId) && hasImages
+      })
+
+    if (assetsWithImages.length > 0) {
+      // Fetch all created assets that need image records
+      const assetTagIds = assetsWithImages.map(asset => asset.assetTagId as string)
+      const createdAssets = await prisma.assets.findMany({
+        where: { assetTagId: { in: assetTagIds } },
+        select: { assetTagId: true }
+      })
+
+      const createdAssetTagIds = new Set(createdAssets.map(a => a.assetTagId))
+
+      // Prepare image records to create
+      const imageRecordsToCreate: Array<{ assetTagId: string; imageUrl: string; imageType: string | null; imageSize: number | null }> = []
+      
+      assetsWithImages.forEach(asset => {
+        const assetTagId = asset.assetTagId as string
+        if (!createdAssetTagIds.has(assetTagId)) return
+
+        // Parse image URLs (comma or semicolon separated)
+        const imageUrls = (asset.images as string)
+          .split(/[,;]/)
+          .map(url => url.trim())
+          .filter(url => url.length > 0 && (url.startsWith('http://') || url.startsWith('https://')))
+
+        imageUrls.forEach(imageUrl => {
+          // Try to determine image type from URL
+          const urlExtension = imageUrl.split('.').pop()?.split('?')[0]?.toLowerCase() || null
+          let imageType: string | null = null
+          if (urlExtension) {
+            const mimeTypes: Record<string, string> = {
+              'jpg': 'image/jpeg',
+              'jpeg': 'image/jpeg',
+              'png': 'image/png',
+              'gif': 'image/gif',
+              'webp': 'image/webp',
+            }
+            imageType = mimeTypes[urlExtension] || null
+          }
+
+          imageRecordsToCreate.push({
+            assetTagId,
+            imageUrl,
+            imageType,
+            imageSize: null, // Size unknown for external URLs
+          })
+        })
+      })
+
+      // Batch create image records
+      if (imageRecordsToCreate.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (prisma as any).assetsImage.createMany({
+          data: imageRecordsToCreate,
+          skipDuplicates: true
+        })
+      }
+    }
+
     // Prepare results
     const results = assets
       .filter(asset => asset?.assetTagId)

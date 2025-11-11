@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import {
   Dialog,
   DialogContent,
@@ -11,8 +13,10 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
+import { Field, FieldLabel, FieldContent, FieldError } from '@/components/ui/field'
+import { Textarea } from '@/components/ui/textarea'
+import { categorySchema, type CategoryFormData } from '@/lib/validations/categories'
 
 interface CategoryDialogProps {
   open: boolean
@@ -34,25 +38,36 @@ export function CategoryDialog({
   initialData,
   isLoading = false,
 }: CategoryDialogProps) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
+  const form = useForm<CategoryFormData>({
+    resolver: zodResolver(categorySchema),
+    defaultValues: {
+      name: '',
+      description: '',
+    },
+  })
 
   // Reset form when dialog opens/closes or initialData changes
   useEffect(() => {
     if (!open) {
       // Reset on close
-      setName('')
-      setDescription('')
+      form.reset({
+        name: '',
+        description: '',
+      })
       return
     }
 
     // Only update when dialog opens and we have initialData
     if (initialData) {
-      setName(initialData.name || '')
-      setDescription(initialData.description || '')
+      form.reset({
+        name: initialData.name || '',
+        description: initialData.description || '',
+      })
     } else {
-      setName('')
-      setDescription('')
+      form.reset({
+        name: '',
+        description: '',
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -60,17 +75,17 @@ export function CategoryDialog({
   // Update form when initialData changes while dialog is open
   useEffect(() => {
     if (open && initialData) {
-      setName(initialData.name || '')
-      setDescription(initialData.description || '')
+      form.reset({
+        name: initialData.name || '',
+        description: initialData.description || '',
+      })
     }
-  }, [open, initialData])
+  }, [open, initialData, form])
 
-  const handleSubmit = async () => {
-    if (!name.trim()) return
-    
+  const handleSubmit = async (data: CategoryFormData) => {
     await onSubmit({
-      name: name.trim(),
-      description: description.trim() || undefined,
+      name: data.name.trim(),
+      description: data.description?.trim() || undefined,
     })
   }
 
@@ -93,53 +108,62 @@ export function CategoryDialog({
               : 'Add a new category for assets'}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="category-name">
-              Name <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="category-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Category name"
-              disabled={isLoading}
-            />
+        <form onSubmit={form.handleSubmit(handleSubmit)}>
+          <div className="space-y-4">
+            <Field>
+              <FieldLabel htmlFor="category-name">
+                Name <span className="text-destructive">*</span>
+              </FieldLabel>
+              <FieldContent>
+                <Input
+                  id="category-name"
+                  {...form.register('name')}
+                  placeholder="Category name"
+                  disabled={isLoading}
+                  aria-invalid={form.formState.errors.name ? 'true' : 'false'}
+                />
+              </FieldContent>
+              <FieldError>{form.formState.errors.name?.message}</FieldError>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="category-description">Description</FieldLabel>
+              <FieldContent>
+                <Textarea
+                  id="category-description"
+                  {...form.register('description')}
+                  placeholder="Category description (optional)"
+                  disabled={isLoading}
+                  className="min-h-[80px]"
+                  aria-invalid={form.formState.errors.description ? 'true' : 'false'}
+                />
+              </FieldContent>
+              <FieldError>{form.formState.errors.description?.message}</FieldError>
+            </Field>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="category-description">Description</Label>
-            <textarea
-              id="category-description"
-              className="min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Category description (optional)"
+          <DialogFooter className="mt-6">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleOpenChange(false)}
               disabled={isLoading}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => handleOpenChange(false)}
-            disabled={isLoading}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!name.trim() || isLoading}
-          >
-            {isLoading ? (
-              <>
-                <Spinner className="mr-2 h-4 w-4" />
-                {mode === 'edit' ? 'Updating...' : 'Creating...'}
-              </>
-            ) : (
-              mode === 'edit' ? 'Update' : 'Create'
-            )}
-          </Button>
-        </DialogFooter>
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <Spinner className="mr-2 h-4 w-4" />
+                  {mode === 'edit' ? 'Updating...' : 'Creating...'}
+                </>
+              ) : (
+                mode === 'edit' ? 'Update' : 'Create'
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )

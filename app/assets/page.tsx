@@ -41,10 +41,8 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { MoreHorizontal, Trash2, Edit, Download, Upload, Search, Package, CheckCircle2, User, DollarSign, XIcon, ArrowUpDown, ArrowUp, ArrowDown, ArrowRight, UserPlus, Calendar, UserCircle, Clock, CheckCircle, Edit2, X, Image as ImageIcon } from 'lucide-react'
+import { MoreHorizontal, Trash2, Edit, Download, Upload, Search, Package, CheckCircle2, User, DollarSign, XIcon, ArrowUpDown, ArrowUp, ArrowDown, ArrowRight, Image as ImageIcon, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
@@ -1642,7 +1640,7 @@ export default function AssetsPage() {
   const lastSearchQueryRef = useRef<string>(searchParams.get('search') || '') // Track last searchQuery to avoid sync loops
   const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || 'all')
   const [categoryFilter, setCategoryFilter] = useState<string>(searchParams.get('category') || 'all')
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
 
   // TanStack Table state - initialize from URL
   const [sorting, setSorting] = useState<SortingState>([])
@@ -1711,6 +1709,7 @@ export default function AssetsPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [deletingProgress, setDeletingProgress] = useState({ current: 0, total: 0 })
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const [selectedExportFields, setSelectedExportFields] = useState<Set<string>>(
     new Set(visibleColumns)
   )
@@ -2018,6 +2017,8 @@ export default function AssetsPage() {
       return
     }
 
+    setIsExporting(true)
+
     try {
       // For export, fetch all assets matching current filters (without pagination)
       const exportData = await fetchAssets(
@@ -2027,7 +2028,31 @@ export default function AssetsPage() {
         categoryFilter !== 'all' ? categoryFilter : undefined,
         statusFilter !== 'all' ? statusFilter : undefined
       )
-      const assetsToExport = exportData.assets
+      let assetsToExport = exportData.assets
+      
+      // If images column is selected, fetch image URLs for all assets
+      if (selectedExportFields.has('images')) {
+        const assetTagIds = assetsToExport.map(a => a.assetTagId)
+        try {
+          const imagesResponse = await fetch(`/api/assets/images/bulk?assetTagIds=${assetTagIds.join(',')}`)
+          if (imagesResponse.ok) {
+            const imagesData = await imagesResponse.json()
+            // Create a map of assetTagId to comma-separated image URLs
+            const imageUrlMap = new Map<string, string>()
+            imagesData.forEach((item: { assetTagId: string; images: Array<{ imageUrl: string }> }) => {
+              const urls = item.images.map((img: { imageUrl: string }) => img.imageUrl).join(', ')
+              imageUrlMap.set(item.assetTagId, urls)
+            })
+            // Add images to each asset
+            assetsToExport = assetsToExport.map(asset => ({
+              ...asset,
+              images: imageUrlMap.get(asset.assetTagId) || '',
+            }))
+          }
+        } catch (error) {
+          console.warn('Failed to fetch images for export:', error)
+        }
+      }
       
       // Use selected export fields instead of visible columns
       const fieldsToExport = Array.from(selectedExportFields)
@@ -2060,6 +2085,8 @@ export default function AssetsPage() {
     } catch (error) {
       console.error('Export error:', error)
       toast.error('Failed to export assets')
+    } finally {
+      setIsExporting(false)
     }
   }
 
@@ -2137,6 +2164,8 @@ export default function AssetsPage() {
           department: row['Department'] || null,
           site: row['Site'] || null,
           location: row['Location'] || null,
+          // Images field - comma or semicolon separated URLs
+          images: row['Images'] || row['images'] || null,
         }
         
         return assetData
@@ -2423,6 +2452,9 @@ export default function AssetsPage() {
         return asset.auditHistory?.[0]?.auditor || '-'
       case 'auditCount':
         return (asset.auditHistory?.length || 0).toString()
+      case 'images':
+        // Images will be fetched separately and added to asset
+        return (asset as Asset & { images?: string }).images || '-'
       default:
         return '-'
     }
@@ -2573,6 +2605,17 @@ export default function AssetsPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2 justify-end">
               <Button
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ['assets'] })
+                }}
+                className="h-8 w-8"
+                title="Refresh table"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+              <Button
                 onClick={() => {
                   if (!hasPermission('canManageExport')) {
                     toast.error('You do not have permission to export assets')
@@ -2711,7 +2754,7 @@ export default function AssetsPage() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-0 relative">
           {/* Search Bar and Filters - Always visible */}
               <div className="p-4 sm:p-6 pb-4 border-b">
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-stretch sm:items-center">
@@ -2786,6 +2829,12 @@ export default function AssetsPage() {
                   </div>
                 </div>
               </div>
+
+          {isFetching && data && (
+            <div className="absolute inset-x-0 top-[83px] bottom-19 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+              <Spinner variant="default" size={24} className="text-muted-foreground" />
+            </div>
+          )}
           
           {/* Table Section - with loading/error states */}
           {permissionsLoading || (isLoading && !data) ? (
@@ -2814,12 +2863,6 @@ export default function AssetsPage() {
           ) : (
             <>
               <ScrollArea>
-              <div className="relative">
-                {isFetching && data && (
-                  <div className="absolute inset-0 bg-background/50 backdrop-blur-sm z-10 flex items-center justify-center">
-                    <Spinner variant="default" size={24} className="text-muted-foreground" />
-                  </div>
-                )}
               <Table>
                 <TableHeader>
                   {table.getHeaderGroups().map((headerGroup) => (
@@ -2879,7 +2922,6 @@ export default function AssetsPage() {
                   )}
                 </TableBody>
               </Table>
-              </div>
               <ScrollBar orientation="horizontal" className='z-10' />
               </ScrollArea>
               {/* Pagination */}
@@ -2971,6 +3013,7 @@ export default function AssetsPage() {
         onSelectAll={() => setSelectedExportFields(new Set(ALL_COLUMNS.map((col) => col.key)))}
         onDeselectAll={() => setSelectedExportFields(new Set())}
         onExport={handleExport}
+        isExporting={isExporting}
       />
 
       {/* Bulk Delete Confirmation Dialog */}

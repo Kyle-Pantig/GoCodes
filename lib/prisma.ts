@@ -20,16 +20,24 @@ function makeConnectionUrl() {
     urlObj.searchParams.set('pgbouncer', 'true')
     
     // Add connection timeout settings if not already present
+    // Increased timeout to handle connection pool exhaustion and network issues better
     if (!urlObj.searchParams.has('connect_timeout')) {
-      urlObj.searchParams.set('connect_timeout', '10')
+      urlObj.searchParams.set('connect_timeout', '30')
     }
     if (!urlObj.searchParams.has('pool_timeout')) {
-      urlObj.searchParams.set('pool_timeout', '10')
+      urlObj.searchParams.set('pool_timeout', '30')
     }
     
     // Add statement cache size for better connection pool handling
     if (!urlObj.searchParams.has('statement_cache_size')) {
       urlObj.searchParams.set('statement_cache_size', '0')
+    }
+    
+    // Add connection pool settings for better handling of concurrent requests
+    // These help Prisma manage connections more efficiently with Supabase pooler
+    if (!urlObj.searchParams.has('connection_limit')) {
+      // Conservative limit to work with Supabase pooler (typically 15-20 connections)
+      urlObj.searchParams.set('connection_limit', '10')
     }
     
     return urlObj.toString()
@@ -52,6 +60,9 @@ export const prisma =
         url: makeConnectionUrl(),
       },
     },
+    // Optimize connection pool settings
+    // Increase connection timeout to handle pool exhaustion better
+    // Connection pool is managed by Supabase PgBouncer, but we can optimize client-side
   })
 
 if (process.env.NODE_ENV !== 'production') {

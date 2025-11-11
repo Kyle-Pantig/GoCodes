@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
+import { useForm, Controller, useWatch } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { XIcon, History, QrCode } from "lucide-react"
 import { usePermissions } from '@/hooks/use-permissions'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
@@ -25,12 +27,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
+import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
 import { EmployeeSelectField } from "@/components/employee-select-field"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { QRCodeDisplayDialog } from "@/components/qr-code-display-dialog"
+import { reserveSchema, type ReserveFormData } from "@/lib/validations/assets"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 interface Asset {
   id: string
@@ -49,19 +59,6 @@ interface Asset {
   } | null
 }
 
-interface EmployeeUser {
-  id: string
-  name: string
-  email: string
-  department: string | null
-  checkouts?: Array<{
-    id: string
-    asset: {
-      id: string
-      assetTagId: string
-    }
-  }>
-}
 
 type ReservationType = "Employee" | "Department" | ""
 
@@ -90,17 +87,28 @@ export default function ReserveAssetPage() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1)
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
-  const [reservationType, setReservationType] = useState<ReservationType>("")
-  const [reservationDate, setReservationDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  )
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("")
-  const [department, setDepartment] = useState<string>("")
-  const [purpose, setPurpose] = useState<string>("")
-  const [notes, setNotes] = useState<string>("")
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
+
+  const form = useForm<ReserveFormData>({
+    resolver: zodResolver(reserveSchema),
+    defaultValues: {
+      assetId: '',
+      reservationType: '',
+      reservationDate: new Date().toISOString().split('T')[0],
+      employeeUserId: '',
+      department: '',
+      purpose: '',
+      notes: '',
+    },
+  })
+
+  // Watch reservationType to handle conditional fields
+  const reservationType = useWatch({
+    control: form.control,
+    name: 'reservationType',
+  })
 
 
 
@@ -139,6 +147,17 @@ export default function ReserveAssetPage() {
     retry: 2,
     retryDelay: 1000,
   })
+
+  // Format date for display
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'N/A'
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString()
+    } catch {
+      return 'N/A'
+    }
+  }
 
   // Calculate time ago
   const getTimeAgo = (dateString: string): string => {
@@ -264,6 +283,7 @@ export default function ReserveAssetPage() {
   const handleSelectSuggestion = (asset: Asset) => {
     setSelectedAsset(asset)
     setAssetIdInput(asset.assetTagId)
+    form.setValue('assetId', asset.id)
     setShowSuggestions(false)
     setSelectedSuggestionIndex(-1)
     toast.success('Asset selected')
@@ -275,6 +295,7 @@ export default function ReserveAssetPage() {
     if (assetToSelect) {
       setSelectedAsset(assetToSelect)
       setAssetIdInput(assetToSelect.assetTagId)
+      form.setValue('assetId', assetToSelect.id)
       setShowSuggestions(false)
       toast.success('Asset selected')
     } else {
@@ -329,6 +350,7 @@ export default function ReserveAssetPage() {
   const handleClearAsset = () => {
     setSelectedAsset(null)
     setAssetIdInput("")
+    form.setValue('assetId', '')
     toast.success('Asset cleared')
   }
 
@@ -342,12 +364,15 @@ export default function ReserveAssetPage() {
   const clearForm = () => {
     setSelectedAsset(null)
     setAssetIdInput("")
-    setReservationType("")
-    setSelectedEmployeeId("")
-    setDepartment("")
-    setReservationDate(new Date().toISOString().split('T')[0])
-    setPurpose("")
-    setNotes("")
+    form.reset({
+      assetId: '',
+      reservationType: '',
+      reservationDate: new Date().toISOString().split('T')[0],
+      employeeUserId: '',
+      department: '',
+      purpose: '',
+      notes: '',
+    })
   }
 
   // Handle QR code scan result
@@ -372,10 +397,16 @@ export default function ReserveAssetPage() {
 
   // Handle reservation type change - reset conditional fields
   const handleReservationTypeChange = (value: ReservationType) => {
-    setReservationType(value)
+    form.setValue('reservationType', value)
     // Reset conditional fields when changing reservation type
-    setSelectedEmployeeId("")
-    setDepartment("")
+    form.setValue('employeeUserId', '')
+    form.setValue('department', '')
+    // Trigger validation for conditional fields
+    if (value === 'Employee') {
+      form.trigger('employeeUserId')
+    } else if (value === 'Department') {
+      form.trigger('department')
+    }
   }
 
   // Reserve mutation
@@ -414,45 +445,22 @@ export default function ReserveAssetPage() {
   })
 
   // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
+  const handleSubmit = form.handleSubmit(async (data) => {
     if (!selectedAsset) {
       toast.error('Please select an asset')
       return
     }
 
-    if (!reservationType) {
-      toast.error('Please select a reservation type')
-      return
-    }
-
-    if (!reservationDate) {
-      toast.error('Please select a reservation date')
-      return
-    }
-
-    // Validate reservation type specific requirements
-    if (reservationType === 'Employee' && !selectedEmployeeId) {
-      toast.error('Please select an employee')
-      return
-    }
-
-    if (reservationType === 'Department' && !department.trim()) {
-      toast.error('Please enter a department')
-      return
-    }
-
     reserveMutation.mutate({
       assetId: selectedAsset.id,
-      reservationType,
-      reservationDate,
-      employeeUserId: reservationType === 'Employee' ? selectedEmployeeId : undefined,
-      department: reservationType === 'Department' ? department : undefined,
-      purpose: purpose || undefined,
-      notes: notes || undefined,
+      reservationType: data.reservationType,
+      reservationDate: data.reservationDate,
+      employeeUserId: data.reservationType === 'Employee' ? data.employeeUserId : undefined,
+      department: data.reservationType === 'Department' ? data.department : undefined,
+      purpose: data.purpose || undefined,
+      notes: data.notes || undefined,
     })
-  }
+  })
 
   const recentReservations = reserveStats?.recentReservations || []
 
@@ -508,6 +516,7 @@ export default function ReserveAssetPage() {
                         <TableHead className="h-8 text-xs bg-card">Type</TableHead>
                         <TableHead className="h-8 text-xs bg-card">Reserved For</TableHead>
                         <TableHead className="h-8 text-xs bg-card">Purpose</TableHead>
+                        <TableHead className="h-8 text-xs bg-card">Reservation Date</TableHead>
                         <TableHead className="h-8 text-xs text-right bg-card">Time Ago</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -543,6 +552,9 @@ export default function ReserveAssetPage() {
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground max-w-[150px] truncate">
                           {reservation.purpose || '-'}
+                        </TableCell>
+                        <TableCell className="py-1.5 text-xs text-muted-foreground">
+                          {formatDate(reservation.reservationDate)}
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground text-right">
                           {getTimeAgo(reservation.createdAt)}
@@ -687,119 +699,188 @@ export default function ReserveAssetPage() {
         </Card>
 
         {/* Reservation Details */}
-        {selectedAsset && (
-          <>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Reservation Details</CardTitle>
-                <CardDescription className="text-xs">
-                  Select the reservation type and provide the required information
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-2 pb-4 space-y-4">
-                <Field>
-                  <FieldLabel htmlFor="reservationType">
-                    Reservation Type <span className="text-destructive">*</span>
-                  </FieldLabel>
-                  <FieldContent>
-                    <Select
-                      value={reservationType}
-                      onValueChange={handleReservationTypeChange}
-                      disabled={!canViewAssets || !canReserve}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select reservation type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Employee">Employee</SelectItem>
-                        <SelectItem value="Department">Department</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FieldContent>
-                </Field>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Reservation Details</CardTitle>
+            <CardDescription className="text-xs">
+              Select the reservation type and provide the required information
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-2 pb-4 space-y-4">
+            <Field>
+              <FieldLabel htmlFor="reservationType">
+                Reservation Type <span className="text-destructive">*</span>
+              </FieldLabel>
+              <FieldContent>
+                <Controller
+                  name="reservationType"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
+                      <Select
+                        value={field.value || ""}
+                        onValueChange={(value) => {
+                          field.onChange(value)
+                          handleReservationTypeChange(value as ReservationType)
+                        }}
+                        disabled={!canViewAssets || !canReserve || !selectedAsset}
+                      >
+                        <SelectTrigger className="w-full" aria-invalid={fieldState.error ? 'true' : 'false'}>
+                          <SelectValue placeholder="Select reservation type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Employee">Employee</SelectItem>
+                          <SelectItem value="Department">Department</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
+                />
+              </FieldContent>
+            </Field>
 
-                {reservationType === 'Employee' && (
-                  <EmployeeSelectField
-                    value={selectedEmployeeId}
-                    onValueChange={setSelectedEmployeeId}
-                    label="Employee"
-                    required
-                    disabled={!canViewAssets || !canReserve}
-                    queryKey={["employees", "reserve"]}
+            {reservationType === 'Employee' && (
+              <Controller
+                name="employeeUserId"
+                control={form.control}
+                render={({ field, fieldState }) => (
+                  <>
+                    <EmployeeSelectField
+                      value={field.value || ""}
+                      onValueChange={(value) => {
+                        field.onChange(value)
+                      }}
+                      label="Employee"
+                      required
+                      disabled={!canViewAssets || !canReserve || !selectedAsset}
+                      queryKey={["employees", "reserve"]}
+                    />
+                    {fieldState.error && (
+                      <FieldError>{fieldState.error.message}</FieldError>
+                    )}
+                  </>
+                )}
+              />
+            )}
+
+            {reservationType === 'Department' && (
+              <Field>
+                <FieldLabel htmlFor="department">
+                  Department <span className="text-destructive">*</span>
+                </FieldLabel>
+                <FieldContent>
+                  <Controller
+                    name="department"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <>
+                        <Input
+                          id="department"
+                          placeholder="Enter department name"
+                          {...field}
+                          className="w-full"
+                          disabled={!canViewAssets || !canReserve || !selectedAsset}
+                          aria-invalid={fieldState.error ? 'true' : 'false'}
+                          aria-required="true"
+                        />
+                        {fieldState.error && (
+                          <FieldError>{fieldState.error.message}</FieldError>
+                        )}
+                      </>
+                    )}
                   />
-                )}
+                </FieldContent>
+              </Field>
+            )}
 
-                {reservationType === 'Department' && (
-                  <Field>
-                    <FieldLabel htmlFor="department">
-                      Department <span className="text-destructive">*</span>
-                    </FieldLabel>
-                    <FieldContent>
+            <Field>
+              <FieldLabel htmlFor="reservationDate">
+                Reservation Date <span className="text-destructive">*</span>
+              </FieldLabel>
+              <FieldContent>
+                <Controller
+                  name="reservationDate"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
                       <Input
-                        id="department"
-                        placeholder="Enter department name"
-                        value={department}
-                        onChange={(e) => setDepartment(e.target.value)}
+                        id="reservationDate"
+                        type="date"
+                        {...field}
                         className="w-full"
-                        disabled={!canViewAssets || !canReserve}
+                        disabled={!canViewAssets || !canReserve || !selectedAsset}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                        aria-required="true"
                       />
-                    </FieldContent>
-                  </Field>
-                )}
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
+                />
+              </FieldContent>
+            </Field>
 
-                <Field>
-                  <FieldLabel htmlFor="reservationDate">
-                    Reservation Date <span className="text-destructive">*</span>
-                  </FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="reservationDate"
-                      type="date"
-                      value={reservationDate}
-                      onChange={(e) => setReservationDate(e.target.value)}
-                      className="w-full"
-                      disabled={!canViewAssets || !canReserve}
-                    />
-                  </FieldContent>
-                </Field>
+            <Field>
+              <FieldLabel htmlFor="purpose">
+                Purpose
+              </FieldLabel>
+              <FieldContent>
+                <Controller
+                  name="purpose"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
+                      <Textarea
+                        id="purpose"
+                        placeholder="Enter the purpose of this reservation"
+                        {...field}
+                        className="w-full"
+                        rows={3}
+                        disabled={!canViewAssets || !canReserve || !selectedAsset}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                      />
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
+                />
+              </FieldContent>
+            </Field>
 
-                <Field>
-                  <FieldLabel htmlFor="purpose">
-                    Purpose
-                  </FieldLabel>
-                  <FieldContent>
-                    <Textarea
-                      id="purpose"
-                      placeholder="Enter the purpose of this reservation"
-                      value={purpose}
-                      onChange={(e) => setPurpose(e.target.value)}
-                      className="w-full"
-                      rows={3}
-                      disabled={!canViewAssets || !canReserve}
-                    />
-                  </FieldContent>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="notes">
-                    Notes
-                  </FieldLabel>
-                  <FieldContent>
-                    <Textarea
-                      id="notes"
-                      placeholder="Enter any additional notes"
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      className="w-full"
-                      rows={3}
-                      disabled={!canViewAssets || !canReserve}
-                    />
-                  </FieldContent>
-                </Field>
-              </CardContent>
-            </Card>
-          </>
-        )}
+            <Field>
+              <FieldLabel htmlFor="notes">
+                Notes
+              </FieldLabel>
+              <FieldContent>
+                <Controller
+                  name="notes"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
+                      <Textarea
+                        id="notes"
+                        placeholder="Enter any additional notes"
+                        {...field}
+                        className="w-full"
+                        rows={3}
+                        disabled={!canViewAssets || !canReserve || !selectedAsset}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                      />
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
+                />
+              </FieldContent>
+            </Field>
+          </CardContent>
+        </Card>
       </form>
 
       {/* Floating Action Buttons - Only show when form has changes */}

@@ -1,12 +1,15 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { XIcon, History, QrCode, Table } from "lucide-react"
+import { useForm, Controller } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { XIcon, History, QrCode } from "lucide-react"
 import { usePermissions } from '@/hooks/use-permissions'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { QRScannerDialog } from '@/components/qr-scanner-dialog'
 import { QRCodeDisplayDialog } from '@/components/qr-code-display-dialog'
 import {
+  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -33,9 +36,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
+import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
+import { leaseReturnSchema, type LeaseReturnFormData } from "@/lib/validations/assets"
 
 interface Asset {
   id: string
@@ -84,12 +88,18 @@ export default function LeaseReturnPage() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1)
   const [selectedAssets, setSelectedAssets] = useState<LeaseReturnAsset[]>([])
-  const [returnDate, setReturnDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  )
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
+
+  const form = useForm<LeaseReturnFormData>({
+    resolver: zodResolver(leaseReturnSchema),
+    defaultValues: {
+      assetIds: [],
+      returnDate: new Date().toISOString().split('T')[0],
+      assetUpdates: [],
+    },
+  })
 
   // Fetch lease return statistics
   const { data: returnStats, isLoading: isLoadingReturnStats, error: returnStatsError } = useQuery<{
@@ -124,6 +134,17 @@ export default function LeaseReturnPage() {
     retry: 2,
     retryDelay: 1000,
   })
+
+  // Format date for display
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'N/A'
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString()
+    } catch {
+      return 'N/A'
+    }
+  }
 
   // Calculate time ago
   const getTimeAgo = (dateString: string): string => {
@@ -295,7 +316,17 @@ export default function LeaseReturnPage() {
       leaseEndDate: activeLease.leaseEndDate || null,
     }
 
-    setSelectedAssets((prev) => [...prev, leaseReturnAsset])
+    setSelectedAssets((prev) => {
+      const updated = [...prev, leaseReturnAsset]
+      // Update form state
+      form.setValue('assetIds', updated.map(a => a.id))
+      form.setValue('assetUpdates', updated.map(a => ({
+        assetId: a.id,
+        condition: a.condition || '',
+        notes: a.notes || '',
+      })), { shouldValidate: false })
+      return updated
+    })
     setAssetIdInput("")
     setShowSuggestions(false)
     setSelectedSuggestionIndex(-1)
@@ -342,7 +373,17 @@ export default function LeaseReturnPage() {
       leaseEndDate: activeLease.leaseEndDate || null,
     }
 
-    setSelectedAssets((prev) => [...prev, leaseReturnAsset])
+    setSelectedAssets((prev) => {
+      const updated = [...prev, leaseReturnAsset]
+      // Update form state
+      form.setValue('assetIds', updated.map(a => a.id))
+      form.setValue('assetUpdates', updated.map(a => ({
+        assetId: a.id,
+        condition: a.condition || '',
+        notes: a.notes || '',
+      })), { shouldValidate: false })
+      return updated
+    })
     setAssetIdInput("")
     setShowSuggestions(false)
     toast.success('Asset selected')
@@ -391,7 +432,17 @@ export default function LeaseReturnPage() {
 
   // Remove asset from selected list
   const handleRemoveAsset = (assetId: string) => {
-    setSelectedAssets((prev) => prev.filter((a) => a.id !== assetId))
+    setSelectedAssets((prev) => {
+      const updated = prev.filter((a) => a.id !== assetId)
+      // Update form state
+      form.setValue('assetIds', updated.map(a => a.id))
+      form.setValue('assetUpdates', updated.map(a => ({
+        assetId: a.id,
+        condition: a.condition || '',
+        notes: a.notes || '',
+      })), { shouldValidate: false })
+      return updated
+    })
     toast.success('Asset removed')
   }
 
@@ -405,7 +456,11 @@ export default function LeaseReturnPage() {
   const clearForm = () => {
     setSelectedAssets([])
     setAssetIdInput("")
-    setReturnDate(new Date().toISOString().split('T')[0])
+    form.reset({
+      assetIds: [],
+      returnDate: new Date().toISOString().split('T')[0],
+      assetUpdates: [],
+    })
   }
 
   // Handle QR code scan result
@@ -437,9 +492,16 @@ export default function LeaseReturnPage() {
 
   // Update asset condition/notes
   const handleUpdateAsset = (assetId: string, field: 'condition' | 'notes', value: string) => {
-    setSelectedAssets((prev) =>
-      prev.map((a) => (a.id === assetId ? { ...a, [field]: value } : a))
-    )
+    setSelectedAssets((prev) => {
+      const updated = prev.map((a) => (a.id === assetId ? { ...a, [field]: value } : a))
+      // Update form state
+      form.setValue('assetUpdates', updated.map(a => ({
+        assetId: a.id,
+        condition: a.condition || '',
+        notes: a.notes || '',
+      })))
+      return updated
+    })
   }
 
   // Lease return mutation
@@ -475,34 +537,27 @@ export default function LeaseReturnPage() {
   })
 
   // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
+  const handleSubmit = form.handleSubmit(async (data) => {
     if (selectedAssets.length === 0) {
       toast.error('Please select at least one asset to return')
       return
     }
 
-    if (!returnDate) {
-      toast.error('Please select a return date')
-      return
-    }
-
-    // Build updates object
+    // Build updates object from form data
     const updates: Record<string, { condition?: string; notes?: string }> = {}
-    selectedAssets.forEach((asset) => {
-      updates[asset.id] = {
-        condition: asset.condition || undefined,
-        notes: asset.notes || undefined,
+    data.assetUpdates.forEach((update) => {
+      updates[update.assetId] = {
+        condition: update.condition || undefined,
+        notes: update.notes || undefined,
       }
     })
 
     returnMutation.mutate({
-      assetIds: selectedAssets.map((a) => a.id),
-      returnDate,
+      assetIds: data.assetIds,
+      returnDate: data.returnDate,
       updates,
     })
-  }
+  })
 
   const recentReturns = returnStats?.recentReturns || []
 
@@ -556,6 +611,7 @@ export default function LeaseReturnPage() {
                         <TableHead className="h-8 text-xs bg-card">Asset ID</TableHead>
                         <TableHead className="h-8 text-xs bg-card">Lessee</TableHead>
                         <TableHead className="h-8 text-xs bg-card">Condition</TableHead>
+                        <TableHead className="h-8 text-xs bg-card">Return Date</TableHead>
                         <TableHead className="h-8 text-xs text-right bg-card">Time Ago</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -579,6 +635,9 @@ export default function LeaseReturnPage() {
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground">
                           {returnRecord.condition || '-'}
+                        </TableCell>
+                        <TableCell className="py-1.5 text-xs text-muted-foreground">
+                          {formatDate(returnRecord.returnDate)}
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground text-right">
                           {getTimeAgo(returnRecord.createdAt)}
@@ -657,7 +716,7 @@ export default function LeaseReturnPage() {
                               {asset.subCategory?.name && ` - ${asset.subCategory.name}`}
                             </div>
                           </div>
-                          <Badge variant="outline">{asset.status || 'Leased'}</Badge>
+                          <Badge variant="secondary" className="bg-yellow-500">{asset.status || 'Leased'}</Badge>
                         </div>
                       </div>
                     ))
@@ -685,31 +744,41 @@ export default function LeaseReturnPage() {
         </Card>
 
         {/* Selected Assets and Return Details */}
-        {selectedAssets.length > 0 && (
-          <>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Selected Assets for Return</CardTitle>
-                <CardDescription className="text-xs">
-                  Review and provide return details for each asset
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-2 pb-4 space-y-4">
-                <Field>
-                  <FieldLabel htmlFor="returnDate">
-                    Return Date <span className="text-destructive">*</span>
-                  </FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="returnDate"
-                      type="date"
-                      value={returnDate}
-                      onChange={(e) => setReturnDate(e.target.value)}
-                      className="w-full"
-                      disabled={!canViewAssets || !canLease}
-                    />
-                  </FieldContent>
-                </Field>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Selected Assets for Return</CardTitle>
+            <CardDescription className="text-xs">
+              Review and provide return details for each asset
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-2 pb-4 space-y-4">
+            <Field>
+              <FieldLabel htmlFor="returnDate">
+                Return Date <span className="text-destructive">*</span>
+              </FieldLabel>
+              <FieldContent>
+                <Controller
+                  name="returnDate"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
+                      <Input
+                        id="returnDate"
+                        type="date"
+                        {...field}
+                        className="w-full"
+                        disabled={!canViewAssets || !canLease || selectedAssets.length === 0}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                        aria-required="true"
+                      />
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
+                />
+              </FieldContent>
+            </Field>
 
                 {selectedAssets.map((asset) => (
                   <div key={asset.id} className="p-4 border rounded-md space-y-3">
@@ -754,7 +823,7 @@ export default function LeaseReturnPage() {
                           <Select
                             value={asset.condition || ""}
                             onValueChange={(value) => handleUpdateAsset(asset.id, 'condition', value)}
-                            disabled={!canViewAssets || !canLease}
+                            disabled={!canViewAssets || !canLease || selectedAssets.length === 0}
                           >
                             <SelectTrigger className="w-full">
                               <SelectValue placeholder="Select condition" />
@@ -782,7 +851,7 @@ export default function LeaseReturnPage() {
                             onChange={(e) => handleUpdateAsset(asset.id, 'notes', e.target.value)}
                             className="w-full"
                             rows={2}
-                            disabled={!canViewAssets || !canLease}
+                            disabled={!canViewAssets || !canLease || selectedAssets.length === 0}
                           />
                         </FieldContent>
                       </Field>
@@ -791,8 +860,6 @@ export default function LeaseReturnPage() {
                 ))}
               </CardContent>
             </Card>
-          </>
-        )}
       </form>
 
       {/* Floating Action Buttons - Only show when form has changes */}

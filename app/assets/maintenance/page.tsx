@@ -1,6 +1,8 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
+import { useForm, Controller, useWatch } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { XIcon, History, Edit2, QrCode } from "lucide-react"
 import { usePermissions } from '@/hooks/use-permissions'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
@@ -41,10 +43,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
+import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
+import { maintenanceSchema, type MaintenanceFormData } from "@/lib/validations/assets"
 
 interface Asset {
   id: string
@@ -128,17 +131,38 @@ export default function MaintenancePage() {
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
-  
-  const [title, setTitle] = useState("")
-  const [details, setDetails] = useState("")
-  const [dueDate, setDueDate] = useState<string>("")
-  const [maintenanceBy, setMaintenanceBy] = useState("")
-  const [status, setStatus] = useState<MaintenanceStatus>("")
-  const [dateCompleted, setDateCompleted] = useState<string>("")
-  const [dateCancelled, setDateCancelled] = useState<string>("")
-  const [cost, setCost] = useState<string>("")
-  const [isRepeating, setIsRepeating] = useState(false)
-  const [isFormDirty, setIsFormDirty] = useState(false)
+
+  const form = useForm<MaintenanceFormData>({
+    resolver: zodResolver(maintenanceSchema),
+    defaultValues: {
+      assetId: '',
+      title: '',
+      details: '',
+      dueDate: '',
+      maintenanceBy: '',
+      status: '',
+      cost: '',
+      dateCompleted: '',
+      dateCancelled: '',
+      isRepeating: false,
+    },
+  })
+
+  // Watch status to handle conditional fields
+  const status = useWatch({
+    control: form.control,
+    name: 'status',
+  })
+
+  // Watch form fields for dirty check
+  const title = useWatch({ control: form.control, name: 'title' })
+  const details = useWatch({ control: form.control, name: 'details' })
+  const dueDate = useWatch({ control: form.control, name: 'dueDate' })
+  const maintenanceBy = useWatch({ control: form.control, name: 'maintenanceBy' })
+  const cost = useWatch({ control: form.control, name: 'cost' })
+  const dateCompleted = useWatch({ control: form.control, name: 'dateCompleted' })
+  const dateCancelled = useWatch({ control: form.control, name: 'dateCancelled' })
+  const isRepeating = useWatch({ control: form.control, name: 'isRepeating' })
   
   // Edit maintenance dialog state
   const [editingMaintenance, setEditingMaintenance] = useState<{
@@ -318,6 +342,7 @@ export default function MaintenancePage() {
   // Handle suggestion selection
   const handleSelectSuggestion = (asset: Asset) => {
     setSelectedAsset(asset)
+    form.setValue('assetId', asset.id)
     setAssetIdInput(asset.assetTagId)
     setShowSuggestions(false)
     setSelectedSuggestionIndex(-1)
@@ -331,6 +356,7 @@ export default function MaintenancePage() {
 
     if (assetToSelect) {
       setSelectedAsset(assetToSelect)
+      form.setValue('assetId', assetToSelect.id)
       setShowSuggestions(false)
       toast.success('Asset selected')
     } else {
@@ -369,6 +395,7 @@ export default function MaintenancePage() {
   // Remove selected asset
   const handleRemoveAsset = () => {
     setSelectedAsset(null)
+    form.setValue('assetId', '')
     setAssetIdInput("")
     toast.success('Asset removed')
   }
@@ -543,69 +570,58 @@ export default function MaintenancePage() {
   }
 
   // Handle form submission
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-
+  const handleSubmit = form.handleSubmit(async (data) => {
     if (!selectedAsset) {
       toast.error('Please select an asset')
       return
     }
 
-    if (!title.trim()) {
-      toast.error('Maintenance title is required')
-      return
-    }
-
-    if (!status) {
-      toast.error('Maintenance status is required')
-      return
-    }
-
     maintenanceMutation.mutate({
-      assetId: selectedAsset.id,
-      title: title.trim(),
-      details: details.trim() || undefined,
-      dueDate: dueDate || undefined,
-      maintenanceBy: maintenanceBy.trim() || undefined,
-      status,
-      dateCompleted: dateCompleted || undefined,
-      dateCancelled: dateCancelled || undefined,
-      cost: cost || undefined,
-      isRepeating,
+      assetId: data.assetId,
+      title: data.title.trim(),
+      details: data.details?.trim() || undefined,
+      dueDate: data.dueDate || undefined,
+      maintenanceBy: data.maintenanceBy?.trim() || undefined,
+      status: data.status,
+      dateCompleted: data.dateCompleted || undefined,
+      dateCancelled: data.dateCancelled || undefined,
+      cost: data.cost || undefined,
+      isRepeating: data.isRepeating,
     })
-  }
+  })
 
   // Track form changes to show floating buttons
-  useEffect(() => {
-    const hasChanges = !!(
+  const isFormDirty = useMemo(() => {
+    return !!(
       selectedAsset ||
-      title.trim() ||
-      details.trim() ||
+      title?.trim() ||
+      details?.trim() ||
       dueDate ||
-      maintenanceBy.trim() ||
+      maintenanceBy?.trim() ||
       status ||
       dateCompleted ||
       dateCancelled ||
       cost ||
       isRepeating
     )
-    setIsFormDirty(hasChanges)
   }, [selectedAsset, title, details, dueDate, maintenanceBy, status, dateCompleted, dateCancelled, cost, isRepeating])
 
   // Clear form function
   const clearForm = () => {
     setSelectedAsset(null)
     setAssetIdInput("")
-    setTitle("")
-    setDetails("")
-    setDueDate("")
-    setMaintenanceBy("")
-    setStatus("")
-    setDateCompleted("")
-    setDateCancelled("")
-    setCost("")
-    setIsRepeating(false)
-    setIsFormDirty(false)
+    form.reset({
+      assetId: '',
+      title: '',
+      details: '',
+      dueDate: '',
+      maintenanceBy: '',
+      status: '',
+      cost: '',
+      dateCompleted: '',
+      dateCancelled: '',
+      isRepeating: false,
+    })
   }
 
   // Handle QR code scan result
@@ -889,28 +905,56 @@ export default function MaintenancePage() {
             <div className="space-y-4">
               {/* Maintenance Title */}
             <Field>
-              <FieldLabel>Maintenance Title <span className="text-destructive">*</span></FieldLabel>
+              <FieldLabel htmlFor="title">
+                Maintenance Title <span className="text-destructive">*</span>
+              </FieldLabel>
               <FieldContent>
-                <Input
-                  placeholder="e.g., Annual Service, Repair Display, Battery Replacement"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  required
-                  disabled={!canManageMaintenance || !canViewAssets}
+                <Controller
+                  name="title"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
+                      <Input
+                        id="title"
+                        placeholder="e.g., Annual Service, Repair Display, Battery Replacement"
+                        {...field}
+                        disabled={!canManageMaintenance || !canViewAssets || !selectedAsset}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                        aria-required="true"
+                      />
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
                 />
               </FieldContent>
             </Field>
 
             {/* Maintenance Details */}
             <Field>
-              <FieldLabel>Maintenance Details</FieldLabel>
+              <FieldLabel htmlFor="details">
+                Maintenance Details
+              </FieldLabel>
               <FieldContent>
-                <Textarea
-                  placeholder="Enter maintenance details (optional)"
-                  value={details}
-                  onChange={(e) => setDetails(e.target.value)}
-                  rows={3}
-                  disabled={!canManageMaintenance || !canViewAssets}
+                <Controller
+                  name="details"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
+                      <Textarea
+                        id="details"
+                        placeholder="Enter maintenance details (optional)"
+                        {...field}
+                        rows={3}
+                        disabled={!canManageMaintenance || !canViewAssets || !selectedAsset}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                      />
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
                 />
               </FieldContent>
             </Field>
@@ -918,25 +962,53 @@ export default function MaintenancePage() {
             {/* Due Date and Maintenance By */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field>
-                <FieldLabel>Maintenance Due Date</FieldLabel>
+                <FieldLabel htmlFor="dueDate">
+                  Maintenance Due Date
+                </FieldLabel>
                 <FieldContent>
-                  <Input
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    disabled={!canManageMaintenance || !canViewAssets}
+                  <Controller
+                    name="dueDate"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <>
+                        <Input
+                          id="dueDate"
+                          type="date"
+                          {...field}
+                          disabled={!canManageMaintenance || !canViewAssets || !selectedAsset}
+                          aria-invalid={fieldState.error ? 'true' : 'false'}
+                        />
+                        {fieldState.error && (
+                          <FieldError>{fieldState.error.message}</FieldError>
+                        )}
+                      </>
+                    )}
                   />
                 </FieldContent>
               </Field>
 
               <Field>
-                <FieldLabel>Maintenance By</FieldLabel>
+                <FieldLabel htmlFor="maintenanceBy">
+                  Maintenance By
+                </FieldLabel>
                 <FieldContent>
-                  <Input
-                    placeholder="Service provider or technician name"
-                    value={maintenanceBy}
-                    onChange={(e) => setMaintenanceBy(e.target.value)}
-                    disabled={!canManageMaintenance || !canViewAssets}
+                  <Controller
+                    name="maintenanceBy"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <>
+                        <Input
+                          id="maintenanceBy"
+                          placeholder="Service provider or technician name"
+                          {...field}
+                          disabled={!canManageMaintenance || !canViewAssets || !selectedAsset}
+                          aria-invalid={fieldState.error ? 'true' : 'false'}
+                        />
+                        {fieldState.error && (
+                          <FieldError>{fieldState.error.message}</FieldError>
+                        )}
+                      </>
+                    )}
                   />
                 </FieldContent>
               </Field>
@@ -945,63 +1017,100 @@ export default function MaintenancePage() {
             {/* Status, Cost and Repeating - Same line */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <Field>
-                <FieldLabel>Maintenance Status <span className="text-destructive">*</span></FieldLabel>
+                <FieldLabel htmlFor="status">
+                  Maintenance Status <span className="text-destructive">*</span>
+                </FieldLabel>
                 <FieldContent>
-                  <Select
-                    value={status}
-                    onValueChange={(value) => setStatus(value as MaintenanceStatus)}
-                    required
-                    disabled={!canManageMaintenance || !canViewAssets}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select maintenance status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Scheduled">Scheduled</SelectItem>
-                      <SelectItem value="In progress">In progress</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FieldContent>
-              </Field>
-
-              <Field>
-                <FieldLabel>Maintenance Cost</FieldLabel>
-                <FieldContent>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={cost}
-                    onChange={(e) => setCost(e.target.value)}
-                    disabled={!canManageMaintenance || !canViewAssets}
-                    className="w-full"
+                  <Controller
+                    name="status"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <>
+                        <Select
+                          value={field.value || ""}
+                          onValueChange={(value) => {
+                            field.onChange(value)
+                          }}
+                          disabled={!canManageMaintenance || !canViewAssets || !selectedAsset}
+                        >
+                          <SelectTrigger className="w-full" aria-invalid={fieldState.error ? 'true' : 'false'}>
+                            <SelectValue placeholder="Select maintenance status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Scheduled">Scheduled</SelectItem>
+                            <SelectItem value="In progress">In progress</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {fieldState.error && (
+                          <FieldError>{fieldState.error.message}</FieldError>
+                        )}
+                      </>
+                    )}
                   />
                 </FieldContent>
               </Field>
 
               <Field>
-                <FieldLabel>Maintenance Repeating</FieldLabel>
+                <FieldLabel htmlFor="cost">
+                  Maintenance Cost
+                </FieldLabel>
                 <FieldContent>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="maintenance-repeating"
-                      checked={isRepeating}
-                      onCheckedChange={(checked) => setIsRepeating(checked === true)}
-                      disabled={!canManageMaintenance || !canViewAssets}
-                    />
-                    <label
-                      htmlFor="maintenance-repeating"
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                    >
-                      <span className={isRepeating ? "font-semibold" : "text-muted-foreground"}>Yes</span>
-                      <span className="mx-1">/</span>
-                      <span className={!isRepeating ? "font-semibold" : "text-muted-foreground"}>No</span>
-                    </label>
-                  </div>
+                  <Controller
+                    name="cost"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <>
+                        <Input
+                          id="cost"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          {...field}
+                          disabled={!canManageMaintenance || !canViewAssets || !selectedAsset}
+                          className="w-full"
+                          aria-invalid={fieldState.error ? 'true' : 'false'}
+                        />
+                        {fieldState.error && (
+                          <FieldError>{fieldState.error.message}</FieldError>
+                        )}
+                      </>
+                    )}
+                  />
                 </FieldContent>
               </Field>
-        </div>
+
+              <Field>
+                <FieldLabel htmlFor="isRepeating">
+                  Maintenance Repeating
+                </FieldLabel>
+                <FieldContent>
+                  <Controller
+                    name="isRepeating"
+                    control={form.control}
+                    render={({ field }) => (
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="isRepeating"
+                          checked={field.value}
+                          onCheckedChange={(checked) => field.onChange(checked === true)}
+                          disabled={!canManageMaintenance || !canViewAssets || !selectedAsset}
+                        />
+                        <label
+                          htmlFor="isRepeating"
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          <span className={field.value ? "font-semibold" : "text-muted-foreground"}>Yes</span>
+                          <span className="mx-1">/</span>
+                          <span className={!field.value ? "font-semibold" : "text-muted-foreground"}>No</span>
+                        </label>
+                      </div>
+                    )}
+                  />
+                </FieldContent>
+              </Field>
+            </div>
+
       </div>
           </CardContent>
         </Card>

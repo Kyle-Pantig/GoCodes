@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -47,7 +47,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { MoreHorizontal, Trash2, Edit, Search, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Shield, ShieldCheck, Eye, EyeOff, Copy, Check, X, CheckCircle, RotateCw } from 'lucide-react'
+import { MoreHorizontal, Trash2, Edit, Search, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Shield, ShieldCheck, Eye, EyeOff, Copy, Check, X, CheckCircle, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
@@ -117,13 +117,15 @@ interface UserPermissions {
   canManageUsers: boolean
 }
 
-async function fetchUsers(search?: string, role?: string, page: number = 1, pageSize: number = 100): Promise<{ users: AssetUser[], pagination: PaginationInfo }> {
+async function fetchUsers(search?: string, searchType: string = 'unified', page: number = 1, pageSize: number = 100): Promise<{ users: AssetUser[], pagination: PaginationInfo }> {
   const params = new URLSearchParams({
     page: page.toString(),
     pageSize: pageSize.toString(),
   })
-  if (search) params.append('search', search)
-  if (role && role !== 'all') params.append('role', role)
+  if (search) {
+    params.append('search', search)
+    params.append('searchType', searchType)
+  }
   
   const response = await fetch(`/api/users?${params.toString()}`)
   if (!response.ok) {
@@ -194,8 +196,7 @@ const isPendingApproval = (user: AssetUser): boolean => {
 const createColumns = (
   onEdit: (user: AssetUser) => void,
   onDelete: (user: AssetUser) => void,
-  onApprove: (user: AssetUser) => void,
-  canManageUsers: boolean
+  onApprove: (user: AssetUser) => void
 ): ColumnDef<AssetUser>[] => [
   {
     accessorKey: 'userId',
@@ -382,7 +383,7 @@ const createColumns = (
 export default function UsersPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { hasPermission, isLoading: permissionsLoading, permissions } = usePermissions()
+  const { hasPermission } = usePermissions()
   const canManageUsers = hasPermission('canManageUsers')
   
   const [sorting, setSorting] = useState<SortingState>([])
@@ -393,7 +394,8 @@ export default function UsersPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [copiedPassword, setCopiedPassword] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [isPending, startTransition] = useTransition()
+  const [isManualRefresh, setIsManualRefresh] = useState(false)
+  const [, startTransition] = useTransition()
   
   // Fetch current user ID
   useEffect(() => {
@@ -443,20 +445,22 @@ export default function UsersPage() {
   })
   const queryClient = useQueryClient()
 
-  // Get page, pageSize, search, and role from URL
+  // Get page, pageSize, and search from URL
   const page = parseInt(searchParams.get('page') || '1', 10)
   const pageSize = parseInt(searchParams.get('pageSize') || '100', 10)
-  const roleFilter = searchParams.get('role') || 'all'
   
   // Separate states for search input (immediate UI) and search query (debounced API calls)
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '')
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '')
+  const [searchType, setSearchType] = useState<'unified' | 'userId' | 'email' | 'role'>(
+    (searchParams.get('searchType') as 'unified' | 'userId' | 'email' | 'role') || 'unified'
+  )
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSearchQueryRef = useRef<string>(searchParams.get('search') || '')
   const previousSearchInputRef = useRef<string>(searchParams.get('search') || '')
 
   // Update URL parameters
-  const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string; role?: string }) => {
+  const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string; searchType?: string }) => {
     const params = new URLSearchParams(searchParams.toString())
     
     if (updates.page !== undefined) {
@@ -479,17 +483,18 @@ export default function UsersPage() {
     if (updates.search !== undefined) {
       if (updates.search === '') {
         params.delete('search')
+        params.delete('searchType')
       } else {
         params.set('search', updates.search)
       }
       params.delete('page')
     }
 
-    if (updates.role !== undefined) {
-      if (updates.role === 'all') {
-        params.delete('role')
+    if (updates.searchType !== undefined) {
+      if (updates.searchType === 'unified') {
+        params.delete('searchType')
       } else {
-        params.set('role', updates.role)
+        params.set('searchType', updates.searchType)
       }
       params.delete('page')
     }
@@ -499,10 +504,18 @@ export default function UsersPage() {
     })
   }, [searchParams, router, startTransition])
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['users', searchQuery, roleFilter, page, pageSize],
-    queryFn: () => fetchUsers(searchQuery || undefined, roleFilter !== 'all' ? roleFilter : undefined, page, pageSize),
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['users', searchQuery, searchType, page, pageSize],
+    queryFn: () => fetchUsers(searchQuery || undefined, searchType, page, pageSize),
+    placeholderData: (previousData) => previousData,
   })
+
+  // Reset manual refresh flag after successful fetch
+  useEffect(() => {
+    if (!isFetching && isManualRefresh) {
+      setIsManualRefresh(false)
+    }
+  }, [isFetching, isManualRefresh])
 
   const handlePageSizeChange = (newPageSize: string) => {
     updateURL({ pageSize: parseInt(newPageSize), page: 1 })
@@ -510,10 +523,6 @@ export default function UsersPage() {
 
   const handlePageChange = (newPage: number) => {
     updateURL({ page: newPage })
-  }
-
-  const handleRoleFilterChange = (newRole: string) => {
-    updateURL({ role: newRole, page: 1 })
   }
 
   // Debounce search input
@@ -543,10 +552,15 @@ export default function UsersPage() {
     }
   }, [searchInput, searchParams, updateURL])
 
-  // Sync searchInput with URL params
+  // Sync searchInput and searchType with URL params
   useEffect(() => {
     const urlSearch = searchParams.get('search') || ''
+    const urlSearchType = (searchParams.get('searchType') as 'unified' | 'userId' | 'email' | 'role') || 'unified'
     const currentSearchQuery = lastSearchQueryRef.current || ''
+    
+    if (urlSearchType !== searchType) {
+      setSearchType(urlSearchType)
+    }
     
     if (urlSearch !== currentSearchQuery) {
       if (searchTimeoutRef.current) {
@@ -558,6 +572,7 @@ export default function UsersPage() {
       previousSearchInputRef.current = urlSearch
       lastSearchQueryRef.current = urlSearch
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
   
   useEffect(() => {
@@ -616,8 +631,8 @@ export default function UsersPage() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       // Check if we were approving before clearing selectedUser
-      const wasApproving = selectedUser && !selectedUser.isApproved && variables.data.isApproved
       const approvedEmail = selectedUser?.email
+      const wasApproving = selectedUser && !selectedUser.isApproved && variables.data.isApproved
       setIsEditDialogOpen(false)
       setSelectedUser(null)
       setFormData({
@@ -752,9 +767,6 @@ export default function UsersPage() {
       return
     }
     
-    // Check if this is an approval action (user was not approved before, now being approved)
-    const wasApproving = selectedUser && !selectedUser.isApproved && formData.isApproved
-    
     updateMutation.mutate({
       id: selectedUser.id,
       data: {
@@ -863,11 +875,10 @@ export default function UsersPage() {
     })
   }, [formData])
 
-  const columns = useMemo(() => createColumns(handleEdit, handleDelete, handleApprove, canManageUsers), [handleEdit, handleDelete, handleApprove, canManageUsers])
+  const columns = useMemo(() => createColumns(handleEdit, handleDelete, handleApprove), [handleEdit, handleDelete, handleApprove])
 
   const users = useMemo(() => data?.users || [], [data?.users])
   const pagination = data?.pagination
-// eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: users,
     columns,
@@ -888,18 +899,59 @@ export default function UsersPage() {
         </p>
       </div>
 
-      <Card className="gap-0 ">
-        <CardHeader className="shrink-0 pb-3">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
-            <div>
-              <CardTitle>Users Management</CardTitle>
-              <CardDescription className="text-xs sm:text-sm">
-                View and manage system users, roles, and permissions
-              </CardDescription>
+      <Card className="relative flex flex-col flex-1 min-h-0 pb-0 gap-0">
+        <CardHeader>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="flex items-center w-full md:flex-1 md:max-w-md border rounded-md overflow-hidden">
+              <Select
+                value={searchType}
+                onValueChange={(value: 'unified' | 'userId' | 'email' | 'role') => {
+                  setSearchType(value)
+                  updateURL({ searchType: value, page: 1 })
+                }}
+              >
+                <SelectTrigger className="w-[140px] h-8 rounded-none border-0 border-r focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none" size='sm'>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unified">Unified Search</SelectItem>
+                  <SelectItem value="userId">User ID</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="role">Role</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="relative flex-1">
+                {searchInput ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchInput('')
+                      updateURL({ search: '', page: 1 })
+                    }}
+                    className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer z-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+                )}
+                <Input
+                  placeholder={
+                    searchType === 'unified'
+                      ? 'Search by user ID, email or role...'
+                      : searchType === 'userId'
+                      ? 'Search by User ID'
+                      : searchType === 'email'
+                      ? 'Search by Email'
+                      : 'Search by Role'
+                  }
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="pl-8 h-8 rounded-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
+                />
             </div>
-            <div className="flex gap-2 sm:gap-3 items-center">
-              
-              
+            </div>
+            <div className="flex items-center gap-2">
               <Button 
                 onClick={() => {
                   if (!canManageUsers) {
@@ -909,64 +961,36 @@ export default function UsersPage() {
                   setIsCreateDialogOpen(true)
                 }} 
                 size="sm"
+                className="flex-1 md:flex-initial"
               >
                <UserPlus className="mr-2 h-4 w-4" />
                Add User
              </Button>
               <Button
                 variant="outline"
+                size="icon"
                 onClick={() => {
+                  setIsManualRefresh(true)
                   queryClient.invalidateQueries({ queryKey: ['users'] })
-                  toast.success('Users list refreshed')
                 }}
-                disabled={isLoading}
-                size="sm"
+                className="h-8 w-8"
+                title="Refresh table"
               >
-                <RotateCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
           </div>
-          <div className="relative flex items-center gap-2 mt-3 w-full md:w-sm">
-            <div className="relative flex-1 sm:flex-initial sm:min-w-[250px]">
-              {searchInput ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchInput('')
-                    updateURL({ search: '', page: 1 })
-                  }}
-                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              ) : (
-                <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
-              )}
-              <Input
-                placeholder="Search by user ID or email..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-8 h-8 "
-
-              />
-              
-            </div>
-            <Select value={roleFilter} onValueChange={handleRoleFilterChange}>
-                <SelectTrigger className="w-full sm:w-[140px]" size='sm'>
-                  <SelectValue placeholder="Filter by role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Roles</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="user">User</SelectItem>
-                </SelectContent>
-              </Select>
-          </div>
         </CardHeader>
 
-        <CardContent className='px-0'>
-            {isLoading ? (
-              <div className="h-[calc(100vh-25rem)] min-h-[500px] flex items-center justify-center py-12">
+        <CardContent className="flex-1 px-0 relative max-h-screen">
+          {isFetching && data && isManualRefresh && (
+            <div className="absolute inset-x-0 top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+              <Spinner variant="default" size={24} className="text-muted-foreground" />
+            </div>
+          )}
+           <div className="h-150 pt-8">
+           {isLoading && !data ? (
+              <div className="flex items-center justify-center py-12">
                 <div className="flex flex-col items-center gap-3">
                   <Spinner className="h-8 w-8" />
                   <p className="text-sm text-muted-foreground">Loading...</p>
@@ -980,7 +1004,7 @@ export default function UsersPage() {
               </div>
             ) : (
               <div className="min-w-full">
-                <ScrollArea className='h-[calc(100vh-25rem)] min-h-[500px] '>
+                <ScrollArea className='h-142'>
                 <Table className='border-t'>
                   <TableHeader>
                     {table.getHeaderGroups().map((headerGroup) => (
@@ -1040,10 +1064,11 @@ export default function UsersPage() {
                 </ScrollArea>
               </div>
             )}
+           </div>
         </CardContent>
         
-        {/* Pagination Bar */}
-        <div className="sticky bottom-0 border-t bg-transparent z-10 shadow-sm mt-auto">
+        {/* Pagination Bar - Fixed at Bottom */}
+        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-bl-xl rounded-br-xl">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3">
             <div className="flex items-center justify-center sm:justify-start gap-2">
               <Button

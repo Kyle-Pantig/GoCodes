@@ -59,6 +59,7 @@ const routeLabels: Record<string, string> = {
   '/settings': 'Settings',
   '/settings/users': 'Users',
   '/settings/categories': 'Categories',
+  '/settings/password': 'Password',
   '/employees': 'Employees',
   '/reports': 'Reports',
   '/reports/assets': 'Asset Reports',

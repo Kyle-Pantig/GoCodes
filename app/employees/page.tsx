@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -45,7 +45,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { MoreHorizontal, Trash2, Edit, Search, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, Calendar, MapPin, X } from 'lucide-react'
+import { MoreHorizontal, Trash2, Edit, Search, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, Calendar, MapPin, X, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
@@ -53,6 +53,10 @@ import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { QRCodeDisplayDialog } from '@/components/qr-code-display-dialog'
 import { usePermissions } from '@/hooks/use-permissions'
+import { useForm, Controller } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { employeeSchema, type EmployeeFormData } from '@/lib/validations/employees'
+import { FieldError } from '@/components/ui/field'
 
 interface Employee {
   id: string
@@ -92,12 +96,15 @@ interface PaginationInfo {
   hasPreviousPage: boolean
 }
 
-async function fetchEmployees(search?: string, page: number = 1, pageSize: number = 100): Promise<{ employees: Employee[], pagination: PaginationInfo }> {
+async function fetchEmployees(search?: string, searchType: string = 'unified', page: number = 1, pageSize: number = 100): Promise<{ employees: Employee[], pagination: PaginationInfo }> {
   const params = new URLSearchParams({
     page: page.toString(),
     pageSize: pageSize.toString(),
   })
-  if (search) params.append('search', search)
+  if (search) {
+    params.append('search', search)
+    params.append('searchType', searchType)
+  }
   
   const response = await fetch(`/api/employees?${params.toString()}`)
   if (!response.ok) {
@@ -161,8 +168,7 @@ const formatDate = (dateString: string | null) => {
 const createColumns = (
   onEdit: (employee: Employee) => void,
   onDelete: (employee: Employee) => void,
-  onViewCheckouts: (employee: Employee) => void,
-  canManageEmployees: boolean
+  onViewCheckouts: (employee: Employee) => void
 ): ColumnDef<Employee>[] => [
   {
     accessorKey: 'name',
@@ -325,9 +331,29 @@ export default function EmployeesPage() {
   const [isQRDialogOpen, setIsQRDialogOpen] = useState(false)
   const [selectedAssetTagId, setSelectedAssetTagId] = useState<string>('')
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
-  const [formData, setFormData] = useState({ name: '', email: '', department: '' })
+  const [isManualRefresh, setIsManualRefresh] = useState(false)
   const queryClient = useQueryClient()
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
+
+  // Create form
+  const createForm = useForm<EmployeeFormData>({
+    resolver: zodResolver(employeeSchema),
+    defaultValues: {
+      name: '',
+      email: '',
+      department: '',
+    },
+  })
+
+  // Edit form
+  const editForm = useForm<EmployeeFormData>({
+    resolver: zodResolver(employeeSchema),
+    defaultValues: {
+      name: '',
+      email: '',
+      department: '',
+    },
+  })
 
   // Get page, pageSize, and search from URL
   const page = parseInt(searchParams.get('page') || '1', 10)
@@ -336,12 +362,15 @@ export default function EmployeesPage() {
   // Separate states for search input (immediate UI) and search query (debounced API calls)
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '')
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '') // Local input state for immediate UI updates
+  const [searchType, setSearchType] = useState<'unified' | 'name' | 'email' | 'department'>(
+    (searchParams.get('searchType') as 'unified' | 'name' | 'email' | 'department') || 'unified'
+  )
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null) // Ref for debounce timeout
   const lastSearchQueryRef = useRef<string>(searchParams.get('search') || '') // Track last searchQuery to avoid sync loops
   const previousSearchInputRef = useRef<string>(searchParams.get('search') || '') // Track previous search input to prevent unnecessary updates
 
   // Update URL parameters
-  const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string }) => {
+  const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string; searchType?: string }) => {
     const params = new URLSearchParams(searchParams.toString())
     
     if (updates.page !== undefined) {
@@ -365,10 +394,21 @@ export default function EmployeesPage() {
     if (updates.search !== undefined) {
       if (updates.search === '') {
         params.delete('search')
+        params.delete('searchType')
       } else {
         params.set('search', updates.search)
       }
       // Reset to page 1 when search changes
+      params.delete('page')
+    }
+    
+    if (updates.searchType !== undefined) {
+      if (updates.searchType === 'unified') {
+        params.delete('searchType')
+      } else {
+        params.set('searchType', updates.searchType)
+      }
+      // Reset to page 1 when searchType changes
       params.delete('page')
     }
     
@@ -377,10 +417,18 @@ export default function EmployeesPage() {
     })
   }, [searchParams, router, startTransition])
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['employees', searchQuery, page, pageSize],
-    queryFn: () => fetchEmployees(searchQuery || undefined, page, pageSize),
+  const { data, isLoading, error, isFetching } = useQuery({
+    queryKey: ['employees', searchQuery, searchType, page, pageSize],
+    queryFn: () => fetchEmployees(searchQuery || undefined, searchType, page, pageSize),
+    placeholderData: (previousData) => previousData, // Keep previous data while fetching new data
   })
+
+  // Reset manual refresh flag after successful fetch
+  useEffect(() => {
+    if (!isFetching && isManualRefresh) {
+      setIsManualRefresh(false)
+    }
+  }, [isFetching, isManualRefresh])
 
   const handlePageSizeChange = (newPageSize: string) => {
     updateURL({ pageSize: parseInt(newPageSize), page: 1 })
@@ -419,10 +467,15 @@ export default function EmployeesPage() {
     }
   }, [searchInput, searchParams, updateURL])
 
-  // Sync searchInput with URL params only on initial mount or external navigation
+  // Sync searchInput and searchType with URL params only on initial mount or external navigation
   useEffect(() => {
     const urlSearch = searchParams.get('search') || ''
+    const urlSearchType = (searchParams.get('searchType') as 'unified' | 'name' | 'email' | 'department') || 'unified'
     const currentSearchQuery = lastSearchQueryRef.current || ''
+    
+    if (urlSearchType !== searchType) {
+      setSearchType(urlSearchType)
+    }
     
     if (urlSearch !== currentSearchQuery) {
       if (searchTimeoutRef.current) {
@@ -434,6 +487,7 @@ export default function EmployeesPage() {
       previousSearchInputRef.current = urlSearch
       lastSearchQueryRef.current = urlSearch
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
   
   // Update ref when searchQuery changes from our debounce
@@ -446,7 +500,7 @@ export default function EmployeesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employees'] })
       setIsCreateDialogOpen(false)
-      setFormData({ name: '', email: '', department: '' })
+      createForm.reset()
       toast.success('Employee created successfully')
     },
     onError: (error: Error) => {
@@ -461,7 +515,7 @@ export default function EmployeesPage() {
       queryClient.invalidateQueries({ queryKey: ['employees'] })
       setIsEditDialogOpen(false)
       setSelectedEmployee(null)
-      setFormData({ name: '', email: '', department: '' })
+      editForm.reset()
       toast.success('Employee updated successfully')
     },
     onError: (error: Error) => {
@@ -482,21 +536,17 @@ export default function EmployeesPage() {
     },
   })
 
-  const handleCreate = () => {
+  const handleCreate = createForm.handleSubmit(async (data) => {
     if (!canManageEmployees) {
       toast.error('You do not have permission to create employees')
       return
     }
-    if (!formData.name || !formData.email) {
-      toast.error('Name and email are required')
-      return
-    }
     createMutation.mutate({
-      name: formData.name,
-      email: formData.email,
-      department: formData.department || undefined,
+      name: data.name,
+      email: data.email,
+      department: data.department,
     })
-  }
+  })
 
   const handleEdit = useCallback((employee: Employee) => {
     if (!canManageEmployees) {
@@ -504,28 +554,32 @@ export default function EmployeesPage() {
       return
     }
     setSelectedEmployee(employee)
-    setFormData({ name: employee.name, email: employee.email, department: employee.department || '' })
+    editForm.reset({
+      name: employee.name,
+      email: employee.email,
+      department: employee.department || '',
+    })
     setIsEditDialogOpen(true)
-  }, [canManageEmployees])
+  }, [canManageEmployees, editForm])
 
-  const handleUpdate = () => {
+  const handleUpdate = editForm.handleSubmit(async (data) => {
     if (!canManageEmployees) {
       toast.error('You do not have permission to update employees')
       return
     }
-    if (!selectedEmployee || !formData.name || !formData.email) {
-      toast.error('Name and email are required')
+    if (!selectedEmployee) {
+      toast.error('No employee selected')
       return
     }
     updateMutation.mutate({ 
       id: selectedEmployee.id, 
       data: {
-        name: formData.name,
-        email: formData.email,
-        department: formData.department || undefined,
+        name: data.name,
+        email: data.email,
+        department: data.department,
       }
     })
-  }
+  })
 
   const handleDelete = useCallback((employee: Employee) => {
     if (!canManageEmployees) {
@@ -548,12 +602,11 @@ export default function EmployeesPage() {
   }
 
   // Create columns with handlers
-  const columns = useMemo(() => createColumns(handleEdit, handleDelete, handleViewCheckouts, canManageEmployees), [handleEdit, handleDelete, handleViewCheckouts, canManageEmployees])
+  const columns = useMemo(() => createColumns(handleEdit, handleDelete, handleViewCheckouts), [handleEdit, handleDelete, handleViewCheckouts])
 
   // Memoize employees data
   const employees = useMemo(() => data?.employees || [], [data?.employees])
 
-  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: employees,
     columns,
@@ -588,56 +641,97 @@ export default function EmployeesPage() {
         </p>
       </div>
 
-      <Card className="relative flex flex-col flex-1 min-h-0 pb-0">
+      <Card className="relative flex flex-col flex-1 min-h-0 pb-0 gap-0">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>List of Employee Users</CardTitle>
-              <CardDescription>View and manage all employee users in the system</CardDescription>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="flex items-center w-full md:flex-1 md:max-w-md border rounded-md overflow-hidden">
+              <Select
+                value={searchType}
+                onValueChange={(value: 'unified' | 'name' | 'email' | 'department') => {
+                  setSearchType(value)
+                  updateURL({ searchType: value, page: 1 })
+                }}
+              >
+                <SelectTrigger className="w-[140px] h-8 rounded-none border-0 border-r focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none" size='sm'>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unified">Unified Search</SelectItem>
+                  <SelectItem value="name">Name</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="department">Department</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="relative flex-1">
+                {searchInput ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchInput('')
+                      updateURL({ search: '', page: 1 })
+                    }}
+                    className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer z-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+                )}
+                <Input
+                  placeholder={
+                    searchType === 'unified'
+                      ? 'Search by name, email, or department...'
+                      : searchType === 'name'
+                      ? 'Search by Name'
+                      : searchType === 'email'
+                      ? 'Search by Email'
+                      : 'Search by Department'
+                  }
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="pl-8 h-8 rounded-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
+                />
+              </div>
             </div>
-            <Button 
-              onClick={() => {
-                if (!canManageEmployees) {
-                  toast.error('You do not have permission to add employees')
-                  return
-                }
-                setIsCreateDialogOpen(true)
-              }}
-              size='sm'
-            >
-              <UserPlus className="mr-2 h-4 w-4" />
-              Add Employee
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                onClick={() => {
+                  if (!canManageEmployees) {
+                    toast.error('You do not have permission to add employees')
+                    return
+                  }
+                  setIsCreateDialogOpen(true)
+                }}
+                size='sm'
+                className="flex-1 md:flex-initial"
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                Add Employee
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  setIsManualRefresh(true)
+                  queryClient.invalidateQueries({ queryKey: ['employees'] })
+                }}
+                className="h-8 w-8"
+                title="Refresh table"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="flex-1 px-0">
-          <div className="flex items-center p-4">
-            <div className="relative flex-1 max-w-sm">
-              {searchInput ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchInput('')
-                    updateURL({ search: '', page: 1 })
-                  }}
-                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              ) : (
-                <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
-              )}
-              <Input
-                placeholder="Search employees..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-8 h-8"
-              />
+        <CardContent className="flex-1 px-0 relative max-h-screen">
+          {isFetching && data && isManualRefresh && (
+            <div className="absolute inset-x-0 top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+              <Spinner variant="default" size={24} className="text-muted-foreground" />
             </div>
-          </div>
+          )}
 
-          <div className="h-125">
-            {isLoading ? (
+          <div className="h-150 pt-8">
+            {isLoading && !data ? (
               <div className="flex items-center justify-center py-12">
                 <div className="flex flex-col items-center gap-3">
                   <Spinner className="h-8 w-8" />
@@ -652,7 +746,7 @@ export default function EmployeesPage() {
               </div>
             ) : (
               <div className="min-w-full">
-                <ScrollArea className='h-[calc(100vh-27rem)] min-h-[520px]'>
+                <ScrollArea className='h-142'>
                 <Table className='border-t'>
                   <TableHeader>
                     {table.getHeaderGroups().map((headerGroup) => (
@@ -729,7 +823,7 @@ export default function EmployeesPage() {
         </CardContent>
         
         {/* Pagination Bar - Fixed at Bottom */}
-        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-bl-lg rounded-br-lg ">
+        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-bl-xl rounded-br-xl ">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3">
             {/* Left Side - Navigation */}
             <div className="flex items-center justify-center sm:justify-start gap-2">
@@ -805,7 +899,12 @@ export default function EmployeesPage() {
       </Card>
 
       {/* Create Dialog */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+      <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
+        setIsCreateDialogOpen(open)
+        if (!open) {
+          createForm.reset()
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add New Employee</DialogTitle>
@@ -813,52 +912,91 @@ export default function EmployeesPage() {
               Create a new employee user in the system.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Enter employee name"
-                disabled={!canManageEmployees}
-              />
+          <form onSubmit={handleCreate}>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Name <span className="text-destructive">*</span></Label>
+                <Controller
+                  name="name"
+                  control={createForm.control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="name"
+                      placeholder="Enter employee name"
+                      disabled={!canManageEmployees}
+                      aria-invalid={createForm.formState.errors.name ? 'true' : 'false'}
+                      aria-required="true"
+                    />
+                  )}
+                />
+                <FieldError errors={createForm.formState.errors.name ? [createForm.formState.errors.name] : []} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="email">Email <span className="text-destructive">*</span></Label>
+                <Controller
+                  name="email"
+                  control={createForm.control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="email"
+                      type="email"
+                      placeholder="Enter employee email"
+                      disabled={!canManageEmployees}
+                      aria-invalid={createForm.formState.errors.email ? 'true' : 'false'}
+                      aria-required="true"
+                    />
+                  )}
+                />
+                <FieldError errors={createForm.formState.errors.email ? [createForm.formState.errors.email] : []} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="department">Department</Label>
+                <Controller
+                  name="department"
+                  control={createForm.control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="department"
+                      value={field.value || ''}
+                      placeholder="Enter department (optional)"
+                      disabled={!canManageEmployees}
+                      aria-invalid={createForm.formState.errors.department ? 'true' : 'false'}
+                    />
+                  )}
+                />
+                <FieldError errors={createForm.formState.errors.department ? [createForm.formState.errors.department] : []} />
+              </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="Enter employee email"
-                disabled={!canManageEmployees}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="department">Department</Label>
-              <Input
-                id="department"
-                value={formData.department}
-                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                placeholder="Enter department (optional)"
-                disabled={!canManageEmployees}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreate} disabled={createMutation.isPending || !canManageEmployees}>
-              {createMutation.isPending ? 'Creating...' : 'Create'}
-            </Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button 
+                type="button"
+                variant="outline" 
+                onClick={() => {
+                  setIsCreateDialogOpen(false)
+                  createForm.reset()
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createMutation.isPending || !canManageEmployees}>
+                {createMutation.isPending ? 'Creating...' : 'Create'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
       {/* Edit Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
+        setIsEditDialogOpen(open)
+        if (!open) {
+          editForm.reset()
+          setSelectedEmployee(null)
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Employee</DialogTitle>
@@ -866,47 +1004,81 @@ export default function EmployeesPage() {
               Update employee information.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-name">Name</Label>
-              <Input
-                id="edit-name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Enter employee name"
-                disabled={!canManageEmployees}
-              />
+          <form onSubmit={handleUpdate}>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-name">Name <span className="text-destructive">*</span></Label>
+                <Controller
+                  name="name"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="edit-name"
+                      placeholder="Enter employee name"
+                      disabled={!canManageEmployees}
+                      aria-invalid={editForm.formState.errors.name ? 'true' : 'false'}
+                      aria-required="true"
+                    />
+                  )}
+                />
+                <FieldError errors={editForm.formState.errors.name ? [editForm.formState.errors.name] : []} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-email">Email <span className="text-destructive">*</span></Label>
+                <Controller
+                  name="email"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="edit-email"
+                      type="email"
+                      placeholder="Enter employee email"
+                      disabled={!canManageEmployees}
+                      aria-invalid={editForm.formState.errors.email ? 'true' : 'false'}
+                      aria-required="true"
+                    />
+                  )}
+                />
+                <FieldError errors={editForm.formState.errors.email ? [editForm.formState.errors.email] : []} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-department">Department</Label>
+                <Controller
+                  name="department"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="edit-department"
+                      value={field.value || ''}
+                      placeholder="Enter department (optional)"
+                      disabled={!canManageEmployees}
+                      aria-invalid={editForm.formState.errors.department ? 'true' : 'false'}
+                    />
+                  )}
+                />
+                <FieldError errors={editForm.formState.errors.department ? [editForm.formState.errors.department] : []} />
+              </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-email">Email</Label>
-              <Input
-                id="edit-email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="Enter employee email"
-                disabled={!canManageEmployees}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-department">Department</Label>
-              <Input
-                id="edit-department"
-                value={formData.department}
-                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                placeholder="Enter department (optional)"
-                disabled={!canManageEmployees}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleUpdate} disabled={updateMutation.isPending || !canManageEmployees}>
-              {updateMutation.isPending ? 'Updating...' : 'Update'}
-            </Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button 
+                type="button"
+                variant="outline" 
+                onClick={() => {
+                  setIsEditDialogOpen(false)
+                  editForm.reset()
+                  setSelectedEmployee(null)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updateMutation.isPending || !canManageEmployees}>
+                {updateMutation.isPending ? 'Updating...' : 'Update'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

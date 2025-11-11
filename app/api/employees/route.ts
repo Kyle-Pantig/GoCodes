@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search')
+    const searchType = searchParams.get('searchType') || 'unified' // unified, name, email, department
     const excludeWithCheckedOutAssets = searchParams.get('excludeWithCheckedOutAssets') === 'true'
     const page = parseInt(searchParams.get('page') || '1', 10)
     const pageSize = parseInt(searchParams.get('pageSize') || '100', 10)
@@ -18,12 +19,32 @@ export async function GET(request: NextRequest) {
     let whereClause = {}
     
     if (search) {
+      switch (searchType) {
+        case 'name':
+          whereClause = {
+            name: { contains: search, mode: 'insensitive' }
+          }
+          break
+        case 'email':
+          whereClause = {
+            email: { contains: search, mode: 'insensitive' }
+          }
+          break
+        case 'department':
+          whereClause = {
+            department: { contains: search, mode: 'insensitive' }
+          }
+          break
+        case 'unified':
+        default:
       whereClause = {
         OR: [
           { name: { contains: search, mode: 'insensitive' } },
           { email: { contains: search, mode: 'insensitive' } },
           { department: { contains: search, mode: 'insensitive' } },
         ]
+          }
+          break
       }
     }
 

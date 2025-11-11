@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
+import { useForm, Controller } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { XIcon, History, QrCode } from "lucide-react"
 import { usePermissions } from '@/hooks/use-permissions'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
@@ -26,10 +28,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
+import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
+import { leaseSchema, type LeaseFormData } from "@/lib/validations/assets"
 
 interface Asset {
   id: string
@@ -46,6 +49,27 @@ interface Asset {
     id: string
     name: string
   } | null
+  leases?: Array<{
+    id: string
+    leaseStartDate: string
+    leaseEndDate?: string | null
+    returns?: Array<{
+      id: string
+    }>
+  }>
+}
+
+// Helper function to check if asset has an active lease
+const hasActiveLease = (asset: Asset): boolean => {
+  if (!asset.leases || asset.leases.length === 0) return false
+  
+  return asset.leases.some(lease => {
+    // Check if lease is active (no end date or end date in future)
+    const isActive = !lease.leaseEndDate || new Date(lease.leaseEndDate) >= new Date()
+    // Check if lease hasn't been returned
+    const notReturned = !lease.returns || lease.returns.length === 0
+    return isActive && notReturned
+  })
 }
 
 // Helper function to get status badge with colors (only for Available status on lease page)
@@ -62,6 +86,14 @@ const getStatusBadge = (status: string | null) => {
   return <Badge variant="outline">{status}</Badge>
 }
 
+// Helper function to get badge for asset suggestions (shows "Leased" if has active lease)
+const getSuggestionBadge = (asset: Asset) => {
+  if (hasActiveLease(asset)) {
+    return <Badge variant="secondary" className="bg-yellow-500">Leased</Badge>
+  }
+  return <Badge variant="outline">{asset.status || 'Available'}</Badge>
+}
+
 export default function LeaseAssetPage() {
   const queryClient = useQueryClient()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
@@ -73,16 +105,21 @@ export default function LeaseAssetPage() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1)
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
-  const [lessee, setLessee] = useState<string>("")
-  const [leaseStartDate, setLeaseStartDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  )
-  const [leaseEndDate, setLeaseEndDate] = useState<string>("")
-  const [conditions, setConditions] = useState<string>("")
-  const [notes, setNotes] = useState<string>("")
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
+
+  const form = useForm<LeaseFormData>({
+    resolver: zodResolver(leaseSchema),
+    defaultValues: {
+      assetId: '',
+      lessee: '',
+      leaseStartDate: new Date().toISOString().split('T')[0],
+      leaseEndDate: '',
+      conditions: '',
+      notes: '',
+    },
+  })
 
   // Fetch lease statistics
   const { data: leaseStats, isLoading: isLoadingLeaseStats, error: leaseStatsError } = useQuery<{
@@ -114,6 +151,17 @@ export default function LeaseAssetPage() {
     retry: 2,
     retryDelay: 1000,
   })
+
+  // Format date for display
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'N/A'
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString()
+    } catch {
+      return 'N/A'
+    }
+  }
 
   // Calculate time ago
   const getTimeAgo = (dateString: string): string => {
@@ -149,7 +197,7 @@ export default function LeaseAssetPage() {
     return `${diffInYears} ${diffInYears === 1 ? 'year' : 'years'} ago`
   }
 
-  // Fetch asset suggestions based on input (only Available assets)
+  // Fetch asset suggestions based on input (show all assets including leased)
   const { data: assetSuggestions = [], isLoading: isLoadingSuggestions } = useQuery<Asset[]>({
     queryKey: ["asset-lease-suggestions", assetIdInput, showSuggestions],
     queryFn: async () => {
@@ -162,9 +210,9 @@ export default function LeaseAssetPage() {
         const data = await response.json()
         const assets = data.assets as Asset[]
         
-        // Filter to only show Available assets
+        // Filter to only show Available assets (but include those with active leases for display)
         return assets
-          .filter(a => !a.status || a.status === "Available")
+          .filter(a => !a.status || a.status === "Available" || a.status === "Leased")
           .slice(0, 10)
       }
       
@@ -176,9 +224,9 @@ export default function LeaseAssetPage() {
       const data = await response.json()
       const assets = data.assets as Asset[]
       
-      // Filter to only show Available assets
+      // Filter to only show Available assets (but include those with active leases for display)
       return assets
-        .filter(a => !a.status || a.status === "Available")
+        .filter(a => !a.status || a.status === "Available" || a.status === "Leased")
         .slice(0, 10)
     },
     enabled: showSuggestions && canViewAssets && canLease,
@@ -227,18 +275,34 @@ export default function LeaseAssetPage() {
   const lookupAsset = async (assetTagId: string): Promise<Asset | null> => {
     const asset = await findAssetById(assetTagId)
     
-    // Check if asset is available for lease
-    if (asset && asset.status && asset.status !== "Available") {
+    if (!asset) {
       return null
     }
     
-    return asset || null
+    // Check if asset is available for lease (must be Available status)
+    if (asset.status && asset.status !== "Available") {
+      return null
+    }
+    
+    // Check if asset has an active lease (lease without return)
+    if (hasActiveLease(asset)) {
+      return null
+    }
+    
+    return asset
   }
 
   // Handle suggestion selection
   const handleSelectSuggestion = (asset: Asset) => {
+    // Check if asset has an active lease
+    if (hasActiveLease(asset)) {
+      toast.error(`Asset "${asset.assetTagId}" already has an active lease`)
+      return
+    }
+    
     setSelectedAsset(asset)
     setAssetIdInput(asset.assetTagId)
+    form.setValue('assetId', asset.id)
     setShowSuggestions(false)
     setSelectedSuggestionIndex(-1)
     toast.success('Asset selected')
@@ -250,6 +314,7 @@ export default function LeaseAssetPage() {
     if (assetToSelect) {
       setSelectedAsset(assetToSelect)
       setAssetIdInput(assetToSelect.assetTagId)
+      form.setValue('assetId', assetToSelect.id)
       setShowSuggestions(false)
       toast.success('Asset selected')
     } else {
@@ -257,7 +322,14 @@ export default function LeaseAssetPage() {
         // Check if asset exists but is not available
         const assetExists = await findAssetById(assetIdInput.trim())
         if (assetExists) {
+          // Check if it has an active lease
+          if (hasActiveLease(assetExists)) {
+            toast.error(`Asset "${assetExists.assetTagId}" already has an active lease`)
+          } else if (assetExists.status && assetExists.status !== "Available") {
           toast.error(`Asset "${assetExists.assetTagId}" is not available for lease. Current status: ${assetExists.status || 'Unknown'}`)
+          } else {
+            toast.error(`Asset "${assetExists.assetTagId}" is not available for lease`)
+          }
         } else {
           toast.error(`Asset with ID "${assetIdInput}" not found`)
         }
@@ -310,6 +382,7 @@ export default function LeaseAssetPage() {
   const handleClearAsset = () => {
     setSelectedAsset(null)
     setAssetIdInput("")
+    form.setValue('assetId', '')
     toast.success('Asset cleared')
   }
 
@@ -317,11 +390,14 @@ export default function LeaseAssetPage() {
   const clearForm = () => {
     setSelectedAsset(null)
     setAssetIdInput("")
-    setLessee("")
-    setLeaseStartDate(new Date().toISOString().split('T')[0])
-    setLeaseEndDate("")
-    setConditions("")
-    setNotes("")
+    form.reset({
+      assetId: '',
+      lessee: '',
+      leaseStartDate: new Date().toISOString().split('T')[0],
+      leaseEndDate: '',
+      conditions: '',
+      notes: '',
+    })
   }
 
   // Handle QR code scan result
@@ -334,9 +410,15 @@ export default function LeaseAssetPage() {
       return
     }
     
-    // Check if asset is available for lease
+    // Check if asset is available for lease (must be Available status)
     if (assetExists.status && assetExists.status !== "Available") {
       toast.error(`Asset "${assetExists.assetTagId}" is not available for lease. Current status: ${assetExists.status}`)
+      return
+    }
+    
+    // Check if asset has an active lease
+    if (hasActiveLease(assetExists)) {
+      toast.error(`Asset "${assetExists.assetTagId}" already has an active lease`)
       return
     }
     
@@ -379,43 +461,21 @@ export default function LeaseAssetPage() {
   })
 
   // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
+  const handleSubmit = form.handleSubmit(async (data) => {
     if (!selectedAsset) {
       toast.error('Please select an asset')
       return
     }
 
-    if (!lessee.trim()) {
-      toast.error('Please enter a lessee (third party name/organization)')
-      return
-    }
-
-    if (!leaseStartDate) {
-      toast.error('Please select a lease start date')
-      return
-    }
-
-    // Validate end date is after start date if provided
-    if (leaseEndDate) {
-      const startDate = new Date(leaseStartDate)
-      const endDate = new Date(leaseEndDate)
-      if (endDate < startDate) {
-        toast.error('Lease end date must be after start date')
-        return
-      }
-    }
-
     leaseMutation.mutate({
       assetId: selectedAsset.id,
-      lessee: lessee.trim(),
-      leaseStartDate,
-      leaseEndDate: leaseEndDate || undefined,
-      conditions: conditions || undefined,
-      notes: notes || undefined,
+      lessee: data.lessee.trim(),
+      leaseStartDate: data.leaseStartDate,
+      leaseEndDate: data.leaseEndDate || undefined,
+      conditions: data.conditions || undefined,
+      notes: data.notes || undefined,
     })
-  }
+  })
 
   // Track form changes to show floating buttons - only show when asset is selected
   const isFormDirty = useMemo(() => {
@@ -502,11 +562,11 @@ export default function LeaseAssetPage() {
                           {lease.lessee}
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground">
-                          {new Date(lease.leaseStartDate).toLocaleDateString()}
+                          {formatDate(lease.leaseStartDate)}
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground">
                           {lease.leaseEndDate 
-                            ? new Date(lease.leaseEndDate).toLocaleDateString()
+                            ? formatDate(lease.leaseEndDate)
                             : 'Ongoing'}
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground text-right">
@@ -574,9 +634,11 @@ export default function LeaseAssetPage() {
                           onClick={() => handleSelectSuggestion(asset)}
                           onMouseEnter={() => setSelectedSuggestionIndex(index)}
                           className={cn(
-                            "px-4 py-3 cursor-pointer transition-colors",
-                            "hover:bg-accent",
-                            selectedSuggestionIndex === index && "bg-accent"
+                             "px-4 py-3 transition-colors",
+                             hasActiveLease(asset) 
+                               ? "cursor-not-allowed opacity-60" 
+                               : "cursor-pointer hover:bg-accent",
+                             selectedSuggestionIndex === index && !hasActiveLease(asset) && "bg-accent"
                           )}
                         >
                           <div className="flex items-center justify-between">
@@ -587,7 +649,7 @@ export default function LeaseAssetPage() {
                                 {asset.subCategory?.name && ` - ${asset.subCategory.name}`}
                               </div>
                             </div>
-                            <Badge variant="outline">{asset.status || 'Available'}</Badge>
+                             {getSuggestionBadge(asset)}
                           </div>
                         </div>
                       ))
@@ -652,8 +714,6 @@ export default function LeaseAssetPage() {
         </Card>
 
         {/* Lease Details */}
-        {selectedAsset && (
-          <>
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Lease Details</CardTitle>
@@ -667,13 +727,25 @@ export default function LeaseAssetPage() {
                     Lessee (Third Party) <span className="text-destructive">*</span>
                   </FieldLabel>
                   <FieldContent>
+                <Controller
+                  name="lessee"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
                     <Input
                       id="lessee"
                       placeholder="Enter lessee name or organization"
-                      value={lessee}
-                      onChange={(e) => setLessee(e.target.value)}
+                        {...field}
                       className="w-full"
-                      disabled={!canViewAssets || !canLease}
+                        disabled={!canViewAssets || !canLease || !selectedAsset}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                        aria-required="true"
+                      />
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
                     />
                   </FieldContent>
                 </Field>
@@ -683,13 +755,25 @@ export default function LeaseAssetPage() {
                     Lease Start Date <span className="text-destructive">*</span>
                   </FieldLabel>
                   <FieldContent>
+                <Controller
+                  name="leaseStartDate"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
                     <Input
                       id="leaseStartDate"
                       type="date"
-                      value={leaseStartDate}
-                      onChange={(e) => setLeaseStartDate(e.target.value)}
+                        {...field}
                       className="w-full"
-                      disabled={!canViewAssets || !canLease}
+                        disabled={!canViewAssets || !canLease || !selectedAsset}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                        aria-required="true"
+                      />
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
                     />
                   </FieldContent>
                 </Field>
@@ -699,13 +783,24 @@ export default function LeaseAssetPage() {
                     Lease End Date (Optional)
                   </FieldLabel>
                   <FieldContent>
+                <Controller
+                  name="leaseEndDate"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
                     <Input
                       id="leaseEndDate"
                       type="date"
-                      value={leaseEndDate}
-                      onChange={(e) => setLeaseEndDate(e.target.value)}
+                        {...field}
                       className="w-full"
-                      disabled={!canViewAssets || !canLease}
+                        disabled={!canViewAssets || !canLease || !selectedAsset}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                      />
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
                     />
                   </FieldContent>
                 </Field>
@@ -715,14 +810,25 @@ export default function LeaseAssetPage() {
                     Conditions
                   </FieldLabel>
                   <FieldContent>
+                <Controller
+                  name="conditions"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
                     <Textarea
                       id="conditions"
                       placeholder="Enter lease conditions and terms"
-                      value={conditions}
-                      onChange={(e) => setConditions(e.target.value)}
+                        {...field}
                       className="w-full"
                       rows={3}
-                      disabled={!canViewAssets || !canLease}
+                        disabled={!canViewAssets || !canLease || !selectedAsset}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                      />
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
                     />
                   </FieldContent>
                 </Field>
@@ -732,21 +838,30 @@ export default function LeaseAssetPage() {
                     Notes
                   </FieldLabel>
                   <FieldContent>
+                <Controller
+                  name="notes"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
                     <Textarea
                       id="notes"
                       placeholder="Enter any additional notes"
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
+                        {...field}
                       className="w-full"
                       rows={3}
-                      disabled={!canViewAssets || !canLease}
+                        disabled={!canViewAssets || !canLease || !selectedAsset}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                      />
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
                     />
                   </FieldContent>
                 </Field>
               </CardContent>
             </Card>
-          </>
-        )}
       </form>
 
       {/* Floating Action Buttons - Only show when form has changes */}

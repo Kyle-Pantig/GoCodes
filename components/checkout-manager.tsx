@@ -3,20 +3,26 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { ArrowRight, Calendar, CheckCircle, Clock, UserPlus, UserCircle, Edit2, X } from 'lucide-react'
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import { ArrowRight, Calendar, CheckCircle, Clock, UserPlus, UserCircle, Edit2, X, Check, ChevronsUpDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
+import { cn } from '@/lib/utils'
 
 interface CheckoutManagerProps {
   assetId: string
@@ -27,7 +33,7 @@ interface CheckoutManagerProps {
 export function CheckoutManager({ assetId, invalidateQueryKey = ['assets'] }: CheckoutManagerProps) {
   const queryClient = useQueryClient()
   const [editingCheckoutId, setEditingCheckoutId] = useState<string | null>(null)
-  const [employeeSearch, setEmployeeSearch] = useState<Record<string, string>>({})
+  const [openPopovers, setOpenPopovers] = useState<Record<string, boolean>>({})
 
   // Fetch checkout records
   const { data: checkoutData, isLoading } = useQuery({
@@ -79,16 +85,6 @@ export function CheckoutManager({ assetId, invalidateQueryKey = ['assets'] }: Ch
     updateMutation.mutate({ checkoutId, employeeUserId })
   }
 
-  // Filter employees based on search
-  const getFilteredEmployees = (checkoutId: string) => {
-    const searchTerm = employeeSearch[checkoutId]?.toLowerCase() || ''
-    if (!searchTerm) return employees
-    return employees.filter((emp: { id: string; name: string; email: string; department?: string | null }) =>
-      emp.name.toLowerCase().includes(searchTerm) || 
-      emp.email.toLowerCase().includes(searchTerm) ||
-      (emp.department && emp.department.toLowerCase().includes(searchTerm))
-    )
-  }
 
   // Sort checkouts: active first, then by date
   const sortedCheckouts = [...checkouts].sort((a, b) => {
@@ -151,7 +147,6 @@ export function CheckoutManager({ assetId, invalidateQueryKey = ['assets'] }: Ch
               const isCheckedIn = checkout.checkins.length > 0
               const needsAssignment = !checkout.employeeUser && !isCheckedIn
               const isEditing = editingCheckoutId === checkout.id
-              const filteredEmployees = getFilteredEmployees(checkout.id)
 
               return (
                 <Card 
@@ -196,7 +191,7 @@ export function CheckoutManager({ assetId, invalidateQueryKey = ['assets'] }: Ch
                             className="h-7 w-7 p-0 shrink-0 ml-auto"
                             onClick={() => {
                               setEditingCheckoutId(checkout.id)
-                              setEmployeeSearch(prev => ({ ...prev, [checkout.id]: '' }))
+                              setOpenPopovers(prev => ({ ...prev, [checkout.id]: true }))
                             }}
                             disabled={updateMutation.isPending}
                           >
@@ -210,7 +205,7 @@ export function CheckoutManager({ assetId, invalidateQueryKey = ['assets'] }: Ch
                             className="h-7 w-7 p-0 shrink-0 ml-auto"
                             onClick={() => {
                               setEditingCheckoutId(null)
-                              setEmployeeSearch(prev => ({ ...prev, [checkout.id]: '' }))
+                              setOpenPopovers(prev => ({ ...prev, [checkout.id]: false }))
                             }}
                             disabled={updateMutation.isPending}
                           >
@@ -269,73 +264,94 @@ export function CheckoutManager({ assetId, invalidateQueryKey = ['assets'] }: Ch
                                 <div className="text-xs text-muted-foreground mb-2">
                                   {checkout.employeeUser ? 'Change assignment' : 'Assign employee'}
                                 </div>
-                                <Select
-                                  value={checkout.employeeUser?.id || ""}
-                                  onValueChange={(value) => {
-                                    handleAssignEmployee(checkout.id, value === 'none' || value === '' ? null : value)
-                                    if (value === 'none' || value === '') {
-                                      setEditingCheckoutId(null)
-                                    }
-                                  }}
-                                  disabled={updateMutation.isPending || isCheckedIn}
+                                <Popover 
+                                  open={openPopovers[checkout.id] || false}
                                   onOpenChange={(open) => {
+                                    setOpenPopovers(prev => ({ ...prev, [checkout.id]: open }))
                                     if (!open && isEditing) {
                                       setEditingCheckoutId(null)
                                     }
                                   }}
                                 >
-                                  <SelectTrigger className="h-12 w-full">
-                                    <SelectValue placeholder={checkout.employeeUser ? "Change employee..." : "Select an employee..."} />
-                                  </SelectTrigger>
-                                  <SelectContent className="max-h-[300px] w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]" position="popper">
-                                    {employees.length === 0 ? (
-                                      <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                                        No employees found
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <div className="sticky -top-1 z-50 -mx-1 -mt-1 px-3 py-1.5 bg-popover border-b border-border mb-1 backdrop-blur-sm">
-                                          <Input
-                                            placeholder="Search employees..."
-                                            value={employeeSearch[checkout.id] || ''}
-                                            onChange={(e) => setEmployeeSearch(prev => ({ ...prev, [checkout.id]: e.target.value }))}
-                                            className="h-8"
-                                            onClick={(e) => e.stopPropagation()}
-                                            onKeyDown={(e) => e.stopPropagation()}
-                                          />
-                                        </div>
-                                        <SelectItem value="none" className="cursor-pointer">
-                                          <div className="flex items-center gap-2">
-                                            <X className="h-4 w-4 text-muted-foreground" />
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      role="combobox"
+                                      aria-expanded={openPopovers[checkout.id] || false}
+                                      className="w-full justify-between h-12"
+                                      disabled={updateMutation.isPending || isCheckedIn}
+                                    >
+                                      {checkout.employeeUser ? (
+                                        <span className="truncate">
+                                          {checkout.employeeUser.name} ({checkout.employeeUser.email})
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted-foreground">
+                                          {checkout.employeeUser ? "Change employee..." : "Select an employee..."}
+                                        </span>
+                                      )}
+                                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
+                                    <Command>
+                                      <CommandInput placeholder="Search employees..." />
+                                      <CommandList>
+                                        <CommandEmpty>
+                                          No employees found.
+                                        </CommandEmpty>
+                                        <CommandGroup>
+                                          <CommandItem
+                                            value="none"
+                                            onSelect={() => {
+                                              handleAssignEmployee(checkout.id, null)
+                                              setOpenPopovers(prev => ({ ...prev, [checkout.id]: false }))
+                                              setEditingCheckoutId(null)
+                                            }}
+                                          >
+                                            <X className="mr-2 h-4 w-4 text-muted-foreground" />
                                             <span>Unassign employee</span>
-                                          </div>
-                                        </SelectItem>
-                                        {filteredEmployees.length === 0 ? (
-                                          <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                                            No employees match your search
-                                          </div>
-                                        ) : (
-                                          filteredEmployees.map((emp: { id: string; name: string; email: string; department?: string | null }) => (
-                                            <SelectItem key={emp.id} value={emp.id} className="cursor-pointer">
-                                              <div className="flex flex-col gap-0.5 min-w-0 w-full">
-                                                <span className="font-medium text-sm truncate text-left">{emp.name}</span>
-                                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                                  <span className="truncate">{emp.email}</span>
-                                                  {emp.department && (
-                                                    <>
-                                                      <span className="shrink-0">•</span>
-                                                      <span className="truncate">{emp.department}</span>
-                                                    </>
+                                          </CommandItem>
+                                          {employees.map((emp: { id: string; name: string; email: string; department?: string | null }) => {
+                                            const isSelected = checkout.employeeUser?.id === emp.id
+                                            return (
+                                              <CommandItem
+                                                key={emp.id}
+                                                value={`${emp.name} ${emp.email} ${emp.department || ''}`}
+                                                onSelect={() => {
+                                                  handleAssignEmployee(checkout.id, emp.id)
+                                                  setOpenPopovers(prev => ({ ...prev, [checkout.id]: false }))
+                                                  if (isEditing) {
+                                                    setEditingCheckoutId(null)
+                                                  }
+                                                }}
+                                              >
+                                                <Check
+                                                  className={cn(
+                                                    "mr-2 h-4 w-4",
+                                                    isSelected ? "opacity-100" : "opacity-0"
                                                   )}
+                                                />
+                                                <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                                                  <span className="font-medium text-sm truncate text-left">{emp.name}</span>
+                                                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                    <span className="truncate">{emp.email}</span>
+                                                    {emp.department && (
+                                                      <>
+                                                        <span className="shrink-0">•</span>
+                                                        <span className="truncate">{emp.department}</span>
+                                                      </>
+                                                    )}
+                                                  </div>
                                                 </div>
-                                              </div>
-                                            </SelectItem>
-                                          ))
-                                        )}
-                                      </>
-                                    )}
-                                  </SelectContent>
-                                </Select>
+                                              </CommandItem>
+                                            )
+                                          })}
+                                        </CommandGroup>
+                                      </CommandList>
+                                    </Command>
+                                  </PopoverContent>
+                                </Popover>
                               </>
                             )}
                           </div>

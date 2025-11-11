@@ -45,7 +45,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Search, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, MoreHorizontal, Trash2, Edit, CheckCircle2, Image as ImageIcon, UserPlus, Calendar, UserCircle, Clock, CheckCircle, Edit2, X } from 'lucide-react'
+import { Search, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, MoreHorizontal, Trash2, Edit, CheckCircle2, Image as ImageIcon, X, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
@@ -1513,6 +1513,7 @@ function AssetActions({ asset }: { asset: Asset }) {
 export default function ListOfAssetsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   
   const canViewAssets = hasPermission('canViewAssets')
@@ -1562,7 +1563,7 @@ export default function ListOfAssetsPage() {
   })
   const [isSelectOpen, setIsSelectOpen] = useState(false)
   const [shouldCloseSelect, setShouldCloseSelect] = useState(false)
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   
   // Convert column visibility to visible columns array for compatibility
   // Exclude Actions from count since it's always visible and not selectable
@@ -1804,14 +1805,27 @@ export default function ListOfAssetsPage() {
         </p>
       </div>
 
-      <Card className="relative flex flex-col flex-1 min-h-0 pb-0 ">
+      <Card className="relative flex flex-col flex-1 min-h-0 pb-0 gap-0 ">
         <CardHeader>
-          <div>
-            <CardTitle>List of Assets</CardTitle>
-            <CardDescription>View and manage all assets in the system</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>List of Assets</CardTitle>
+              <CardDescription>View and manage all assets in the system</CardDescription>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                queryClient.invalidateQueries({ queryKey: ['assets-list'] })
+              }}
+              className="h-8 w-8"
+              title="Refresh table"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
           </div>
         </CardHeader>
-        <CardContent className="flex-1 px-0">
+        <CardContent className="flex-1 px-0 relative max-h-screen">
           <div className="flex items-center justify-between p-4 gap-4">
             <div className="relative flex-1 max-w-sm">
               {searchInput ? (
@@ -1905,7 +1919,13 @@ export default function ListOfAssetsPage() {
             </Select>
           </div>
 
-          <div className="h-125">
+          {isFetching && data && (
+            <div className="absolute inset-x-0 top-[65px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+              <Spinner variant="default" size={24} className="text-muted-foreground" />
+            </div>
+          )}
+
+          <div className="h-130">
             {permissionsLoading || isLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="flex flex-col items-center gap-3">
@@ -1931,13 +1951,7 @@ export default function ListOfAssetsPage() {
               </div>
             ) : (
               <div className="min-w-full">
-                <ScrollArea className='h-[calc(100vh-27rem)] min-h-[520px]'>
-                <div className="relative">
-                  {isFetching && data && (
-                    <div className="absolute inset-0 bg-background/50 backdrop-blur-sm z-10 flex items-center justify-center">
-                      <Spinner variant="default" size={24} className="text-muted-foreground" />
-                    </div>
-                  )}
+                <ScrollArea className='h-130'>
                 <Table className='border-t'>
                   <TableHeader>
                     {table.getHeaderGroups().map((headerGroup) => (
@@ -1989,7 +2003,6 @@ export default function ListOfAssetsPage() {
                     )}
                   </TableBody>
                 </Table>
-                </div>
                 <ScrollBar orientation="horizontal" className='z-10' />
                 <ScrollBar orientation="vertical" className='z-10' />
                 </ScrollArea>

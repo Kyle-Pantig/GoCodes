@@ -4,20 +4,30 @@ import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
 
 export async function GET(request: NextRequest) {
+  try {
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canViewAssets')
   if (!permissionCheck.allowed) return permissionCheck.error
 
-  try {
     const { searchParams } = new URL(request.url)
     const categoryId = searchParams.get('categoryId')
 
+    // Use select instead of include to reduce data transfer and connection time
     const subcategories = await prisma.subCategory.findMany({
       where: categoryId ? { categoryId } : undefined,
-      include: {
-        category: true,
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        categoryId: true,
+        category: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
       orderBy: {
         name: 'asc',
@@ -26,6 +36,15 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ subcategories })
   } catch (error) {
+    // Handle connection pool errors specifically
+    if (error instanceof Error && error.message.includes('connection pool')) {
+      console.error('[Subcategories API] Connection pool exhausted:', error.message)
+      return NextResponse.json(
+        { error: 'Database connection limit reached. Please try again in a moment.' },
+        { status: 503 }
+      )
+    }
+    
     console.error('Error fetching subcategories:', error)
     return NextResponse.json(
       { error: 'Failed to fetch subcategories' },

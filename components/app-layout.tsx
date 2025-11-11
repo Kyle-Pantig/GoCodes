@@ -16,9 +16,10 @@ export function AppLayout({
   const pathname = usePathname()
   const isLoginPage = pathname?.startsWith('/login')
   const isSignupPage = pathname?.startsWith('/signup')
+  const isResetPasswordPage = pathname?.startsWith('/reset-password')
 
-  // Don't show sidebar on login or signup pages
-  if (isLoginPage || isSignupPage) {
+  // Don't show sidebar on login, signup, or reset password pages
+  if (isLoginPage || isSignupPage || isResetPasswordPage) {
     return <>{children}</>
   }
 

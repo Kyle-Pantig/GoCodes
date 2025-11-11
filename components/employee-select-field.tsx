@@ -1,19 +1,26 @@
 'use client'
 
-import { useState, useRef, useMemo } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Controller, Control, FieldError } from 'react-hook-form'
-import { Search } from 'lucide-react'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Input } from '@/components/ui/input'
-import { Field, FieldLabel, FieldContent, FieldError as FieldErrorComponent } from '@/components/ui/field'
+import { Check, ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import { Field, FieldLabel, FieldContent, FieldError as FieldErrorComponent } from '@/components/ui/field'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 interface EmployeeUser {
   id: string
@@ -30,7 +37,7 @@ interface EmployeeUser {
 interface EmployeeSelectFieldProps {
   // For react-hook-form integration
   name?: string
-  control?: Control<any>
+  control?: Control<Record<string, unknown>>
   error?: FieldError
   
   // For regular state management
@@ -59,8 +66,7 @@ export function EmployeeSelectField({
   currentEmployeeId,
   queryKey = ['employees'],
 }: EmployeeSelectFieldProps) {
-  const [searchTerm, setSearchTerm] = useState('')
-  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [open, setOpen] = useState(false)
 
   // Fetch employees
   const { data: employees = [], isLoading: isLoadingEmployees } = useQuery<EmployeeUser[]>({
@@ -77,82 +83,102 @@ export function EmployeeSelectField({
     retryDelay: 1000,
   })
 
-  // Filter employees based on search term
-  const filteredEmployees = useMemo(() => {
-    if (!searchTerm.trim()) {
-      return employees
-    }
-    
-    const searchLower = searchTerm.toLowerCase().trim()
-    return employees.filter((employee) => {
-      const nameMatch = employee.name.toLowerCase().includes(searchLower)
-      const emailMatch = employee.email.toLowerCase().includes(searchLower)
-      const departmentMatch = employee.department?.toLowerCase().includes(searchLower) || false
-      
-      return nameMatch || emailMatch || departmentMatch
-    })
-  }, [employees, searchTerm])
+  // Get selected employee for display
+  const getSelectedEmployee = (employeeId: string | undefined) => {
+    if (!employeeId) return null
+    return employees.find((emp) => emp.id === employeeId)
+  }
 
-  // Shared SelectContent to avoid duplication
-  const renderSelectContent = () => (
-                <SelectContent className="max-h-[300px] w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]" position="popper">
-                  <div className="sticky -top-1 z-50 -mx-1 -mt-1 px-3 py-1.5 bg-popover border-b border-border mb-1 backdrop-blur-sm">
-                    <div className="relative">
-                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        ref={searchInputRef}
-                        placeholder="Search employees..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        onKeyDown={(e) => e.stopPropagation()}
-                        onClick={(e) => e.stopPropagation()}
-                        onFocus={(e) => e.stopPropagation()}
-                        className="pl-8 h-8"
-                        autoComplete="off"
-                      />
-                    </div>
-                  </div>
-                  {filteredEmployees.length === 0 ? (
-                    <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                      No employees found
-                    </div>
-                  ) : (
-                    filteredEmployees.map((employee) => {
+  // Shared combobox content
+  const renderCombobox = (currentValue: string | undefined, onChange: (value: string) => void) => {
+    const selectedEmployee = getSelectedEmployee(currentValue)
+
+    return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between"
+            disabled={disabled || isLoadingEmployees}
+            aria-invalid={error ? 'true' : 'false'}
+          >
+            {selectedEmployee ? (
+              <span className="truncate">
+                {selectedEmployee.name} ({selectedEmployee.email})
+              </span>
+            ) : (
+              <span className="text-muted-foreground">{placeholder}</span>
+            )}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
+          <Command>
+            <CommandInput placeholder="Search employees..." />
+            <CommandList className="max-h-none">
+              <CommandEmpty>
+                {isLoadingEmployees ? 'Loading employees...' : 'No employees found.'}
+              </CommandEmpty>
+              <ScrollArea className="h-[300px]">
+                <CommandGroup>
+                  {employees.map((employee) => {
                       const activeCheckouts = employee.checkouts || []
                       const hasCheckedOutAssets = activeCheckouts.length > 0
                       const assetTagIds = hasCheckedOutAssets
                         ? activeCheckouts.map((co) => co.asset.assetTagId).join(', ')
                         : ''
                       const isCurrentEmployee = currentEmployeeId === employee.id
+                  const isSelected = currentValue === employee.id
 
                       return (
-                        <SelectItem
+                    <CommandItem
                           key={employee.id}
-                          value={employee.id}
-                          className={isCurrentEmployee ? 'bg-primary' : ''}
-                        >
+                      value={`${employee.name} ${employee.email} ${employee.department || ''}`}
+                      onSelect={() => {
+                        onChange(employee.id)
+                        setOpen(false)
+                      }}
+                      className={cn(
+                        isCurrentEmployee && 'bg-primary/10'
+                      )}
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          isSelected ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      <div className="flex flex-col flex-1 min-w-0">
                           <span>
                             {employee.name} ({employee.email})
                             {employee.department && (
                               <span className="text-muted-foreground"> - {employee.department}</span>
                             )}
+                        </span>
+                        {(isCurrentEmployee || hasCheckedOutAssets) && (
+                          <div className="flex gap-2 text-xs text-muted-foreground mt-0.5">
                             {isCurrentEmployee && (
-                              <span className="ml-2 text-xs text-muted-foreground font-medium">
-                                (Current)
-                              </span>
+                              <span className="font-medium">(Current)</span>
                             )}
                             {hasCheckedOutAssets && (
-                              <span className="ml-2 text-xs text-muted-foreground">
-                                - Checked out: {assetTagIds}
-                              </span>
+                              <span>- Checked out: {assetTagIds}</span>
                             )}
-                          </span>
-                        </SelectItem>
+                          </div>
+                        )}
+                      </div>
+                    </CommandItem>
                       )
-                    })
-                  )}
-                </SelectContent>
-  )
+                })}
+                </CommandGroup>
+              </ScrollArea>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    )
+  }
 
   // If using react-hook-form
   if (control && name) {
@@ -166,31 +192,10 @@ export function EmployeeSelectField({
             name={name}
             control={control}
             render={({ field }) => (
-              <Select
-                value={field.value || ''}
-                onValueChange={(value) => {
-                  field.onChange(value)
-                  // Clear search when employee is selected
-                  setSearchTerm('')
-                }}
-                onOpenChange={(open) => {
-                  if (open) {
-                    // Focus search input when select opens
-                    setTimeout(() => {
-                      searchInputRef.current?.focus()
-                    }, 100)
-                  } else {
-                    // Clear search when select closes
-                    setSearchTerm('')
-                  }
-                }}
-                disabled={disabled || isLoadingEmployees}
-              >
-                <SelectTrigger className="w-full" aria-invalid={error ? 'true' : 'false'}>
-                  <SelectValue placeholder={placeholder} />
-                </SelectTrigger>
-                {renderSelectContent()}
-              </Select>
+              renderCombobox(
+                typeof field.value === 'string' ? field.value : undefined,
+                (value) => field.onChange(value)
+              )
             )}
           />
           {error && <FieldErrorComponent>{error.message}</FieldErrorComponent>}
@@ -206,33 +211,8 @@ export function EmployeeSelectField({
         {label} {required && <span className="text-destructive">*</span>}
       </FieldLabel>
       <FieldContent>
-        <Select
-          value={value || ''}
-          onValueChange={(value) => {
-            onValueChange?.(value)
-            // Clear search when employee is selected
-            setSearchTerm('')
-          }}
-          onOpenChange={(open) => {
-            if (open) {
-              // Focus search input when select opens
-              setTimeout(() => {
-                searchInputRef.current?.focus()
-              }, 100)
-            } else {
-              // Clear search when select closes
-              setSearchTerm('')
-            }
-          }}
-          disabled={disabled || isLoadingEmployees}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder={placeholder} />
-          </SelectTrigger>
-          {renderSelectContent()}
-        </Select>
+        {renderCombobox(value, (value) => onValueChange?.(value))}
       </FieldContent>
     </Field>
   )
 }
-

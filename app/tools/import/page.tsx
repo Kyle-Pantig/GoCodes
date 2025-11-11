@@ -33,6 +33,8 @@ interface FileHistory {
   recordsSkipped: number | null
   recordsFailed: number | null
   status: 'success' | 'failed' | 'partial'
+  userId: string
+  userEmail: string | null
   createdAt: string
 }
 
@@ -76,6 +78,7 @@ const ALL_COLUMNS = [
   { key: 'lastAuditType', label: 'Last Audit Type' },
   { key: 'lastAuditor', label: 'Last Auditor' },
   { key: 'auditCount', label: 'Audit Count' },
+  { key: 'images', label: 'Images' },
 ]
 
 async function fetchImportHistory(page: number = 1) {
@@ -337,6 +340,8 @@ export default function ImportPage() {
           lastAuditType: row['Last Audit Type'] || row['lastAuditType'] || null,
           lastAuditor: row['Last Auditor'] || row['lastAuditor'] || null,
           auditCount: row['Audit Count'] || row['auditCount'] || null,
+          // Images field - comma or semicolon separated URLs
+          images: row['Images'] || row['images'] || null,
         }
         
         return assetData
@@ -754,6 +759,7 @@ export default function ImportPage() {
                       <TableHead>File Name</TableHead>
                       <TableHead>Records</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Imported By</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead className={cn("text-right sticky right-0 bg-card z-10")}>Actions</TableHead>
                     </TableRow>
@@ -786,6 +792,9 @@ export default function ImportPage() {
                           ) : (
                             <Badge variant="destructive">Failed</Badge>
                           )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {history.userEmail || 'Unknown'}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {format(new Date(history.createdAt), 'MMM dd, yyyy HH:mm')}

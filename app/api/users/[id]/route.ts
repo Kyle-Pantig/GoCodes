@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyAuth } from '@/lib/auth-utils'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
-import { requirePermission } from '@/lib/permission-utils'
+import { requirePermission, clearPermissionCache } from '@/lib/permission-utils'
+import { Prisma } from '@prisma/client'
 
 export async function GET(
   request: NextRequest,
@@ -101,7 +102,7 @@ export async function PUT(
     }
 
     // Build update data
-    const updateData: any = {
+    const updateData: Prisma.AssetUserUpdateInput = {
       role,
       isActive: isActive !== undefined ? isActive : true,
       // Only update isApproved if explicitly provided (for approval action)
@@ -137,9 +138,42 @@ export async function PUT(
         id,
       },
       data: updateData,
+      select: { userId: true },
     })
 
-    return NextResponse.json({ user })
+    // Clear permission cache for the updated user
+    if (user.userId) {
+      clearPermissionCache(user.userId)
+    }
+
+    // Fetch full user data for response
+    const fullUser = await prisma.assetUser.findUnique({
+      where: { id },
+    })
+
+    if (!fullUser) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      )
+    }
+
+    // Fetch email from Supabase Auth
+    const supabaseAdmin = createAdminSupabaseClient()
+    let email: string | null = null
+    try {
+      const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(fullUser.userId)
+      email = authUser?.user?.email || null
+    } catch {
+      email = null
+    }
+
+    return NextResponse.json({ 
+      user: {
+        ...fullUser,
+        email,
+      }
+    })
   } catch (error: unknown) {
     console.error('Error updating user:', error)
     const prismaError = error as { code?: string; message?: string }

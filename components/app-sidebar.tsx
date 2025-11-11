@@ -174,6 +174,10 @@ const data = {
           title: "Categories",
           url: "/settings/categories",
         },
+        {
+          title: "Password",
+          url: "/settings/password",
+        },
       ],
     },
   ],

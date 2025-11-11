@@ -44,3 +44,58 @@ export const signupSchema = z
 
 export type SignupFormData = z.infer<typeof signupSchema>
 
+/**
+ * Password reset form validation schema
+ * Validates password strength and password confirmation
+ */
+export const resetPasswordSchema = z
+  .object({
+    password: z
+      .string()
+      .min(8, 'Password must be at least 8 characters long')
+      .regex(
+        /^(?=.*[a-zA-Z])(?=.*\d)/,
+        'Password must contain at least one letter and one number'
+      ),
+    confirmPassword: z
+      .string()
+      .min(1, 'Please confirm your password'),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  })
+
+export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>
+
+/**
+ * Change password form validation schema
+ * Validates current password, new password strength, and password confirmation
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z
+      .string()
+      .min(1, 'Current password is required'),
+    newPassword: z
+      .string()
+      .min(8, 'Password must be at least 8 characters long')
+      .regex(
+        /^(?=.*[a-zA-Z])(?=.*\d)/,
+        'Password must contain at least one letter and one number'
+      ),
+    confirmPassword: z
+      .string()
+      .min(1, 'Please confirm your password'),
+  })
+  .refine((data) => data.newPassword !== data.currentPassword, {
+    message: 'New password must be different from current password',
+    path: ['newPassword'],
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  })
+
+export type ChangePasswordFormData = z.infer<typeof changePasswordSchema>
+

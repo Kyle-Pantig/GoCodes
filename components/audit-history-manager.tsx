@@ -3,22 +3,15 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { CheckCircle2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
+import { AuditDialog } from '@/components/audit-dialog'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import type { AuditFormData } from '@/lib/validations/audit'
 
 interface AuditHistoryManagerProps {
   assetId: string
@@ -27,10 +20,12 @@ interface AuditHistoryManagerProps {
 
 export function AuditHistoryManager({ assetId }: AuditHistoryManagerProps) {
   const queryClient = useQueryClient()
-  const [isAdding, setIsAdding] = useState(false)
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [auditToDelete, setAuditToDelete] = useState<{ id: string; auditType: string } | null>(null)
 
   // Fetch audit history
-  const { data: auditData, isLoading } = useQuery({
+  const { data: auditData, isLoading, refetch } = useQuery({
     queryKey: ['auditHistory', assetId],
     queryFn: async () => {
       const response = await fetch(`/api/assets/${assetId}/audit`)
@@ -50,8 +45,14 @@ export function AuditHistoryManager({ assetId }: AuditHistoryManagerProps) {
       if (!response.ok) throw new Error('Failed to delete audit')
       return response.json()
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['auditHistory', assetId] })
+    onSuccess: async () => {
+      // Invalidate and refetch to ensure the list is updated
+      await queryClient.invalidateQueries({ queryKey: ['auditHistory', assetId] })
+      // Also invalidate assets query since it includes audit history
+      await queryClient.invalidateQueries({ queryKey: ['assets'] })
+      await refetch()
+      setDeleteDialogOpen(false)
+      setAuditToDelete(null)
       toast.success('Audit record deleted')
     },
     onError: () => {
@@ -61,19 +62,28 @@ export function AuditHistoryManager({ assetId }: AuditHistoryManagerProps) {
   
   // Add mutation
   const addMutation = useMutation({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mutationFn: async (data: any) => {
+    mutationFn: async (data: AuditFormData) => {
       const response = await fetch(`/api/assets/${assetId}/audit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          auditType: data.auditType,
+          auditDate: data.auditDate,
+          auditor: data.auditor || null,
+          status: data.status || 'Completed',
+          notes: data.notes || null,
+        }),
       })
       if (!response.ok) throw new Error('Failed to create audit')
       return response.json()
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['auditHistory', assetId] })
-      setIsAdding(false)
+    onSuccess: async () => {
+      setIsDialogOpen(false)
+      // Invalidate and refetch to ensure the list is updated
+      await queryClient.invalidateQueries({ queryKey: ['auditHistory', assetId] })
+      // Also invalidate assets query since it includes audit history
+      await queryClient.invalidateQueries({ queryKey: ['assets'] })
+      await refetch()
       toast.success('Audit record created')
     },
     onError: () => {
@@ -81,142 +91,29 @@ export function AuditHistoryManager({ assetId }: AuditHistoryManagerProps) {
     },
   })
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const formData = new FormData(e.currentTarget)
-    
-    const auditData = {
-      auditType: formData.get('auditType') as string,
-      auditDate: formData.get('auditDate') as string,
-      auditor: formData.get('auditor') as string || null,
-      status: formData.get('status') as string || 'Completed',
-      notes: formData.get('notes') as string || null,
-    }
-
-    addMutation.mutate(auditData)
+  const handleSubmit = async (data: AuditFormData) => {
+    await addMutation.mutateAsync(data)
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div className="text-sm text-muted-foreground">
-          {audits.length} audit record{audits.length !== 1 ? 's' : ''}
-        </div>
-        {!isAdding && (
-          <Button onClick={() => setIsAdding(true)} size="sm" className="gap-2">
+    <>
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <div className="text-sm text-muted-foreground">
+            {audits.length} audit record{audits.length !== 1 ? 's' : ''}
+          </div>
+          <Button 
+            onClick={() => setIsDialogOpen(true)} 
+            size="sm" 
+            className="gap-2 focus-visible:ring-0"
+          >
             <CheckCircle2 className="h-4 w-4" />
             Add Audit Record
           </Button>
-        )}
-      </div>
+        </div>
 
-      {/* Add Form */}
-      {isAdding && (
-        <Card className="border-2 border-primary/20 bg-card">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-primary" />
-              New Audit Record
-            </CardTitle>
-            <CardDescription>Fill in the details for this audit</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="auditType" className="text-sm font-medium">
-                    Audit Type <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="auditType"
-                    name="auditType"
-                    required
-                    placeholder="e.g., October Audit, Annual Audit"
-                    className="w-full"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="auditDate" className="text-sm font-medium">
-                    Audit Date <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="auditDate"
-                    name="auditDate"
-                    type="date"
-                    required
-                    defaultValue={new Date().toISOString().split('T')[0]}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="status" className="text-sm font-medium">Status</Label>
-                  <Select name="status" defaultValue="Completed">
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Completed">Completed</SelectItem>
-                      <SelectItem value="Pending">Pending</SelectItem>
-                      <SelectItem value="In Progress">In Progress</SelectItem>
-                      <SelectItem value="Failed">Failed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="auditor" className="text-sm font-medium">Auditor</Label>
-                  <Input
-                    id="auditor"
-                    name="auditor"
-                    placeholder="Auditor name"
-                    className="w-full"
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="notes" className="text-sm font-medium">Notes</Label>
-                <Textarea
-                  id="notes"
-                  name="notes"
-                  placeholder="Additional notes or observations..."
-                  rows={3}
-                  className="resize-none"
-                />
-              </div>
-
-              <div className="flex gap-2 justify-end pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsAdding(false)}
-                  className="min-w-[100px]"
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={addMutation.isPending} className="min-w-[100px]">
-                  {addMutation.isPending ? (
-                    <>
-                      <Spinner className="mr-2 h-4 w-4" />
-                      Adding...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="mr-2 h-4 w-4" />
-                      Add Audit
-                    </>
-                  )}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Audit List */}
-      <ScrollArea className="h-[450px] pr-4">
+        {/* Audit List */}
+      <ScrollArea className="h-[300px]">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-12">
             <Spinner className="h-8 w-8 mb-2" />
@@ -295,18 +192,13 @@ export function AuditHistoryManager({ assetId }: AuditHistoryManagerProps) {
                         variant="ghost"
                         size="icon"
                         onClick={() => {
-                          if (confirm(`Delete audit record "${audit.auditType}"?`)) {
-                            deleteMutation.mutate(audit.id)
-                          }
+                          setAuditToDelete({ id: audit.id, auditType: audit.auditType })
+                          setDeleteDialogOpen(true)
                         }}
                         disabled={deleteMutation.isPending}
                         className="shrink-0 text-muted-foreground hover:text-destructive h-7 w-7"
                       >
-                        {deleteMutation.isPending ? (
-                          <Spinner className="h-3.5 w-3.5" />
-                        ) : (
-                          <Trash2 className="h-3.5 w-3.5" />
-                        )}
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </CardContent>
@@ -316,7 +208,41 @@ export function AuditHistoryManager({ assetId }: AuditHistoryManagerProps) {
           </div>
         )}
       </ScrollArea>
-    </div>
+      </div>
+
+      {/* Add Audit Dialog */}
+      <AuditDialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        onSubmit={handleSubmit}
+        isLoading={addMutation.isPending}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+          if (!open) {
+            setAuditToDelete(null)
+          }
+        }}
+        onConfirm={() => {
+          if (auditToDelete) {
+            deleteMutation.mutate(auditToDelete.id)
+          }
+        }}
+        title="Delete Audit Record"
+        description={
+          auditToDelete
+            ? `Are you sure you want to delete audit record "${auditToDelete.auditType}"? This action cannot be undone.`
+            : 'Are you sure you want to delete this audit record? This action cannot be undone.'
+        }
+        isLoading={deleteMutation.isPending}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+      />
+    </>
   )
 }
 

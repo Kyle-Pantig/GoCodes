@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
+import { useForm, Controller } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { XIcon, Package, CheckCircle2, DollarSign, History, QrCode } from "lucide-react"
 import { usePermissions } from '@/hooks/use-permissions'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
@@ -34,10 +36,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
+import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { checkinSchema, type CheckinFormData } from "@/lib/validations/assets"
 
 interface Asset {
   id: string
@@ -104,12 +107,17 @@ export default function CheckinPage() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1)
   const [selectedAssets, setSelectedAssets] = useState<CheckinAsset[]>([])
-  const [checkinDate, setCheckinDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  )
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
+
+  const form = useForm<CheckinFormData>({
+    resolver: zodResolver(checkinSchema),
+    defaultValues: {
+      checkinDate: new Date().toISOString().split('T')[0],
+      assetUpdates: [],
+    },
+  })
 
   // Fetch asset suggestions based on input (only Checked out assets)
   const { data: assetSuggestions = [], isLoading: isLoadingSuggestions } = useQuery<Asset[]>({
@@ -217,18 +225,29 @@ export default function CheckinPage() {
       return
     }
 
-    setSelectedAssets((prev) => [
-      ...prev,
+    const newAsset: CheckinAsset = {
+      ...assetToAdd,
+      checkoutId: activeCheckout.id,
+      employeeName: activeCheckout.employeeUser?.name,
+      employeeEmail: activeCheckout.employeeUser?.email,
+      employeeDepartment: activeCheckout.employeeUser?.department || null,
+      checkoutDate: activeCheckout.checkoutDate,
+      expectedReturnDate: activeCheckout.expectedReturnDate,
+    }
+    setSelectedAssets((prev) => [...prev, newAsset])
+    
+    // Add to form assetUpdates
+    const currentUpdates = form.getValues('assetUpdates') || []
+    form.setValue('assetUpdates', [
+      ...currentUpdates,
       {
-        ...assetToAdd,
-        checkoutId: activeCheckout.id,
-        employeeName: activeCheckout.employeeUser?.name,
-        employeeEmail: activeCheckout.employeeUser?.email,
-        employeeDepartment: activeCheckout.employeeUser?.department || null,
-        checkoutDate: activeCheckout.checkoutDate,
-        expectedReturnDate: activeCheckout.expectedReturnDate,
-      },
-    ])
+        assetId: newAsset.id,
+        condition: '', // Required field - validation will catch if empty
+        notes: '',
+        returnLocation: '',
+      }
+    ], { shouldValidate: false }) // Don't validate immediately, wait for user input
+    
     setAssetIdInput("")
     setShowSuggestions(false)
     setSelectedSuggestionIndex(-1)
@@ -282,6 +301,9 @@ export default function CheckinPage() {
   // Remove asset from checkin list
   const handleRemoveAsset = (assetId: string) => {
     setSelectedAssets((prev) => prev.filter((a) => a.id !== assetId))
+    // Remove from form assetUpdates
+    const currentUpdates = form.getValues('assetUpdates') || []
+    form.setValue('assetUpdates', currentUpdates.filter(update => update.assetId !== assetId))
     toast.success('Asset removed from check-in list')
   }
 
@@ -295,7 +317,10 @@ export default function CheckinPage() {
   const clearForm = () => {
     setSelectedAssets([])
     setAssetIdInput("")
-    setCheckinDate(new Date().toISOString().split('T')[0])
+    form.reset({
+      checkinDate: new Date().toISOString().split('T')[0],
+      assetUpdates: [],
+    })
   }
 
   // Handle QR code scan result
@@ -316,6 +341,28 @@ export default function CheckinPage() {
         asset.id === assetId ? { ...asset, [field]: value } : asset
       )
     )
+    // Also update form values
+    const currentUpdates = form.getValues('assetUpdates') || []
+    const assetUpdateIndex = currentUpdates.findIndex(update => update.assetId === assetId)
+    if (assetUpdateIndex >= 0) {
+      const newUpdates = [...currentUpdates]
+      const existingUpdate = newUpdates[assetUpdateIndex]
+      newUpdates[assetUpdateIndex] = { 
+        ...existingUpdate, 
+        [field]: value,
+        // Ensure condition is always present (required field)
+        condition: field === 'condition' ? value : (existingUpdate.condition || '')
+      }
+      form.setValue('assetUpdates', newUpdates)
+    } else {
+      // Create new update entry with all required fields
+      form.setValue('assetUpdates', [...currentUpdates, { 
+        assetId, 
+        condition: field === 'condition' ? value : '', // Required field
+        notes: field === 'notes' ? value : '',
+        returnLocation: field === 'returnLocation' ? value : '',
+      }])
+    }
   }
 
   // Checkin mutation
@@ -350,34 +397,27 @@ export default function CheckinPage() {
   })
 
   // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
+  const handleSubmit = form.handleSubmit(async (data) => {
     if (selectedAssets.length === 0) {
       toast.error('Please add at least one asset to check in')
       return
     }
 
-    if (!checkinDate) {
-      toast.error('Please select a check-in date')
-      return
-    }
-
     const updates: Record<string, { condition?: string; notes?: string; returnLocation?: string }> = {}
-    selectedAssets.forEach((asset) => {
-      updates[asset.id] = {
-        ...(asset.condition ? { condition: asset.condition } : {}),
-        ...(asset.notes ? { notes: asset.notes } : {}),
-        ...(asset.returnLocation !== undefined ? { returnLocation: asset.returnLocation } : {}),
+    data.assetUpdates.forEach((update) => {
+      updates[update.assetId] = {
+        ...(update.condition ? { condition: update.condition } : {}),
+        ...(update.notes ? { notes: update.notes } : {}),
+        ...(update.returnLocation ? { returnLocation: update.returnLocation } : {}),
       }
     })
 
     checkinMutation.mutate({
       assetIds: selectedAssets.map((a) => a.id),
-      checkinDate,
+      checkinDate: data.checkinDate,
       updates,
     })
-  }
+  })
 
   // Handle input change
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -637,6 +677,7 @@ export default function CheckinPage() {
                         <TableHead className="h-8 text-xs bg-card">Description</TableHead>
                         <TableHead className="h-8 text-xs bg-card">Employee</TableHead>
                         <TableHead className="h-8 text-xs bg-card">Condition</TableHead>
+                        <TableHead className="h-8 text-xs bg-card">Check-in Date</TableHead>
                         <TableHead className="h-8 text-xs text-right bg-card">Time Ago</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -663,6 +704,9 @@ export default function CheckinPage() {
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground">
                           {checkin.condition || '-'}
+                        </TableCell>
+                        <TableCell className="py-1.5 text-xs text-muted-foreground">
+                          {formatDate(checkin.checkinDate)}
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground text-right">
                           {getTimeAgo(checkin.createdAt)}
@@ -842,31 +886,46 @@ export default function CheckinPage() {
                     <div className="space-y-3">
                       <Field>
                         <FieldLabel htmlFor={`condition-${asset.id}`}>
-                          Asset Condition
+                          Asset Condition <span className="text-destructive">*</span>
                         </FieldLabel>
                         <FieldContent>
-                          <Select
-                            value={asset.condition || ""}
-                            onValueChange={(value) =>
-                              handleUpdateAssetInfo(asset.id, "condition", value)
-                            }
-                            disabled={!canViewAssets || !canCheckin}
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select the condition of the returned asset" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Excellent">Excellent</SelectItem>
-                              <SelectItem value="Good">Good</SelectItem>
-                              <SelectItem value="Fair">Fair</SelectItem>
-                              <SelectItem value="Poor">Poor</SelectItem>
-                              <SelectItem value="Damaged">Damaged</SelectItem>
-                              <SelectItem value="Needs Repair">Needs Repair</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Assess the condition of the returned asset
-                          </p>
+                          <Controller
+                            name={`assetUpdates.${selectedAssets.findIndex(a => a.id === asset.id)}.condition` as const}
+                            control={form.control}
+                            render={({ field, fieldState }) => (
+                              <>
+                                <Select
+                                  value={asset.condition || field.value || ""}
+                                  onValueChange={(value) => {
+                                    handleUpdateAssetInfo(asset.id, "condition", value)
+                                    field.onChange(value)
+                                    // Trigger validation after change
+                                    form.trigger(`assetUpdates.${selectedAssets.findIndex(a => a.id === asset.id)}.condition`)
+                                  }}
+                                  disabled={!canViewAssets || !canCheckin}
+                                  required
+                                >
+                                  <SelectTrigger className="w-full" aria-invalid={fieldState.error ? 'true' : 'false'}>
+                                    <SelectValue placeholder="Select the condition of the returned asset" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Excellent">Excellent</SelectItem>
+                                    <SelectItem value="Good">Good</SelectItem>
+                                    <SelectItem value="Fair">Fair</SelectItem>
+                                    <SelectItem value="Poor">Poor</SelectItem>
+                                    <SelectItem value="Damaged">Damaged</SelectItem>
+                                    <SelectItem value="Needs Repair">Needs Repair</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                {fieldState.error && (
+                                  <FieldError>{fieldState.error.message}</FieldError>
+                                )}
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Assess the condition of the returned asset
+                                </p>
+                              </>
+                            )}
+                          />
                         </FieldContent>
                       </Field>
 
@@ -880,18 +939,31 @@ export default function CheckinPage() {
                           )}
                         </FieldLabel>
                         <FieldContent>
-                          <Input
-                            id={`returnLocation-${asset.id}`}
-                            placeholder={asset.location || "Enter return location"}
-                            value={asset.returnLocation || ""}
-                            onChange={(e) =>
-                              handleUpdateAssetInfo(asset.id, "returnLocation", e.target.value)
-                            }
-                            disabled={!canViewAssets || !canCheckin}
+                          <Controller
+                            name={`assetUpdates.${selectedAssets.findIndex(a => a.id === asset.id)}.returnLocation` as const}
+                            control={form.control}
+                            render={({ field, fieldState }) => (
+                              <>
+                                <Input
+                                  id={`returnLocation-${asset.id}`}
+                                  placeholder={asset.location || "Enter return location"}
+                                  value={asset.returnLocation || field.value || ""}
+                                  onChange={(e) => {
+                                    handleUpdateAssetInfo(asset.id, "returnLocation", e.target.value)
+                                    field.onChange(e.target.value)
+                                  }}
+                                  disabled={!canViewAssets || !canCheckin}
+                                  aria-invalid={fieldState.error ? 'true' : 'false'}
+                                />
+                                {fieldState.error && (
+                                  <FieldError>{fieldState.error.message}</FieldError>
+                                )}
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  This will update the asset&apos;s location in the assets table
+                                </p>
+                              </>
+                            )}
                           />
-                          <p className="text-xs text-muted-foreground mt-1">
-                            This will update the asset&apos;s location in the assets table
-                          </p>
                         </FieldContent>
                       </Field>
 
@@ -900,19 +972,32 @@ export default function CheckinPage() {
                           Notes <span className="text-xs text-muted-foreground font-normal">(Optional)</span>
                         </FieldLabel>
                         <FieldContent>
-                          <Textarea
-                            id={`notes-${asset.id}`}
-                            placeholder="Any observations about the asset condition, issues found, or special notes"
-                            value={asset.notes || ""}
-                            onChange={(e) =>
-                              handleUpdateAssetInfo(asset.id, "notes", e.target.value)
-                            }
-                            rows={3}
-                            disabled={!canViewAssets || !canCheckin}
+                          <Controller
+                            name={`assetUpdates.${selectedAssets.findIndex(a => a.id === asset.id)}.notes` as const}
+                            control={form.control}
+                            render={({ field, fieldState }) => (
+                              <>
+                                <Textarea
+                                  id={`notes-${asset.id}`}
+                                  placeholder="Any observations about the asset condition, issues found, or special notes"
+                                  value={asset.notes || field.value || ""}
+                                  onChange={(e) => {
+                                    handleUpdateAssetInfo(asset.id, "notes", e.target.value)
+                                    field.onChange(e.target.value)
+                                  }}
+                                  rows={3}
+                                  disabled={!canViewAssets || !canCheckin}
+                                  aria-invalid={fieldState.error ? 'true' : 'false'}
+                                />
+                                {fieldState.error && (
+                                  <FieldError>{fieldState.error.message}</FieldError>
+                                )}
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Any additional information about the returned asset
+                                </p>
+                              </>
+                            )}
                           />
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Any additional information about the returned asset
-                          </p>
                         </FieldContent>
                       </Field>
                     </div>
@@ -937,13 +1022,24 @@ export default function CheckinPage() {
                 Check-in Date <span className="text-destructive">*</span>
               </FieldLabel>
               <FieldContent>
-                <Input
-                  id="checkinDate"
-                  type="date"
-                  value={checkinDate}
-                  onChange={(e) => setCheckinDate(e.target.value)}
-                  required
-                  disabled={!canViewAssets || !canCheckin}
+                <Controller
+                  name="checkinDate"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <>
+                      <Input
+                        id="checkinDate"
+                        type="date"
+                        {...field}
+                        disabled={!canViewAssets || !canCheckin}
+                        aria-invalid={fieldState.error ? 'true' : 'false'}
+                        aria-required="true"
+                      />
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
                 />
               </FieldContent>
             </Field>

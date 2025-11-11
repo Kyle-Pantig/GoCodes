@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getUserPermissions } from '@/lib/permission-utils'
+import { retryDbOperation } from '@/lib/db-utils'
 
 export async function GET(request: NextRequest) {
   try {
@@ -82,13 +83,13 @@ export async function GET(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const prismaClient = prisma as any
     const [fileHistory, total] = await Promise.all([
-      prismaClient.fileHistory.findMany({
+      retryDbOperation(() => prismaClient.fileHistory.findMany({
         where: whereClause,
         orderBy: { createdAt: 'desc' },
         skip,
         take: pageSize,
-      }),
-      prismaClient.fileHistory.count({ where: whereClause }),
+      })) as Promise<Array<{ userId: string; [key: string]: unknown }>>,
+      retryDbOperation(() => prismaClient.fileHistory.count({ where: whereClause })) as Promise<number>,
     ])
 
     // Fetch user emails from Supabase Auth for each history record
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
     const supabaseAdmin = createAdminSupabaseClient()
     
     // Get unique user IDs
-    const uniqueUserIds = [...new Set(fileHistory.map((h: { userId: string }) => h.userId))]
+    const uniqueUserIds = [...new Set(fileHistory.map((h) => h.userId))]
     
     // Fetch user emails
     const userEmailMap = new Map<string, string>()
@@ -128,6 +129,19 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error: unknown) {
+    // Handle connection pool errors specifically
+    if (error instanceof Error && (
+      error.message.includes('connection pool') ||
+      error.message.includes('Timed out fetching') ||
+      error.message.includes('Can\'t reach database server')
+    )) {
+      console.error('[File History API] Connection pool error:', error.message)
+      return NextResponse.json(
+        { error: 'Database connection limit reached. Please try again in a moment.' },
+        { status: 503 }
+      )
+    }
+    
     console.error('Error fetching file history:', error)
     return NextResponse.json(
       { error: 'Failed to fetch file history' },
@@ -203,7 +217,7 @@ export async function POST(request: NextRequest) {
     // Note: Using 'as any' temporarily until Prisma client is regenerated
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const prismaClient = prisma as any
-    const fileHistory = await prismaClient.fileHistory.create({
+    const fileHistory = await retryDbOperation(() => prismaClient.fileHistory.create({
       data: {
         operationType,
         fileName,
@@ -221,10 +235,23 @@ export async function POST(request: NextRequest) {
         errorMessage: errorMessage || null,
         metadata: metadata ? JSON.stringify(metadata) : null,
       },
-    })
+    }))
 
     return NextResponse.json(fileHistory, { status: 201 })
   } catch (error: unknown) {
+    // Handle connection pool errors specifically
+    if (error instanceof Error && (
+      error.message.includes('connection pool') ||
+      error.message.includes('Timed out fetching') ||
+      error.message.includes('Can\'t reach database server')
+    )) {
+      console.error('[File History API] Connection pool error:', error.message)
+      return NextResponse.json(
+        { error: 'Database connection limit reached. Please try again in a moment.' },
+        { status: 503 }
+      )
+    }
+    
     console.error('Error creating file history:', error)
     return NextResponse.json(
       { error: 'Failed to create file history' },

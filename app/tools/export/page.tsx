@@ -63,6 +63,7 @@ const ALL_COLUMNS = [
   { key: 'lastAuditType', label: 'Last Audit Type' },
   { key: 'lastAuditor', label: 'Last Auditor' },
   { key: 'auditCount', label: 'Audit Count' },
+  { key: 'images', label: 'Images' },
 ]
 
 interface Asset {
@@ -209,6 +210,9 @@ const getCellValue = (asset: Asset, columnKey: string): string | number => {
       return asset.site || '-'
     case 'location':
       return asset.location || '-'
+    case 'images':
+      // Images will be fetched separately and added to asset
+      return (asset as Asset & { images?: string }).images || '-'
     default:
       return '-'
   }
@@ -220,6 +224,7 @@ export default function ExportPage() {
   const canViewAssets = hasPermission('canViewAssets')
   
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const [selectedExportFields, setSelectedExportFields] = useState<Set<string>>(
     new Set(['assetTag', 'description', 'category', 'subCategory', 'status', 'location', 'issuedTo'])
   )
@@ -336,8 +341,34 @@ export default function ExportPage() {
       return
     }
 
+    setIsExporting(true)
+
     try {
-      const assetsToExport = data.assets
+      let assetsToExport = data.assets
+      
+      // If images column is selected, fetch image URLs for all assets
+      if (selectedExportFields.has('images')) {
+        const assetTagIds = assetsToExport.map(a => a.assetTagId)
+        try {
+          const imagesResponse = await fetch(`/api/assets/images/bulk?assetTagIds=${assetTagIds.join(',')}`)
+          if (imagesResponse.ok) {
+            const imagesData = await imagesResponse.json()
+            // Create a map of assetTagId to comma-separated image URLs
+            const imageUrlMap = new Map<string, string>()
+            imagesData.forEach((item: { assetTagId: string; images: Array<{ imageUrl: string }> }) => {
+              const urls = item.images.map((img: { imageUrl: string }) => img.imageUrl).join(', ')
+              imageUrlMap.set(item.assetTagId, urls)
+            })
+            // Add images to each asset
+            assetsToExport = assetsToExport.map(asset => ({
+              ...asset,
+              images: imageUrlMap.get(asset.assetTagId) || '',
+            }))
+          }
+        } catch (error) {
+          console.warn('Failed to fetch images for export:', error)
+        }
+      }
       
       // Use selected export fields
       const fieldsToExport = Array.from(selectedExportFields)
@@ -443,6 +474,8 @@ export default function ExportPage() {
       }
       
       toast.error('Failed to export assets')
+    } finally {
+      setIsExporting(false)
     }
   }
 
@@ -546,6 +579,7 @@ export default function ExportPage() {
         onSelectAll={handleSelectAll}
         onDeselectAll={handleDeselectAll}
         onExport={handleExport}
+        isExporting={isExporting}
       />
 
       {/* Export History */}
