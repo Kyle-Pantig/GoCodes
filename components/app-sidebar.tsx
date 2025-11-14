@@ -72,6 +72,10 @@ const data = {
           url: "/assets/checkin",
         },
         {
+          title: "Return Form",
+          url: "/assets/return-form",
+        },
+        {
           title: "Move Asset",
           url: "/assets/move",
         },

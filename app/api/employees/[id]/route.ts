@@ -25,6 +25,24 @@ export async function GET(
                 id: true,
                 assetTagId: true,
                 description: true,
+                status: true,
+                category: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+                subCategory: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+            checkins: {
+              select: {
+                id: true,
               },
             },
           },
