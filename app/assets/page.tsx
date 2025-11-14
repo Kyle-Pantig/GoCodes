@@ -3,7 +3,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect, useMemo, useRef, useTransition } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
 import {
@@ -31,20 +30,15 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { MoreHorizontal, Trash2, Edit, Download, Upload, Search, Package, CheckCircle2, User, DollarSign, XIcon, ArrowUpDown, ArrowUp, ArrowDown, ArrowRight, Image as ImageIcon, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { AssetMediaDialog } from '@/components/asset-media-dialog'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import * as XLSX from 'xlsx'
 import {
@@ -293,20 +287,31 @@ const createColumns = (AssetActionsComponent: React.ComponentType<{ asset: Asset
     id: 'select',
     enableHiding: false,
     enableSorting: false,
-    header: ({ table }) => (
-      <input
-        type="checkbox"
-        checked={table.getIsAllPageRowsSelected()}
-        onChange={table.getToggleAllPageRowsSelectedHandler()}
-        className="rounded border-gray-300 cursor-pointer"
+    header: ({ table }) => {
+      const isAllSelected = table.getIsAllPageRowsSelected()
+      const isSomeSelected = table.getIsSomePageRowsSelected()
+      return (
+        <Checkbox
+          checked={isAllSelected}
+          {...(isSomeSelected && !isAllSelected && { 'aria-checked': 'mixed' as const })}
+          onCheckedChange={(checked) => {
+            if (checked === true) {
+              table.toggleAllPageRowsSelected(true)
+            } else {
+              table.toggleAllPageRowsSelected(false)
+            }
+          }}
       />
-    ),
+      )
+    },
     cell: ({ row }) => (
-      <input
-        type="checkbox"
+      <Checkbox
         checked={row.getIsSelected()}
-        onChange={row.getToggleSelectedHandler()}
-        className="rounded border-gray-300 cursor-pointer"
+        onCheckedChange={(checked) => {
+          if (typeof checked === 'boolean') {
+            row.toggleSelected(checked)
+          }
+        }}
       />
     ),
   },
@@ -1350,57 +1355,18 @@ const createColumns = (AssetActionsComponent: React.ComponentType<{ asset: Asset
 // Component for asset images icon with dialog
 function AssetImagesCell({ asset }: { asset: Asset }) {
   const [imagesDialogOpen, setImagesDialogOpen] = useState(false)
-  const [images, setImages] = useState<Array<{ id: string; imageUrl: string; assetTagId: string; fileName?: string; createdAt?: string }>>([])
-  const [loadingImages, setLoadingImages] = useState(false)
-  const [previewImageIndex, setPreviewImageIndex] = useState(0)
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
-
-  const fetchImages = async () => {
-    if (!imagesDialogOpen) return
-    
-    setLoadingImages(true)
-    try {
-      const response = await fetch(`/api/assets/images/${asset.assetTagId}`)
-      if (response.ok) {
-        const data = await response.json()
-        setImages(data.images || [])
-      } else {
-        setImages([])
-      }
-    } catch (error) {
-      console.error('Error fetching images:', error)
-      setImages([])
-    } finally {
-      setLoadingImages(false)
-    }
-  }
-
-  useEffect(() => {
-    if (imagesDialogOpen) {
-      fetchImages()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imagesDialogOpen])
 
   // If no images, show dash
   if (!asset.imagesCount || asset.imagesCount === 0) {
     return <span className="text-muted-foreground">-</span>
   }
 
-  const handleImageClick = (index: number) => {
-    setPreviewImageIndex(index)
-    setImagesDialogOpen(false) // Close the grid dialog first
-    setIsPreviewOpen(true)
-  }
-
-  const existingImagesForPreview = images.map((img) => ({
-    id: img.id,
-    imageUrl: img.imageUrl,
-    fileName: img.fileName || `Image ${img.id}`,
-  }))
-
   return (
-    <>
+    <AssetMediaDialog
+      asset={asset}
+      open={imagesDialogOpen}
+      onOpenChange={setImagesDialogOpen}
+      trigger={
       <Button
         variant="ghost"
         size="icon"
@@ -1409,58 +1375,8 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
       >
         <ImageIcon className="h-4 w-4" />
       </Button>
-      <Dialog open={imagesDialogOpen} onOpenChange={setImagesDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle>Asset Images - {asset.assetTagId}</DialogTitle>
-            <DialogDescription>
-              Images for {asset.category?.name} - {asset.subCategory?.name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
-            {loadingImages ? (
-              <div className="flex items-center justify-center py-8">
-                <Spinner className="h-6 w-6" />
-              </div>
-            ) : images.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No images found for this asset
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                {images.map((image, index) => (
-                  <div
-                    key={image.id}
-                    className="relative group border rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
-                    onClick={() => handleImageClick(index)}
-                  >
-                    <div className="aspect-square bg-muted relative">
-                      <Image
-                        src={image.imageUrl}
-                        alt={`Asset ${asset.assetTagId} image`}
-                        fill
-                        className="object-cover"
-                        unoptimized
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Image Preview Dialog */}
-      <ImagePreviewDialog
-        open={isPreviewOpen}
-        onOpenChange={setIsPreviewOpen}
-        existingImages={existingImagesForPreview}
-        title={`Asset Images - ${asset.assetTagId}`}
-        maxHeight="h-[70vh] max-h-[600px]"
-        initialIndex={previewImageIndex}
-      />
-    </>
+      }
+    />
   )
 }
 
@@ -1553,6 +1469,7 @@ function AssetActions({ asset }: { asset: Asset }) {
           <Button 
             variant="ghost" 
             size="icon"
+            className="h-8 w-8 p-0 hover:bg-transparent!"
           >
             <MoreHorizontal className="h-4 w-4" />
           </Button>
@@ -1576,7 +1493,7 @@ function AssetActions({ asset }: { asset: Asset }) {
             variant="destructive"
           >
             <Trash2 className="mr-2 h-4 w-4" />
-            Delete
+            Move to Trash
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -1612,9 +1529,9 @@ function AssetActions({ asset }: { asset: Asset }) {
         onConfirm={confirmDelete}
         itemName={asset.assetTagId}
         isLoading={deleteMutation.isPending}
-        title={`Delete ${asset.assetTagId}?`}
-        description={`Are you sure you want to delete "${asset.assetTagId}"? This asset will be moved to Trash and can be restored within 30 days. After 30 days, it will be permanently deleted.`}
-        confirmLabel="Delete Asset"
+        title={`Move ${asset.assetTagId} to Trash?`}
+        description={`This asset will be moved to Trash and can be restored later if needed.`}
+        confirmLabel="Move to Trash"
       />
 
       {/* Audit History Dialog */}
@@ -2120,48 +2037,61 @@ export default function AssetsPage() {
       }
       
       // Process imported data
-      const importedAssets = jsonData.map((row) => {
+      const importedAssets = jsonData
+        .map((row) => {
         // Map Excel column names to asset fields
+          // Check both template labels and legacy formats for backward compatibility
         const assetData = {
-          assetTagId: row['Asset Tag ID'] || row['assetTagId'],
+            assetTagId: row['Asset Tag ID'] || row['assetTagId'] || null,
           description: row['Description'] || '',
-          purchasedFrom: row['Purchased from'] || null,
-          purchaseDate: row['Purchase Date'] || null,
-          brand: row['Brand'] || null,
-          cost: parseNumber(row['Cost']),
-          model: row['Model'] || null,
-          serialNo: row['Serial No'] || null,
-          additionalInformation: row['Additional Information'] || null,
-          xeroAssetNo: row['Xero Asset No.'] || null,
-          owner: row['Owner'] || null,
-          pbiNumber: row['PBI NUMBER'] || row['pbiNumber'] || null,
-          status: row['Status'] || null,
-          issuedTo: row['ISSUED TO:'] || row['issuedTo'] || null,
-          poNumber: row['PO NUMBER'] || row['poNumber'] || null,
-          paymentVoucherNumber: row['PAYMENT VOUCHER NUMBER'] || row['paymentVoucherNumber'] || null,
-          assetType: row['ASSET TYPE'] || row['assetType'] || null,
-          deliveryDate: row['DELIVERY DATE'] || row['deliveryDate'] || null,
-          unaccountedInventory: row['UNACCOUNTED INVENTORY'] || row['UNACCOUNTED 2021 INVENTORY'] || row['unaccountedInventory'] || row['unaccounted2021Inventory'] || null,
-          remarks: row['REMARKS'] || row['remarks'] || null,
+            purchasedFrom: row['Purchased From'] || row['Purchased from'] || row['purchasedFrom'] || null,
+            purchaseDate: row['Purchase Date'] || row['purchaseDate'] || null,
+            brand: row['Brand'] || row['brand'] || null,
+            cost: parseNumber(row['Cost'] || row['cost']),
+            model: row['Model'] || row['model'] || null,
+            serialNo: row['Serial No'] || row['Serial No.'] || row['serialNo'] || null,
+            additionalInformation: row['Additional Information'] || row['additionalInformation'] || null,
+            xeroAssetNo: row['Xero Asset No.'] || row['Xero Asset No'] || row['xeroAssetNo'] || null,
+            owner: row['Owner'] || row['owner'] || null,
+            pbiNumber: row['PBI Number'] || row['PBI NUMBER'] || row['pbiNumber'] || null,
+            status: row['Status'] || row['status'] || null,
+            issuedTo: row['Issued To'] || row['ISSUED TO:'] || row['issuedTo'] || null,
+            poNumber: row['PO Number'] || row['PO NUMBER'] || row['poNumber'] || null,
+            paymentVoucherNumber: row['Payment Voucher Number'] || row['PAYMENT VOUCHER NUMBER'] || row['paymentVoucherNumber'] || null,
+            assetType: row['Asset Type'] || row['ASSET TYPE'] || row['assetType'] || null,
+            deliveryDate: row['Delivery Date'] || row['DELIVERY DATE'] || row['deliveryDate'] || null,
+            unaccountedInventory: row['Unaccounted Inventory'] || row['UNACCOUNTED INVENTORY'] || row['UNACCOUNTED 2021 INVENTORY'] || row['unaccountedInventory'] || row['unaccounted2021Inventory'] || null,
+            remarks: row['Remarks'] || row['REMARKS'] || row['remarks'] || null,
           qr: row['QR'] || row['qr'] || null,
-          oldAssetTag: row['OLD ASSET TAG'] || row['oldAssetTag'] || null,
+            oldAssetTag: row['Old Asset Tag'] || row['OLD ASSET TAG'] || row['oldAssetTag'] || null,
           depreciableAsset: row['Depreciable Asset'] || row['depreciableAsset'] || null,
-          depreciableCost: parseNumber(row['Depreciable Cost']),
-          salvageValue: parseNumber(row['Salvage Value']),
-          assetLifeMonths: parseNumber(row['Asset Life (months)']),
+            depreciableCost: parseNumber(row['Depreciable Cost'] || row['depreciableCost']),
+            salvageValue: parseNumber(row['Salvage Value'] || row['salvageValue']),
+            assetLifeMonths: parseNumber(row['Asset Life (months)'] || row['Asset Life (Months)'] || row['assetLifeMonths']),
           depreciationMethod: row['Depreciation Method'] || row['depreciationMethod'] || null,
           dateAcquired: row['Date Acquired'] || row['dateAcquired'] || null,
-          category: row['Category'] || null,
-          subCategory: row['SUB-CATEGORY'] || row['subCategory'] || null,
-          department: row['Department'] || null,
-          site: row['Site'] || null,
-          location: row['Location'] || null,
+            category: row['Category'] || row['category'] || null,
+            subCategory: row['Sub Category'] || row['SUB-CATEGORY'] || row['subCategory'] || null,
+            department: row['Department'] || row['department'] || null,
+            site: row['Site'] || row['site'] || null,
+            location: row['Location'] || row['location'] || null,
           // Images field - comma or semicolon separated URLs
           images: row['Images'] || row['images'] || null,
         }
         
         return assetData
       })
+        .filter((asset) => {
+          // Filter out rows without a valid assetTagId (e.g., sample data row or empty rows)
+          return asset.assetTagId && typeof asset.assetTagId === 'string' && asset.assetTagId.trim() !== ''
+        })
+      
+      // Validate that we have at least one valid asset
+      if (importedAssets.length === 0) {
+        toast.error('No valid assets found in the file. Please ensure the file contains at least one row with an Asset Tag ID.')
+        event.target.value = ''
+        return
+      }
       
       // Remove duplicate rows within the same file (keep first occurrence)
       const uniqueAssets: typeof importedAssets = []
@@ -2169,6 +2099,10 @@ export default function AssetsPage() {
       const duplicateTags: string[] = []
       
       importedAssets.forEach((asset, index) => {
+        if (!asset.assetTagId || (typeof asset.assetTagId === 'string' && asset.assetTagId.trim() === '')) {
+          // Skip rows without assetTagId (should already be filtered, but double-check)
+          return
+        }
         if (seenAssetTags.has(asset.assetTagId)) {
           duplicateTags.push(`Row ${index + 2}`) // +2 because row 1 is header
         } else {
@@ -2228,34 +2162,67 @@ export default function AssetsPage() {
       // Count successful imports and skipped items
       const createdCount = allResults.filter(r => r.action === 'created').length
       const skippedCount = allResults.filter(r => r.action === 'skipped').length
+      const skippedInTrash = allResults.filter(r => r.action === 'skipped' && r.reason === 'Asset exists in trash').length
+      const skippedDuplicates = skippedCount - skippedInTrash
       
       toast.dismiss(toastId)
       
-      // Show results
+      // Show results with distinction between duplicates and trash
       if (skippedCount > 0) {
-        toast.info(
-          `Import complete: ${createdCount} created, ${skippedCount} skipped (duplicates)`,
-          { duration: 5000 }
-        )
+        let message = `Import complete: ${createdCount} created`
+        const skipParts: string[] = []
+        if (skippedDuplicates > 0) {
+          skipParts.push(`${skippedDuplicates} duplicate${skippedDuplicates !== 1 ? 's' : ''}`)
+        }
+        if (skippedInTrash > 0) {
+          skipParts.push(`${skippedInTrash} in trash`)
+        }
+        if (skipParts.length > 0) {
+          message += `, ${skipParts.join(', ')} skipped`
+        }
+        
+        toast.info(message, { duration: 6000 })
       } else {
         toast.success(`Successfully imported ${createdCount} asset(s)`)
       }
       
       // Show details of skipped items if any
       if (skippedCount > 0) {
-        const skippedAssets = allResults
-          .filter(r => r.action === 'skipped')
+        const skippedInTrashAssets = allResults
+          .filter(r => r.action === 'skipped' && r.reason === 'Asset exists in trash')
           .map(r => r.asset)
-          .slice(0, 5) // Show first 5
+          .slice(0, 5)
         
-        if (skippedAssets.length > 0) {
+        const skippedDuplicateAssets = allResults
+          .filter(r => r.action === 'skipped' && r.reason !== 'Asset exists in trash')
+          .map(r => r.asset)
+          .slice(0, 5)
+        
           setTimeout(() => {
+          if (skippedInTrashAssets.length > 0) {
+            toast.warning(
+              `Skipped (in trash): ${skippedInTrashAssets.join(', ')}${skippedInTrash > 5 ? ` and ${skippedInTrash - 5} more` : ''}. Permanently delete from trash first if you want to import them as new assets.`,
+              { 
+                duration: 10000,
+                action: (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => router.push('/tools/trash')}
+                  >
+                    Go to Trash
+                  </Button>
+                ),
+              }
+            )
+          }
+          if (skippedDuplicateAssets.length > 0) {
             toast.info(
-              `Skipped assets: ${skippedAssets.join(', ')}${skippedCount > 5 ? ` and ${skippedCount - 5} more` : ''}`,
+              `Skipped (duplicates): ${skippedDuplicateAssets.join(', ')}${skippedDuplicates > 5 ? ` and ${skippedDuplicates - 5} more` : ''}. These assets already exist.`,
               { duration: 6000 }
             )
+          }
           }, 1000)
-        }
       }
       
       // Refresh assets
@@ -2663,8 +2630,8 @@ export default function AssetsPage() {
                   className="flex-1 sm:flex-initial"
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
-                  <span className="sm:hidden">Delete</span>
-                  <span className="hidden sm:inline">Delete ({selectedAssets.size})</span>
+                  <span className="sm:hidden">Move to Trash</span>
+                  <span className="hidden sm:inline">Move to Trash ({selectedAssets.size})</span>
                 </Button>
               )}
               <Select value={table.getState().pagination.pageSize.toString()} onValueChange={(value) => {
@@ -2716,29 +2683,7 @@ export default function AssetsPage() {
                     disabled={false}
                   >
                     <div className="flex items-center gap-2">
-                      <div
-                        className={`size-4 rounded border flex items-center justify-center ${
-                          isVisible
-                            ? 'bg-primary border-primary'
-                            : 'border-input'
-                        }`}
-                      >
-                        {isVisible && (
-                          <svg
-                            className="size-3 text-primary-foreground"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M5 13l4 4L19 7"
-                            />
-                          </svg>
-                        )}
-                      </div>
+                      <Checkbox checked={isVisible} />
                       {column.label}
                     </div>
                   </SelectItem>
@@ -2887,8 +2832,8 @@ export default function AssetsPage() {
                             key={header.id} 
                             className={cn(
                               header.id === 'assetTag' ? 'font-medium' : '',
-                              isActionsColumn ? "text-right" : "text-left",
-                              isActionsColumn && "sticky right-0 bg-card z-10 "
+                              isActionsColumn ? "text-center" : "text-left",
+                              isActionsColumn && "sticky right-0 bg-card z-10 after:content-[''] after:absolute after:left-0 after:top-0 after:bottom-0 after:w-px after:bg-border after:z-30  "
                             )}
                           >
                           {header.isPlaceholder
@@ -2917,7 +2862,7 @@ export default function AssetsPage() {
                             <TableCell 
                               key={cell.id}
                               className={cn(
-                                isActionsColumn && "sticky right-0 bg-card z-10 "
+                                isActionsColumn && "sticky text-center right-0 bg-card z-10 after:content-[''] after:absolute after:left-0 after:top-0 after:bottom-0 after:w-px after:bg-border after:z-30 "
                               )}
                             >
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}

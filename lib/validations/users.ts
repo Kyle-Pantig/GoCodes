@@ -40,7 +40,10 @@ export const createUserSchema = z.object({
     .toLowerCase(),
   password: z
     .string()
-    .min(8, 'Password must be at least 8 characters long'),
+    .optional()
+    .refine((val) => !val || val.length === 0 || val.length >= 8, {
+      message: 'Password must be at least 8 characters long',
+    }),
   role: z
     .string()
     .min(1, 'Role is required')

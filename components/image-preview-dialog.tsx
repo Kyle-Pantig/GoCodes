@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import Image from 'next/image'
 import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
-import { X } from 'lucide-react'
+import { X, Download } from 'lucide-react'
 import {
   Carousel,
   CarouselContent,
@@ -127,6 +127,73 @@ export function ImagePreviewDialog({
     }
   }, [hasMultipleImages, api, allImages, onRemoveImage, onRemoveExistingImage])
 
+  const handleDownload = useCallback(async () => {
+    let imageUrl: string
+    let fileName: string
+
+    if (hasMultipleImages && api) {
+      const selectedIndex = api.selectedScrollSnap()
+      const currentImage = allImages[selectedIndex]
+      if (!currentImage) return
+      
+      imageUrl = currentImage.imageUrl
+      fileName = currentImage.fileName || 'image'
+    } else if (singleImage) {
+      imageUrl = singleImage.imageUrl
+      fileName = singleImage.fileName || singleImage.assetTagId || 'image'
+    } else {
+      return
+    }
+
+    // Ensure fileName has an extension
+    if (!fileName.includes('.')) {
+      // Try to get extension from URL
+      const urlExtension = imageUrl.split('.').pop()?.split('?')[0]?.toLowerCase()
+      if (urlExtension && ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(urlExtension)) {
+        fileName = `${fileName}.${urlExtension}`
+      } else {
+        fileName = `${fileName}.jpg` // Default to jpg
+      }
+    }
+
+    try {
+      // Always fetch the image and create a blob URL to force download
+      // This works for both blob URLs and regular URLs
+      const response = await fetch(imageUrl)
+      if (!response.ok) {
+        throw new Error('Failed to fetch image')
+      }
+      
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      // Don't set target="_blank" as it may cause the browser to open instead of download
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      // Clean up the blob URL after a short delay
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url)
+      }, 100)
+    } catch (error) {
+      console.error('Error downloading image:', error)
+      // Fallback: try direct download (may open in new tab for cross-origin)
+      try {
+        const link = document.createElement('a')
+        link.href = imageUrl
+        link.download = fileName
+        link.setAttribute('download', fileName) // Force download attribute
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      } catch (fallbackError) {
+        console.error('Fallback download also failed:', fallbackError)
+      }
+    }
+  }, [hasMultipleImages, api, allImages, singleImage])
+
   // Get current image for display in title
   const getCurrentDisplayImage = () => {
     if (hasMultipleImages) {
@@ -151,7 +218,7 @@ export function ImagePreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!max-w-2xl sm:!max-w-6xl max-h-[90vh] overflow-hidden">
+      <DialogContent className="max-w-2xl! sm:max-w-6xl! max-h-[90vh] overflow-hidden">
         <DialogHeader>
           <DialogTitle>
             <div className="space-y-1">
@@ -227,18 +294,32 @@ export function ImagePreviewDialog({
             </div>
           ) : null}
           
-          {/* Remove button for multiple images */}
-          {hasMultipleImages && (onRemoveImage || onRemoveExistingImage) && (
+          {/* Action buttons */}
+          <div className="absolute top-2 right-2 z-10 flex gap-2">
+            {/* Download button */}
             <Button
               type="button"
-              variant="destructive"
+              className='hover:bg-transparent!'
+              variant="ghost"
               size="icon"
-              className="absolute top-2 right-2 z-10"
-              onClick={handleRemove}
+              onClick={handleDownload}
+              title="Download image"
             >
-              <X className="h-4 w-4" />
+              <Download className="h-4 w-4" />
             </Button>
-          )}
+            {/* Remove button for multiple images */}
+            {hasMultipleImages && (onRemoveImage || onRemoveExistingImage) && (
+              <Button
+                type="button"
+                variant="destructive"
+                size="icon"
+                onClick={handleRemove}
+                title="Remove image"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

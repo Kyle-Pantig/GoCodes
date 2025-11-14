@@ -2,13 +2,15 @@
 
 import { useState, useRef } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Upload, FileSpreadsheet, History, Package, Download, MoreHorizontal, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import * as XLSX from 'xlsx'
+// Use xlsx-js-style for styling support (drop-in replacement for xlsx)
+import * as XLSX from 'xlsx-js-style'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
@@ -88,6 +90,7 @@ async function fetchImportHistory(page: number = 1) {
 }
 
 export default function ImportPage() {
+  const router = useRouter()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canManageImport = hasPermission('canManageImport')
   const canViewAssets = hasPermission('canViewAssets')
@@ -106,11 +109,11 @@ export default function ImportPage() {
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['importHistory', historyPage],
     queryFn: () => fetchImportHistory(historyPage),
-    enabled: canViewAssets,
+    enabled: !permissionsLoading && canViewAssets,
+    staleTime: 30000, // Cache for 30 seconds
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnMount: false, // Don't refetch on mount if data exists
   })
-
-  // Combine loading states
-  const isLoading = permissionsLoading || (canViewAssets && historyLoading)
 
   // Delete file history mutation
   const deleteMutation = useMutation({
@@ -173,6 +176,53 @@ export default function ImportPage() {
     setSelectedTemplateFields(new Set(['assetTag']))
   }
 
+  // Sample data mapping for each field
+  const getSampleData = (fieldKey: string): string => {
+    const sampleDataMap: Record<string, string> = {
+      assetTag: '12-345678U-SA',
+      description: 'Sample Asset Description',
+      purchasedFrom: 'Sample Vendor Inc.',
+      purchaseDate: '2024-01-15',
+      brand: 'Sample Brand',
+      cost: '1000.00',
+      model: 'Model-XYZ',
+      serialNo: 'SN123456789',
+      additionalInformation: 'Additional details here',
+      xeroAssetNo: 'XERO-001',
+      owner: 'John Doe',
+      subCategory: 'Laptop',
+      pbiNumber: 'PBI-001',
+      status: 'Available',
+      issuedTo: 'Jane Smith',
+      poNumber: 'PO-2024-001',
+      paymentVoucherNumber: 'PV-2024-001',
+      assetType: 'Equipment',
+      deliveryDate: '2024-01-20',
+      unaccountedInventory: 'No',
+      remarks: 'Sample remarks',
+      qr: 'QR123456',
+      oldAssetTag: 'OLD-001',
+      depreciableAsset: 'Yes',
+      depreciableCost: '1000.00',
+      salvageValue: '100.00',
+      assetLifeMonths: '36',
+      depreciationMethod: 'Straight Line',
+      dateAcquired: '2024-01-15',
+      category: 'IT Equipment',
+      department: 'IT Department',
+      site: 'Main Office',
+      location: 'Building A, Floor 2',
+      checkoutDate: '2024-02-01',
+      expectedReturnDate: '2024-02-15',
+      lastAuditDate: '2024-01-10',
+      lastAuditType: 'Physical',
+      lastAuditor: 'Auditor Name',
+      auditCount: '1',
+      images: 'image1.jpg, image2.jpg',
+    }
+    return sampleDataMap[fieldKey] || ''
+  }
+
   // Download template with selected columns
   const handleDownloadTemplate = () => {
     try {
@@ -188,15 +238,32 @@ export default function ImportPage() {
         return column ? column.label : key
       })
 
-      // Create empty worksheet with just headers
-      const wsData = [headers]
+      // Create sample data row
+      const sampleRow = fieldsToInclude.map(key => getSampleData(key))
+
+      // Create worksheet with headers and sample data
+      const wsData = [headers, sampleRow]
       const ws = XLSX.utils.aoa_to_sheet(wsData)
+
+      // Make header row bold using xlsx-js-style
+      const headerRange = XLSX.utils.decode_range(ws['!ref'] || 'A1')
+      for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col })
+        if (!ws[cellAddress]) continue
+        
+        // Set cell style with bold font
+        ws[cellAddress].s = {
+          font: { bold: true },
+          alignment: { horizontal: 'left', vertical: 'top' },
+        }
+      }
+
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Assets')
 
-      // Generate Excel file
+      // Generate Excel file with cell styles enabled
       const fileName = `asset-import-template-${new Date().toISOString().split('T')[0]}.xlsx`
-      XLSX.writeFile(wb, fileName)
+      XLSX.writeFile(wb, fileName, { cellStyles: true })
 
       toast.success(`Template downloaded with ${fieldsToInclude.length} column(s)`)
       setIsTemplateDialogOpen(false)
@@ -301,40 +368,41 @@ export default function ImportPage() {
       // Process imported data
       const importedAssets = jsonData.map((row) => {
         // Map Excel column names to asset fields
+        // Check both template labels and legacy formats for backward compatibility
         const assetData = {
           assetTagId: row['Asset Tag ID'] || row['assetTagId'] || null,
           description: row['Description'] || '',
-          purchasedFrom: row['Purchased from'] || null,
-          purchaseDate: row['Purchase Date'] || null,
-          brand: row['Brand'] || null,
-          cost: parseNumber(row['Cost']),
-          model: row['Model'] || null,
-          serialNo: row['Serial No'] || null,
-          additionalInformation: row['Additional Information'] || null,
-          xeroAssetNo: row['Xero Asset No.'] || null,
-          owner: row['Owner'] || null,
-          pbiNumber: row['PBI NUMBER'] || row['pbiNumber'] || null,
-          status: row['Status'] || null,
-          issuedTo: row['ISSUED TO:'] || row['issuedTo'] || null,
-          poNumber: row['PO NUMBER'] || row['poNumber'] || null,
-          paymentVoucherNumber: row['PAYMENT VOUCHER NUMBER'] || row['paymentVoucherNumber'] || null,
-          assetType: row['ASSET TYPE'] || row['assetType'] || null,
-          deliveryDate: row['DELIVERY DATE'] || row['deliveryDate'] || null,
-          unaccountedInventory: row['UNACCOUNTED INVENTORY'] || row['UNACCOUNTED 2021 INVENTORY'] || row['unaccountedInventory'] || row['unaccounted2021Inventory'] || null,
-          remarks: row['REMARKS'] || row['remarks'] || null,
+          purchasedFrom: row['Purchased From'] || row['Purchased from'] || row['purchasedFrom'] || null,
+          purchaseDate: row['Purchase Date'] || row['purchaseDate'] || null,
+          brand: row['Brand'] || row['brand'] || null,
+          cost: parseNumber(row['Cost'] || row['cost']),
+          model: row['Model'] || row['model'] || null,
+          serialNo: row['Serial No'] || row['Serial No.'] || row['serialNo'] || null,
+          additionalInformation: row['Additional Information'] || row['additionalInformation'] || null,
+          xeroAssetNo: row['Xero Asset No.'] || row['Xero Asset No'] || row['xeroAssetNo'] || null,
+          owner: row['Owner'] || row['owner'] || null,
+          pbiNumber: row['PBI Number'] || row['PBI NUMBER'] || row['pbiNumber'] || null,
+          status: row['Status'] || row['status'] || null,
+          issuedTo: row['Issued To'] || row['ISSUED TO:'] || row['issuedTo'] || null,
+          poNumber: row['PO Number'] || row['PO NUMBER'] || row['poNumber'] || null,
+          paymentVoucherNumber: row['Payment Voucher Number'] || row['PAYMENT VOUCHER NUMBER'] || row['paymentVoucherNumber'] || null,
+          assetType: row['Asset Type'] || row['ASSET TYPE'] || row['assetType'] || null,
+          deliveryDate: row['Delivery Date'] || row['DELIVERY DATE'] || row['deliveryDate'] || null,
+          unaccountedInventory: row['Unaccounted Inventory'] || row['UNACCOUNTED INVENTORY'] || row['UNACCOUNTED 2021 INVENTORY'] || row['unaccountedInventory'] || row['unaccounted2021Inventory'] || null,
+          remarks: row['Remarks'] || row['REMARKS'] || row['remarks'] || null,
           qr: row['QR'] || row['qr'] || null,
-          oldAssetTag: row['OLD ASSET TAG'] || row['oldAssetTag'] || null,
+          oldAssetTag: row['Old Asset Tag'] || row['OLD ASSET TAG'] || row['oldAssetTag'] || null,
           depreciableAsset: row['Depreciable Asset'] || row['depreciableAsset'] || null,
-          depreciableCost: parseNumber(row['Depreciable Cost']),
-          salvageValue: parseNumber(row['Salvage Value']),
-          assetLifeMonths: parseNumber(row['Asset Life (months)']),
+          depreciableCost: parseNumber(row['Depreciable Cost'] || row['depreciableCost']),
+          salvageValue: parseNumber(row['Salvage Value'] || row['salvageValue']),
+          assetLifeMonths: parseNumber(row['Asset Life (months)'] || row['Asset Life (Months)'] || row['assetLifeMonths']),
           depreciationMethod: row['Depreciation Method'] || row['depreciationMethod'] || null,
           dateAcquired: row['Date Acquired'] || row['dateAcquired'] || null,
-          category: row['Category'] || null,
-          subCategory: row['SUB-CATEGORY'] || row['subCategory'] || null,
-          department: row['Department'] || null,
-          site: row['Site'] || null,
-          location: row['Location'] || null,
+          category: row['Category'] || row['category'] || null,
+          subCategory: row['Sub Category'] || row['SUB-CATEGORY'] || row['subCategory'] || null,
+          department: row['Department'] || row['department'] || null,
+          site: row['Site'] || row['site'] || null,
+          location: row['Location'] || row['location'] || null,
           // Audit fields - these will create audit history records
           lastAuditDate: row['Last Audit Date'] || row['lastAuditDate'] || null,
           lastAuditType: row['Last Audit Type'] || row['lastAuditType'] || null,
@@ -437,7 +505,7 @@ export default function ImportPage() {
             },
             body: JSON.stringify({ assets: batch }),
           })
-        } catch (fetchError) {
+        } catch {
           // Network error (not HTTP error)
           toast.dismiss(toastId)
           toast.error('Network error. Please check your connection and try again.')
@@ -487,6 +555,8 @@ export default function ImportPage() {
       const createdCount = allResults.filter(r => r.action === 'created').length
       const skippedCount = allResults.filter(r => r.action === 'skipped').length
       const failedCount = allResults.filter(r => r.action === 'failed').length
+      const skippedInTrash = allResults.filter(r => r.action === 'skipped' && r.reason === 'Asset exists in trash').length
+      const skippedDuplicates = skippedCount - skippedInTrash
       
       toast.dismiss(toastId)
       
@@ -515,35 +585,66 @@ export default function ImportPage() {
             }),
           }),
         })
-      } catch (historyError) {
+      } catch {
         // Silently fail history save, don't show toast for this
       }
       
-      // Show results
+      // Show results with distinction between duplicates and trash
       if (skippedCount > 0) {
-        toast.info(
-          `Import complete: ${createdCount} created, ${skippedCount} skipped (duplicates)`,
-          { duration: 5000 }
-        )
+        let message = `Import complete: ${createdCount} created`
+        const skipParts: string[] = []
+        if (skippedDuplicates > 0) {
+          skipParts.push(`${skippedDuplicates} duplicate${skippedDuplicates !== 1 ? 's' : ''}`)
+        }
+        if (skippedInTrash > 0) {
+          skipParts.push(`${skippedInTrash} in trash`)
+        }
+        if (skipParts.length > 0) {
+          message += `, ${skipParts.join(', ')} skipped`
+        }
+        
+        toast.info(message, { duration: 6000 })
       } else {
         toast.success(`Successfully imported ${createdCount} asset(s)`)
       }
       
       // Show details of skipped items if any
       if (skippedCount > 0) {
-        const skippedAssets = allResults
-          .filter(r => r.action === 'skipped')
+        const skippedInTrashAssets = allResults
+          .filter(r => r.action === 'skipped' && r.reason === 'Asset exists in trash')
           .map(r => r.asset)
-          .slice(0, 5) // Show first 5
+          .slice(0, 5)
         
-        if (skippedAssets.length > 0) {
+        const skippedDuplicateAssets = allResults
+          .filter(r => r.action === 'skipped' && r.reason !== 'Asset exists in trash')
+          .map(r => r.asset)
+          .slice(0, 5)
+        
           setTimeout(() => {
+          if (skippedInTrashAssets.length > 0) {
+            toast.warning(
+              `Skipped (in trash): ${skippedInTrashAssets.join(', ')}${skippedInTrash > 5 ? ` and ${skippedInTrash - 5} more` : ''}. Permanently delete from trash first if you want to import them as new assets.`,
+              { 
+                duration: 10000,
+                action: (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => router.push('/tools/trash')}
+                  >
+                    Go to Trash
+                  </Button>
+                ),
+              }
+            )
+          }
+          if (skippedDuplicateAssets.length > 0) {
             toast.info(
-              `Skipped assets: ${skippedAssets.join(', ')}${skippedCount > 5 ? ` and ${skippedCount - 5} more` : ''}`,
+              `Skipped (duplicates): ${skippedDuplicateAssets.join(', ')}${skippedDuplicates > 5 ? ` and ${skippedDuplicates - 5} more` : ''}. These assets already exist.`,
               { duration: 6000 }
             )
+          }
           }, 1000)
-        }
       }
       
       // Refresh assets and history
@@ -577,7 +678,7 @@ export default function ImportPage() {
             errorMessage: errorMessage,
           }),
         })
-      } catch (historyError) {
+      } catch {
         // Silently fail history save, don't show toast for this
       }
       
@@ -593,24 +694,7 @@ export default function ImportPage() {
     processImportFile(file)
   }
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Import Assets</h1>
-          <p className="text-muted-foreground">
-            Import asset data from Excel or CSV files
-          </p>
-        </div>
-        <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
-          <Spinner className="h-8 w-8" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!canViewAssets) {
+  if (!canViewAssets && !permissionsLoading) {
     return (
       <div className="space-y-6">
         <div>
@@ -656,6 +740,7 @@ export default function ImportPage() {
                 variant="outline"
                 onClick={() => setIsTemplateDialogOpen(true)}
                 size='sm'
+                disabled={permissionsLoading}
               >
                 <Download className="mr-2 h-4 w-4" />
                 Download Template
@@ -714,6 +799,7 @@ export default function ImportPage() {
               }}
               className="w-full sm:w-auto"
               size='sm'
+              disabled={permissionsLoading || !canViewAssets}
             >
               <Upload className="mr-2 h-4 w-4" />
               Choose File
@@ -741,18 +827,18 @@ export default function ImportPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {historyLoading ? (
-            <div className="flex flex-col items-center justify-center py-8">
+          {permissionsLoading || historyLoading ? (
+            <div className="flex flex-col items-center justify-center h-[400px] text-center">
               <Spinner className="h-6 w-6" />
-              <p className="text-muted-foreground mt-2">Loading history...</p>
+              <p className="text-muted-foreground mt-2">Loading...</p>
             </div>
           ) : !historyData?.fileHistory || historyData.fileHistory.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
+            <div className="flex items-center justify-center h-[400px] text-center text-muted-foreground">
               No import history found
             </div>
           ) : (
             <>
-              <ScrollArea className="h-[350px]">
+              <ScrollArea className="h-[400px]">
                 <Table>
                   <TableHeader>
                     <TableRow>

@@ -4,7 +4,7 @@ import { useState, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { PlusIcon, Sparkles, ImageIcon, Upload, ChevronDown } from "lucide-react"
+import { PlusIcon, Sparkles, ImageIcon, Upload, ChevronDown, Info, FileText } from "lucide-react"
 import { usePermissions } from '@/hooks/use-permissions'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { toast } from 'sonner'
@@ -12,7 +12,9 @@ import { useCategories, useSubCategories, useCreateCategory, useCreateSubCategor
 import { CategoryDialog } from "@/components/category-dialog"
 import { SubCategoryDialog } from "@/components/subcategory-dialog"
 import { MediaBrowserDialog } from "@/components/media-browser-dialog"
+import { DocumentBrowserDialog } from "@/components/document-browser-dialog"
 import { SelectedImagesListDialog } from "@/components/selected-images-list-dialog"
+import { SelectedDocumentsListDialog } from "@/components/selected-documents-list-dialog"
 import { assetSchema, type AssetFormData } from "@/lib/validations/assets"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -30,6 +32,8 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import {
   Select,
   SelectContent,
@@ -58,11 +62,21 @@ export default function AddAssetPage() {
   const [subCategoryDialogOpen, setSubCategoryDialogOpen] = useState(false)
   const [selectedImages, setSelectedImages] = useState<File[]>([])
   const [selectedExistingImages, setSelectedExistingImages] = useState<Array<{ id: string; imageUrl: string; fileName: string }>>([])
+  const [selectedDocuments, setSelectedDocuments] = useState<File[]>([])
+  const [selectedExistingDocuments, setSelectedExistingDocuments] = useState<Array<{ id: string; documentUrl: string; fileName: string }>>([])
   const [uploadingImages, setUploadingImages] = useState(false)
+  const [uploadingDocuments, setUploadingDocuments] = useState(false)
   const [mediaBrowserOpen, setMediaBrowserOpen] = useState(false)
+  const [documentBrowserOpen, setDocumentBrowserOpen] = useState(false)
+  const [validationError, setValidationError] = useState<string | null>(null)
+  const [documentValidationError, setDocumentValidationError] = useState<string | null>(null)
+  const [tooltipOpen, setTooltipOpen] = useState(false)
+  const [documentTooltipOpen, setDocumentTooltipOpen] = useState(false)
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
+  const [previewDocumentsDialogOpen, setPreviewDocumentsDialogOpen] = useState(false)
   const [isGeneratingTag, setIsGeneratingTag] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const documentInputRef = useRef<HTMLInputElement>(null)
   const assetTagIdInputRef = useRef<HTMLInputElement>(null)
 
   const form = useForm<AssetFormData>({
@@ -190,6 +204,42 @@ export default function AddAssetPage() {
     }
   }
 
+  const uploadDocument = async (file: File, assetTagId: string): Promise<void> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('assetTagId', assetTagId)
+
+    const response = await fetch('/api/assets/upload-document', {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to upload document')
+    }
+  }
+
+  // Link an existing document URL to a new asset
+  const linkExistingDocument = async (documentUrl: string, assetTagId: string): Promise<void> => {
+    const response = await fetch('/api/assets/upload-document', {
+      method: 'POST',
+      body: JSON.stringify({
+        documentUrl,
+        assetTagId,
+        linkExisting: true,
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to link document')
+    }
+  }
+
   const onSubmit = async (data: AssetFormData) => {
     if (!canCreateAssets) {
       toast.error('You do not have permission to create assets')
@@ -206,6 +256,8 @@ export default function AddAssetPage() {
 
       // Upload images and link existing images after asset is created
       const totalImages = selectedImages.length + selectedExistingImages.length
+      const totalDocuments = selectedDocuments.length + selectedExistingDocuments.length
+      
       if (totalImages > 0 && data.assetTagId) {
         setUploadingImages(true)
         try {
@@ -221,13 +273,44 @@ export default function AddAssetPage() {
               selectedExistingImages.map(img => linkExistingImage(img.imageUrl, data.assetTagId))
             )
           }
-          toast.success(`Asset created successfully with ${totalImages} image(s)`)
         } catch (error) {
           console.error('Error uploading/linking images:', error)
           toast.error('Asset created but some images failed to upload/link')
         } finally {
           setUploadingImages(false)
         }
+      }
+
+      // Upload documents and link existing documents after asset is created
+      if (totalDocuments > 0 && data.assetTagId) {
+        setUploadingDocuments(true)
+        try {
+          // Upload new documents
+          if (selectedDocuments.length > 0) {
+            await Promise.all(
+              selectedDocuments.map(file => uploadDocument(file, data.assetTagId))
+            )
+          }
+          // Link existing documents
+          if (selectedExistingDocuments.length > 0) {
+            await Promise.all(
+              selectedExistingDocuments.map(doc => linkExistingDocument(doc.documentUrl, data.assetTagId))
+            )
+          }
+        } catch (error) {
+          console.error('Error uploading/linking documents:', error)
+          toast.error('Asset created but some documents failed to upload/link')
+        } finally {
+          setUploadingDocuments(false)
+        }
+      }
+
+      // Show success message
+      if (totalImages > 0 || totalDocuments > 0) {
+        const parts: string[] = []
+        if (totalImages > 0) parts.push(`${totalImages} image${totalImages !== 1 ? 's' : ''}`)
+        if (totalDocuments > 0) parts.push(`${totalDocuments} document${totalDocuments !== 1 ? 's' : ''}`)
+        toast.success(`Asset created successfully with ${parts.join(' and ')}`)
       } else {
         toast.success('Asset created successfully')
       }
@@ -376,7 +459,7 @@ export default function AddAssetPage() {
       formValues.additionalInformation?.trim() ||
       formValues.xeroAssetNo?.trim() ||
       formValues.owner?.trim() ||
-      formValues.status ||
+      (formValues.status && formValues.status !== "Available") ||
       formValues.issuedTo?.trim() ||
       formValues.poNumber?.trim() ||
       formValues.paymentVoucherNumber?.trim() ||
@@ -397,9 +480,13 @@ export default function AddAssetPage() {
       formValues.subCategoryId ||
       formValues.department?.trim() ||
       formValues.site?.trim() ||
-      formValues.location?.trim()
+      formValues.location?.trim() ||
+      selectedImages.length > 0 ||
+      selectedExistingImages.length > 0 ||
+      selectedDocuments.length > 0 ||
+      selectedExistingDocuments.length > 0
     )
-  }, [formValues])
+  }, [formValues, selectedImages, selectedExistingImages, selectedDocuments, selectedExistingDocuments])
 
   // Clear form function
   const clearForm = () => {
@@ -763,6 +850,7 @@ export default function AddAssetPage() {
                     </FieldContent>
                   </Field>
 
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Field>
                     <FieldLabel htmlFor="images">Asset Images</FieldLabel>
                     <FieldContent>
@@ -781,17 +869,34 @@ export default function AddAssetPage() {
                             const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
                             const maxSize = 5 * 1024 * 1024 // 5MB
                             
+                              const errors: string[] = []
                             const validFiles = files.filter(file => {
                               if (!allowedTypes.includes(file.type)) {
+                                  errors.push(`${file.name} is not a valid image type. Only JPEG, PNG, GIF, and WebP are allowed.`)
                                 toast.error(`${file.name} is not a valid image type. Only JPEG, PNG, GIF, and WebP are allowed.`)
                                 return false
                               }
                               if (file.size > maxSize) {
+                                  errors.push(`${file.name} is too large. Maximum size is 5MB.`)
                                 toast.error(`${file.name} is too large. Maximum size is 5MB.`)
                                 return false
                               }
                               return true
                             })
+
+                              // Set validation error and open tooltip if there are errors
+                              if (errors.length > 0) {
+                                setValidationError(errors.join(' '))
+                                setTooltipOpen(true)
+                                // Auto-close tooltip after 5 seconds
+                                setTimeout(() => {
+                                  setTooltipOpen(false)
+                                  setValidationError(null)
+                                }, 5000)
+                              } else {
+                                setValidationError(null)
+                                setTooltipOpen(false)
+                              }
 
                             setSelectedImages(prev => [...prev, ...validFiles])
                             
@@ -803,7 +908,7 @@ export default function AddAssetPage() {
                         />
                         
                         {/* Single button with dropdown and count */}
-                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-4">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
@@ -847,15 +952,189 @@ export default function AddAssetPage() {
                               {selectedImages.length + selectedExistingImages.length} image{(selectedImages.length + selectedExistingImages.length) !== 1 ? 's' : ''} selected
                             </Button>
                           )}
+
+                            {/* Supported formats info */}
+                            <Tooltip open={tooltipOpen || undefined} onOpenChange={(open) => {
+                              // Allow manual control when no validation error, or when closing after error
+                              if (!validationError || !open) {
+                                setTooltipOpen(open ?? false)
+                              }
+                            }}>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                  aria-label="Image format requirements"
+                                >
+                                  <Info className="h-4 w-4" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" >
+                                {validationError ? (
+                                  <>
+                                    <p className="text-xs text-red-500">{validationError}</p>
+                                  </>
+                                ) : (
+                                  <p className="text-xs">Supported formats: JPEG, PNG, GIF, WebP (Max 5MB per image)</p>
+                                )}
+                              </TooltipContent>
+                            </Tooltip>
                         </div>
+                        </div>
+                      </FieldContent>
+                    </Field>
+
+                    <Field>
+                      <FieldLabel htmlFor="documents">Asset Documents</FieldLabel>
+                      <FieldContent>
+                        <div className="space-y-4">
+                          {/* Hidden file input for documents */}
+                          <input
+                            ref={documentInputRef}
+                            type="file"
+                            accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.rtf,.jpg,.jpeg,.png,.gif,.webp"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || [])
+                              
+                              // Validate file types
+                              const allowedTypes = [
+                                'application/pdf',
+                                'application/msword',
+                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                'application/vnd.ms-excel',
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'text/plain',
+                                'text/csv',
+                                'application/rtf',
+                                'image/jpeg',
+                                'image/jpg',
+                                'image/png',
+                                'image/gif',
+                                'image/webp',
+                              ]
+                              const allowedExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv', '.rtf', '.jpg', '.jpeg', '.png', '.gif', '.webp']
+                              const maxSize = 5 * 1024 * 1024 // 5MB
+                              
+                              const errors: string[] = []
+                              const validFiles = files.filter(file => {
+                                const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase()
+                                if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
+                                  errors.push(`${file.name} is not a valid document type. Only PDF, DOC, DOCX, XLS, XLSX, TXT, CSV, RTF, JPEG, PNG, GIF, and WebP are allowed.`)
+                                  toast.error(`${file.name} is not a valid document type.`)
+                                  return false
+                                }
+                                if (file.size > maxSize) {
+                                  errors.push(`${file.name} is too large. Maximum size is 5MB.`)
+                                  toast.error(`${file.name} is too large. Maximum size is 5MB.`)
+                                  return false
+                                }
+                                return true
+                              })
+
+                              // Set validation error and open tooltip if there are errors
+                              if (errors.length > 0) {
+                                setDocumentValidationError(errors.join(' '))
+                                setDocumentTooltipOpen(true)
+                                // Auto-close tooltip after 5 seconds
+                                setTimeout(() => {
+                                  setDocumentTooltipOpen(false)
+                                  setDocumentValidationError(null)
+                                }, 5000)
+                              } else {
+                                setDocumentValidationError(null)
+                                setDocumentTooltipOpen(false)
+                              }
+
+                              setSelectedDocuments(prev => [...prev, ...validFiles])
+                              
+                              // Reset input
+                              if (documentInputRef.current) {
+                                documentInputRef.current.value = ''
+                              }
+                            }}
+                          />
+                          
+                          {/* Single button with dropdown and count */}
+                          <div className="flex items-center gap-4">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="flex items-center gap-2"
+                                >
+                                  <Upload className="h-4 w-4" />
+                                  Add Documents
+                                  <ChevronDown className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start">
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    documentInputRef.current?.click()
+                                  }}
+                                >
+                                  <Upload className="mr-2 h-4 w-4" />
+                                  Upload Documents
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setDocumentBrowserOpen(true)
+                                  }}
+                                >
+                                  <FileText className="mr-2 h-4 w-4" />
+                                  Select from Media
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                            
+                            {/* Selected Documents Count */}
+                            {(selectedDocuments.length > 0 || selectedExistingDocuments.length > 0) && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() => setPreviewDocumentsDialogOpen(true)}
+                                className="text-sm text-muted-foreground hover:text-foreground"
+                              >
+                                {selectedDocuments.length + selectedExistingDocuments.length} document{(selectedDocuments.length + selectedExistingDocuments.length) !== 1 ? 's' : ''} selected
+                              </Button>
+                            )}
 
                         {/* Supported formats info */}
-                        <p className="text-sm text-muted-foreground">
-                          Supported formats: JPEG, PNG, GIF, WebP (Max 5MB per image)
-                        </p>
+                            <Tooltip open={documentTooltipOpen || undefined} onOpenChange={(open) => {
+                              // Allow manual control when no validation error, or when closing after error
+                              if (!documentValidationError || !open) {
+                                setDocumentTooltipOpen(open ?? false)
+                              }
+                            }}>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                  aria-label="Document format requirements"
+                                >
+                                  <Info className="h-4 w-4" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                {documentValidationError ? (
+                                  <>
+                                    <p className="text-xs text-red-500">{documentValidationError}</p>
+                                  </>
+                                ) : (
+                                  <p className="text-xs">Supported formats: PDF, DOC, DOCX, XLS, XLSX, TXT, CSV, RTF, JPEG, PNG, GIF, WebP (Max 5MB per document)</p>
+                                )}
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
                       </div>
                     </FieldContent>
                   </Field>
+                  </div>
+
+                  
               </div>
             </CardContent>
           </Card>
@@ -1060,11 +1339,16 @@ export default function AddAssetPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Field>
                     <div className="flex items-center space-x-2.5 py-1">
-                      <input
-                        type="checkbox"
-                        id="depreciableAsset"
-                        {...form.register("depreciableAsset")}
-                        className="h-4 w-4 rounded border-gray-300 cursor-pointer"
+                      <Controller
+                        name="depreciableAsset"
+                        control={form.control}
+                        render={({ field }) => (
+                          <Checkbox
+                            id="depreciableAsset"
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        )}
                       />
                       <FieldLabel htmlFor="depreciableAsset" className="cursor-pointer font-medium">
                         Depreciable Asset
@@ -1074,11 +1358,16 @@ export default function AddAssetPage() {
 
                   <Field>
                     <div className="flex items-center space-x-2.5 py-1">
-                      <input
-                        type="checkbox"
-                        id="unaccountedInventory"
-                        {...form.register("unaccountedInventory")}
-                        className="h-4 w-4 rounded border-gray-300 cursor-pointer"
+                      <Controller
+                        name="unaccountedInventory"
+                        control={form.control}
+                        render={({ field }) => (
+                          <Checkbox
+                            id="unaccountedInventory"
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        )}
                       />
                       <FieldLabel htmlFor="unaccountedInventory" className="cursor-pointer font-medium">
                         Unaccounted Inventory
@@ -1201,13 +1490,13 @@ export default function AddAssetPage() {
                 form.requestSubmit()
               }
             }}
-            disabled={loading || uploadingImages}
+            disabled={loading || uploadingImages || uploadingDocuments}
             className="min-w-[120px]"
           >
-            {loading || uploadingImages ? (
+            {loading || uploadingImages || uploadingDocuments ? (
               <>
                 <Spinner className="mr-2 h-4 w-4" />
-                {uploadingImages ? 'Uploading Images...' : 'Creating...'}
+                Saving...
               </>
             ) : (
               'Save'
@@ -1225,6 +1514,15 @@ export default function AddAssetPage() {
         pageSize={24}
       />
 
+      {/* Document Browser Dialog */}
+      <DocumentBrowserDialog
+        open={documentBrowserOpen}
+        onOpenChange={setDocumentBrowserOpen}
+        selectedDocuments={selectedExistingDocuments}
+        onSelectDocuments={setSelectedExistingDocuments}
+        pageSize={24}
+      />
+
       {/* Selected Images List Dialog */}
       <SelectedImagesListDialog
         open={previewDialogOpen}
@@ -1239,6 +1537,22 @@ export default function AddAssetPage() {
         }}
         title="Selected Images"
         description="Preview and manage your selected images. Click the remove button to remove an image from the list."
+      />
+
+      {/* Selected Documents List Dialog */}
+      <SelectedDocumentsListDialog
+        open={previewDocumentsDialogOpen}
+        onOpenChange={setPreviewDocumentsDialogOpen}
+        documents={selectedDocuments}
+        existingDocuments={selectedExistingDocuments}
+        onRemoveDocument={(index: number) => {
+          setSelectedDocuments(prev => prev.filter((_, i) => i !== index))
+        }}
+        onRemoveExistingDocument={(id: string) => {
+          setSelectedExistingDocuments(prev => prev.filter(doc => doc.id !== id))
+        }}
+        title="Selected Documents"
+        description="Preview and manage your selected documents. Click the remove button to remove a document from the list."
       />
 
     </div>

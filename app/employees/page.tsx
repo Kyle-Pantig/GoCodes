@@ -10,6 +10,8 @@ import {
   flexRender,
   ColumnDef,
   SortingState,
+  HeaderGroup,
+  Header,
 } from '@tanstack/react-table'
 import {
   Table,
@@ -313,7 +315,7 @@ const createColumns = (
             <DropdownMenuTrigger asChild>
               <Button 
                 variant="ghost" 
-                className="h-8 w-8 p-0"
+                className="h-8 w-8 p-0 hover:bg-transparent!"
               >
                 <span className="sr-only">Open menu</span>
                 <MoreHorizontal className="h-4 w-4" />
@@ -748,7 +750,7 @@ export default function EmployeesPage() {
         </CardHeader>
         <CardContent className="flex-1 px-0 relative">
           {isFetching && data && isManualRefresh && (
-            <div className="absolute inset-x-0 top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+            <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
               <Spinner variant="default" size={24} className="text-muted-foreground" />
             </div>
           )}
@@ -768,19 +770,23 @@ export default function EmployeesPage() {
               </div>
             ) : (
               <div className="min-w-full">
-                <ScrollArea className='h-132'>
-                <Table className='border-t'>
-                  <TableHeader>
-                    {table.getHeaderGroups().map((headerGroup) => (
-                      <TableRow key={headerGroup.id} className="group">
-                        {headerGroup.headers.map((header) => {
+                <ScrollArea className='h-132 relative'>
+                <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
+                <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
+                <Table className='border-b'>
+                  <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-1.5">
+                    {table.getHeaderGroups().map((headerGroup: HeaderGroup<Employee>) => (
+                      <TableRow key={headerGroup.id} className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-[1.5px] after:h-px after:bg-border after:z-30">
+                        {headerGroup.headers.map((header: Header<Employee, unknown>) => {
                           const isActionsColumn = header.column.id === 'actions'
                           return (
                             <TableHead 
                               key={header.id}
                               className={cn(
-                                isActionsColumn ? "text-center" : "text-left",
-                                isActionsColumn && "sticky right-0 bg-card z-0 border-l group-hover:bg-muted/50 transition-colors"
+                                isActionsColumn ? "text-center " : "text-left",
+                                "bg-card transition-colors",
+                                !isActionsColumn && "group-hover:bg-muted/50",
+                                isActionsColumn && "sticky z-10 right-0 group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 "
                               )}
                             >
                               {header.isPlaceholder
@@ -803,7 +809,7 @@ export default function EmployeesPage() {
                             data-state={row.getIsSelected() && 'selected'}
                             className={cn(
                               hasCheckouts ? 'cursor-pointer hover:bg-muted/50' : '',
-                              "group"
+                              "group relative"
                             )}
                             onClick={() => {
                               if (hasCheckouts) {
@@ -817,7 +823,7 @@ export default function EmployeesPage() {
                                 <TableCell 
                                   key={cell.id}
                                   className={cn(
-                                    isActionsColumn && "sticky text-center right-0 bg-card z-10 group-hover:bg-muted/50 border-l transition-colors"
+                                    isActionsColumn && "sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 "
                                   )}
                                 >
                                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -836,8 +842,9 @@ export default function EmployeesPage() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
                 <ScrollBar orientation="horizontal" className='z-10' />
-                <ScrollBar orientation="vertical" className='z-10' />
+                <ScrollBar orientation="vertical" className='z-20' />
                 </ScrollArea>
               </div>
             )}
@@ -845,7 +852,7 @@ export default function EmployeesPage() {
         </CardContent>
         
         {/* Pagination Bar - Fixed at Bottom */}
-        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-bl-xl rounded-br-xl ">
+        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto ">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3">
             {/* Left Side - Navigation */}
             <div className="flex items-center justify-center sm:justify-start gap-2">

@@ -4,6 +4,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useMemo, useCallback, useEffect, useRef, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
+import { useForm, Controller } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { createUserSchema, type CreateUserFormData } from '@/lib/validations/users'
 import {
   useReactTable,
   getCoreRowModel,
@@ -11,6 +14,8 @@ import {
   flexRender,
   ColumnDef,
   SortingState,
+  HeaderGroup,
+  Header,
 } from '@tanstack/react-table'
 import {
   Table,
@@ -47,12 +52,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { MoreHorizontal, Trash2, Edit, Search, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Shield, ShieldCheck, Eye, EyeOff, Copy, Check, X, CheckCircle, RefreshCw } from 'lucide-react'
+import { MoreHorizontal, Trash2, Edit, Search, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Shield, ShieldCheck, Eye, EyeOff, Copy, Check, X, CheckCircle, RefreshCw, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Badge } from '@/components/ui/badge'
-import { Field, FieldLabel, FieldContent } from '@/components/ui/field'
+import { Field, FieldLabel, FieldContent, FieldError } from '@/components/ui/field'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 
@@ -415,6 +420,38 @@ export default function UsersPage() {
   
   const isEditingSelf = Boolean(selectedUser && currentUserId && selectedUser.userId === currentUserId)
   const isEditingSelfWithPermission = Boolean(isEditingSelf && canManageUsers)
+  // React Hook Form for create user dialog
+  const createForm = useForm<CreateUserFormData>({
+    resolver: zodResolver(createUserSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+      role: 'user',
+      permissions: {
+        canDeleteAssets: false,
+        canManageImport: false,
+        canManageExport: true,
+        canCreateAssets: true,
+        canEditAssets: true,
+        canViewAssets: true,
+        canManageEmployees: false,
+        canManageCategories: false,
+        canCheckout: true,
+        canCheckin: true,
+        canReserve: true,
+        canMove: false,
+        canLease: false,
+        canDispose: false,
+        canManageMaintenance: false,
+        canAudit: false,
+        canManageMedia: true,
+        canManageTrash: true,
+        canManageUsers: false,
+      },
+    },
+  })
+
+  // Keep formData state for edit dialog (not using react-hook-form for edit yet)
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -584,40 +621,14 @@ export default function UsersPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       setIsCreateDialogOpen(false)
-      setFormData({
-        email: '',
-        password: '',
-        role: 'user',
-        isActive: true,
-        isApproved: false,
-        permissions: {
-          canDeleteAssets: false,
-          canManageImport: false,
-          canManageExport: true,
-          canCreateAssets: true,
-          canEditAssets: true,
-          canViewAssets: true,
-          canManageEmployees: false,
-          canManageCategories: false,
-          canCheckout: true,
-          canCheckin: true,
-          canReserve: true,
-          canMove: false,
-          canLease: false,
-          canDispose: false,
-          canManageMaintenance: false,
-          canAudit: false,
-          canManageMedia: true,
-          canManageTrash: true,
-          canManageUsers: false,
-        },
-      })
-      if (data.generatedPassword) {
-        toast.success(`User created successfully. Generated password: ${data.generatedPassword}`, {
-          duration: 15000,
-        })
+      createForm.reset()
+      const emailSent = data?.emailSent !== false // Default to true if not specified
+      if (emailSent) {
+        toast.success('User created successfully. Login credentials have been sent to the user\'s email address.')
       } else {
-        toast.success('User created successfully')
+        toast.success('User created successfully, but failed to send email. Please contact the user directly with their credentials.', {
+          duration: 8000,
+        })
       }
     },
     onError: (error: Error) => {
@@ -687,26 +698,37 @@ export default function UsersPage() {
     },
   })
 
-  const handleCreate = () => {
+  const sendPasswordResetMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await fetch(`/api/users/${userId}/send-password-reset`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to send password reset email')
+      }
+      return response.json()
+    },
+    onSuccess: (data) => {
+      toast.success(data.message || 'Password reset email sent successfully')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to send password reset email')
+    },
+  })
+
+  const handleCreate = createForm.handleSubmit((data) => {
     if (!canManageUsers) {
       toast.error('You do not have permission to create users')
       return
     }
-    if (!formData.email) {
-      toast.error('Email is required')
-      return
-    }
-    if (!formData.password) {
-      toast.error('Password is required')
-      return
-    }
     createMutation.mutate({
-      email: formData.email,
-      password: formData.password,
-      role: formData.role,
-      permissions: formData.role === 'user' ? formData.permissions : undefined,
+      email: data.email,
+      password: data.password || undefined, // Password is optional (can be auto-generated)
+      role: data.role,
+      permissions: data.role === 'user' ? data.permissions : undefined,
     })
-  }
+  })
 
   const handleEdit = useCallback((user: AssetUser) => {
     if (!canManageUsers) {
@@ -826,6 +848,18 @@ export default function UsersPage() {
     })
     setIsEditDialogOpen(true)
   }, [canManageUsers])
+
+  const handleToggleAllPermissionsCreate = useCallback(() => {
+    const currentPermissions = createForm.getValues('permissions')
+    if (!currentPermissions) return
+    
+    const allSelected = Object.values(currentPermissions).every(Boolean)
+    const newPermissions = Object.keys(currentPermissions).reduce((acc, key) => {
+      acc[key as keyof typeof currentPermissions] = !allSelected
+      return acc
+    }, {} as typeof currentPermissions)
+    createForm.setValue('permissions', newPermissions)
+  }, [createForm])
 
   const handleToggleAllPermissions = useCallback(() => {
     const allSelected = 
@@ -984,7 +1018,7 @@ export default function UsersPage() {
 
         <CardContent className="flex-1 px-0 relative">
           {isFetching && data && isManualRefresh && (
-            <div className="absolute inset-x-0 top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+            <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
               <Spinner variant="default" size={24} className="text-muted-foreground" />
             </div>
           )}
@@ -1004,19 +1038,23 @@ export default function UsersPage() {
               </div>
             ) : (
               <div className="min-w-full">
-                <ScrollArea className='h-132'>
-                <Table className='border-t'>
-                  <TableHeader>
-                    {table.getHeaderGroups().map((headerGroup) => (
-                      <TableRow key={headerGroup.id} className="group">
-                        {headerGroup.headers.map((header) => {
+                <ScrollArea className='h-132 relative'>
+                <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
+                <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
+                <Table className='border-b'>
+                  <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-2.5">
+                    {table.getHeaderGroups().map((headerGroup: HeaderGroup<AssetUser>) => (
+                      <TableRow key={headerGroup.id} className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-[1.5px] after:h-px after:bg-border after:z-30">
+                        {headerGroup.headers.map((header: Header<AssetUser, unknown>) => {
                           const isActionsColumn = header.column.id === 'actions'
                           return (
                             <TableHead 
                               key={header.id}
                               className={cn(
                                 isActionsColumn ? "text-center" : "text-left",
-                                isActionsColumn && "sticky right-0 bg-card z-0 border-l group-hover:bg-muted/50 transition-colors"
+                                "bg-card transition-colors",
+                                !isActionsColumn && "group-hover:bg-muted/50",
+                                isActionsColumn && "sticky z-10 right-0 group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 "
                               )}
                             >
                               {header.isPlaceholder
@@ -1034,7 +1072,7 @@ export default function UsersPage() {
                         <TableRow 
                           key={row.id} 
                           data-state={row.getIsSelected() && 'selected'}
-                          className="group"
+                          className="group relative"
                         >
                           {row.getVisibleCells().map((cell) => {
                             const isActionsColumn = cell.column.id === 'actions'
@@ -1042,7 +1080,7 @@ export default function UsersPage() {
                               <TableCell 
                                 key={cell.id}
                                 className={cn(
-                                  isActionsColumn && "sticky right-0 bg-card group-hover:bg-muted/50! z-20 border-l transition-colors"
+                                  isActionsColumn && "sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 "
                                 )}
                               >
                                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -1060,8 +1098,9 @@ export default function UsersPage() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
                 <ScrollBar orientation="horizontal" />
-                <ScrollBar orientation="vertical" className='z-10' />
+                <ScrollBar orientation="vertical" className='z-50' />
                 </ScrollArea>
               </div>
             )}
@@ -1069,7 +1108,7 @@ export default function UsersPage() {
         </CardContent>
         
         {/* Pagination Bar - Fixed at Bottom */}
-        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-bl-xl rounded-br-xl">
+        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3">
             <div className="flex items-center justify-center sm:justify-start gap-2">
               <Button
@@ -1145,6 +1184,7 @@ export default function UsersPage() {
         if (!open) {
           setShowPassword(false)
           setCopiedPassword(false)
+          createForm.reset()
         }
       }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1154,119 +1194,156 @@ export default function UsersPage() {
               Create a new user with role and permissions.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <Field>
-              <FieldLabel htmlFor="email">
-                Email <span className="text-destructive">*</span>
-              </FieldLabel>
-              <FieldContent>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="Enter user email"
-                />
-              </FieldContent>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="password">
-                Password <span className="text-destructive">*</span>
-              </FieldLabel>
-              <FieldContent>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="Enter password or click Generate"
-                      className="pr-20"
-                    />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
-                        {showPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
+          <form onSubmit={handleCreate}>
+            <div className="grid gap-4 py-4">
+              <Field>
+                <FieldLabel htmlFor="email">
+                  Email <span className="text-destructive">*</span>
+                </FieldLabel>
+                <FieldContent>
+                  <Controller
+                    name="email"
+                    control={createForm.control}
+                    render={({ field, fieldState }) => (
+                      <>
+                        <Input
+                          id="email"
+                          type="email"
+                          {...field}
+                          placeholder="Enter user email"
+                          aria-invalid={fieldState.error ? 'true' : 'false'}
+                        />
+                        {fieldState.error && (
+                          <FieldError>{fieldState.error.message}</FieldError>
                         )}
-                      </Button>
-                      {formData.password && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(formData.password)
-                              setCopiedPassword(true)
-                              setTimeout(() => setCopiedPassword(false), 2000)
-                            } catch {
-                              toast.error('Failed to copy password')
+                      </>
+                    )}
+                  />
+                </FieldContent>
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor="password">
+                  Password <span className="text-muted-foreground text-xs">(optional - will be auto-generated if not provided)</span>
+                </FieldLabel>
+                <FieldContent>
+                  <Controller
+                    name="password"
+                    control={createForm.control}
+                    render={({ field, fieldState }) => (
+                      <>
+                        <div className="flex gap-2">
+                          <div className="relative flex-1">
+                            <Input
+                              id="password"
+                              type={showPassword ? "text" : "password"}
+                              {...field}
+                              placeholder="Enter password or click Generate"
+                              className="pr-20"
+                              aria-invalid={fieldState.error ? 'true' : 'false'}
+                            />
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => setShowPassword(!showPassword)}
+                              >
+                                {showPassword ? (
+                                  <EyeOff className="h-4 w-4" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </Button>
+                              {field.value && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={async () => {
+                                    try {
+                                      await navigator.clipboard.writeText(field.value || '')
+                                      setCopiedPassword(true)
+                                      setTimeout(() => setCopiedPassword(false), 2000)
+                                    } catch {
+                                      toast.error('Failed to copy password')
+                                    }
+                                  }}
+                                >
+                                  {copiedPassword ? (
+                                    <span className="text-xs text-green-600">✓</span>
+                                  ) : (
+                                    <Copy className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              // Generate random password
+                              const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/~`'
+                              let password = ''
+                              for (let i = 0; i < 12; i++) {
+                                password += charset.charAt(Math.floor(Math.random() * charset.length))
+                              }
+                              createForm.setValue('password', password)
+                            }}
+                          >
+                            Generate
+                          </Button>
+                        </div>
+                        {fieldState.error && (
+                          <FieldError>{fieldState.error.message}</FieldError>
+                        ) }
+                      </>
+                    )}
+                  />
+                </FieldContent>
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor="role">
+                  Role <span className="text-destructive">*</span>
+                </FieldLabel>
+                <FieldContent>
+                  <Controller
+                    name="role"
+                    control={createForm.control}
+                    render={({ field, fieldState }) => (
+                      <>
+                        <Select
+                          value={field.value}
+                          onValueChange={(value) => {
+                            field.onChange(value)
+                            // Reset permissions when role changes
+                            if (value === 'admin') {
+                              createForm.setValue('permissions', undefined)
                             }
                           }}
                         >
-                          {copiedPassword ? (
-                            <span className="text-xs text-green-600">✓</span>
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      // Generate random password
-                      const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/~`'
-                      let password = ''
-                      for (let i = 0; i < 12; i++) {
-                        password += charset.charAt(Math.floor(Math.random() * charset.length))
-                      }
-                      setFormData({ ...formData, password })
-                    }}
-                  >
-                    Generate
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Password must be at least 6 characters long
-                </p>
-              </FieldContent>
-            </Field>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="admin">Admin (Full Access)</SelectItem>
+                            <SelectItem value="user">User (Custom Permissions)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {fieldState.error && (
+                          <FieldError>{fieldState.error.message}</FieldError>
+                        )}
+                      </>
+                    )}
+                  />
+                </FieldContent>
+              </Field>
 
-            <Field>
-              <FieldLabel htmlFor="role">
-                Role <span className="text-destructive">*</span>
-              </FieldLabel>
-              <FieldContent>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value) => setFormData({ ...formData, role: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Admin (Full Access)</SelectItem>
-                    <SelectItem value="user">User (Custom Permissions)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FieldContent>
-            </Field>
-
-            {formData.role === 'user' && (
+              {createForm.watch('role') === 'user' && (
               <div className="space-y-4 border-t pt-4">
                 <div className="flex items-center justify-between">
                   <Label className="text-base font-semibold">Permissions</Label>
@@ -1274,304 +1351,90 @@ export default function UsersPage() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={handleToggleAllPermissions}
+                    onClick={handleToggleAllPermissionsCreate}
                   >
-                    {formData.permissions.canDeleteAssets &&
-                    formData.permissions.canManageImport &&
-                    formData.permissions.canManageExport &&
-                    formData.permissions.canCreateAssets &&
-                    formData.permissions.canEditAssets &&
-                    formData.permissions.canViewAssets &&
-                    formData.permissions.canManageEmployees &&
-                    formData.permissions.canManageCategories &&
-                    formData.permissions.canCheckout &&
-                    formData.permissions.canCheckin &&
-                    formData.permissions.canReserve &&
-                    formData.permissions.canMove &&
-                    formData.permissions.canLease &&
-                    formData.permissions.canDispose &&
-                    formData.permissions.canManageMaintenance &&
-                    formData.permissions.canAudit &&
-                    formData.permissions.canManageMedia &&
-                    formData.permissions.canManageTrash &&
-                    formData.permissions.canManageUsers
-                      ? 'Deselect All'
-                      : 'Select All'}
+                    {(() => {
+                      const permissions = createForm.watch('permissions')
+                      if (!permissions) return 'Select All'
+                      const allSelected = Object.values(permissions).every(Boolean)
+                      return allSelected ? 'Deselect All' : 'Select All'
+                    })()}
                   </Button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canViewAssets"
-                      checked={formData.permissions.canViewAssets}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canViewAssets: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canViewAssets" className="cursor-pointer">View Assets</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canCreateAssets"
-                      checked={formData.permissions.canCreateAssets}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canCreateAssets: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canCreateAssets" className="cursor-pointer">Create Assets</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canEditAssets"
-                      checked={formData.permissions.canEditAssets}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canEditAssets: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canEditAssets" className="cursor-pointer">Edit Assets</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canDeleteAssets"
-                      checked={formData.permissions.canDeleteAssets}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canDeleteAssets: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canDeleteAssets" className="cursor-pointer">Delete Assets</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canManageImport"
-                      checked={formData.permissions.canManageImport}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canManageImport: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canManageImport" className="cursor-pointer">Manage Import</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canManageExport"
-                      checked={formData.permissions.canManageExport}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canManageExport: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canManageExport" className="cursor-pointer">Manage Export</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canCheckout"
-                      checked={formData.permissions.canCheckout}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canCheckout: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canCheckout" className="cursor-pointer">Checkout Assets</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canCheckin"
-                      checked={formData.permissions.canCheckin}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canCheckin: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canCheckin" className="cursor-pointer">Checkin Assets</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canReserve"
-                      checked={formData.permissions.canReserve}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canReserve: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canReserve" className="cursor-pointer">Reserve Assets</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canMove"
-                      checked={formData.permissions.canMove}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canMove: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canMove" className="cursor-pointer">Move Assets</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canLease"
-                      checked={formData.permissions.canLease}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canLease: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canLease" className="cursor-pointer">Lease Assets</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canDispose"
-                      checked={formData.permissions.canDispose}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canDispose: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canDispose" className="cursor-pointer">Dispose Assets</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canManageEmployees"
-                      checked={formData.permissions.canManageEmployees}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canManageEmployees: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canManageEmployees" className="cursor-pointer">Manage Employees</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canManageCategories"
-                      checked={formData.permissions.canManageCategories}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canManageCategories: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canManageCategories" className="cursor-pointer">Manage Categories</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canManageMaintenance"
-                      checked={formData.permissions.canManageMaintenance}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canManageMaintenance: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canManageMaintenance" className="cursor-pointer">Manage Maintenance</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canAudit"
-                      checked={formData.permissions.canAudit}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canAudit: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canAudit" className="cursor-pointer">Perform Audits</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canManageMedia"
-                      checked={formData.permissions.canManageMedia}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canManageMedia: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canManageMedia" className="cursor-pointer">Manage Media</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canManageTrash"
-                      checked={formData.permissions.canManageTrash}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canManageTrash: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canManageTrash" className="cursor-pointer">Manage Trash</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canManageUsers"
-                      checked={formData.permissions.canManageUsers}
-                      onCheckedChange={(checked) =>
-                        setFormData({
-                          ...formData,
-                          permissions: { ...formData.permissions, canManageUsers: checked as boolean },
-                        })
-                      }
-                    />
-                    <Label htmlFor="canManageUsers" className="cursor-pointer">Manage Users</Label>
-                  </div>
-                </div>
+                <Controller
+                  name="permissions"
+                  control={createForm.control}
+                  render={({ field, fieldState }) => (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {[
+                          { key: 'canViewAssets', label: 'View Assets' },
+                          { key: 'canCreateAssets', label: 'Create Assets' },
+                          { key: 'canEditAssets', label: 'Edit Assets' },
+                          { key: 'canDeleteAssets', label: 'Delete Assets' },
+                          { key: 'canManageImport', label: 'Manage Import' },
+                          { key: 'canManageExport', label: 'Manage Export' },
+                          { key: 'canCheckout', label: 'Checkout Assets' },
+                          { key: 'canCheckin', label: 'Checkin Assets' },
+                          { key: 'canReserve', label: 'Reserve Assets' },
+                          { key: 'canMove', label: 'Move Assets' },
+                          { key: 'canLease', label: 'Lease Assets' },
+                          { key: 'canDispose', label: 'Dispose Assets' },
+                          { key: 'canManageEmployees', label: 'Manage Employees' },
+                          { key: 'canManageCategories', label: 'Manage Categories' },
+                          { key: 'canManageMaintenance', label: 'Manage Maintenance' },
+                          { key: 'canAudit', label: 'Perform Audits' },
+                          { key: 'canManageMedia', label: 'Manage Media' },
+                          { key: 'canManageTrash', label: 'Manage Trash' },
+                          { key: 'canManageUsers', label: 'Manage Users' },
+                        ].map(({ key, label }) => (
+                          <div key={key} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={key}
+                              checked={field.value?.[key as keyof typeof field.value] || false}
+                              onCheckedChange={(checked) => {
+                                const currentPermissions = field.value || {}
+                                field.onChange({
+                                  ...currentPermissions,
+                                  [key]: checked as boolean,
+                                })
+                              }}
+                            />
+                            <Label htmlFor={key} className="cursor-pointer">{label}</Label>
+                          </div>
+                        ))}
+                      </div>
+                      {fieldState.error && (
+                        <FieldError>{fieldState.error.message}</FieldError>
+                      )}
+                    </>
+                  )}
+                />
               </div>
             )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreate} disabled={createMutation.isPending}>
-              {createMutation.isPending ? (
-                <>
-                  <Spinner className="mr-2 h-4 w-4" />
-                  Creating...
-                </>
-              ) : (
-                'Create'
-              )}
-            </Button>
-          </DialogFooter>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createMutation.isPending}>
+                {createMutation.isPending ? (
+                  <>
+                    <Spinner className="mr-2 h-4 w-4" />
+                    Creating...
+                  </>
+                ) : (
+                  'Create'
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl! max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>
               {selectedUser && isPendingApproval(selectedUser) ? 'Approve User Account' : 'Edit User'}
@@ -1582,16 +1445,35 @@ export default function UsersPage() {
                 : 'Update user role, status, and permissions.'}
             </DialogDescription>
           </DialogHeader>
+          <ScrollArea className='h-[70vh]'>
           <div className="grid gap-4 py-4">
             <Field>
-              <FieldLabel htmlFor="edit-userId">User ID</FieldLabel>
+              <FieldLabel>Account Information</FieldLabel>
               <FieldContent>
-                <Input
-                  id="edit-userId"
-                  value={selectedUser?.userId || ''}
-                  disabled
-                  className="bg-muted"
-                />
+                <div className="space-y-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="edit-email" className="text-xs font-medium text-muted-foreground">
+                      Email Address
+                    </Label>
+                    <Input
+                      id="edit-email"
+                      value={selectedUser?.email || 'N/A'}
+                      disabled
+                      className="bg-muted font-mono text-sm"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="edit-userId" className="text-xs font-medium text-muted-foreground">
+                      User ID
+                    </Label>
+                    <Input
+                      id="edit-userId"
+                      value={selectedUser?.userId || ''}
+                      disabled
+                      className="bg-muted font-mono text-sm"
+                    />
+                  </div>
+                </div>
               </FieldContent>
             </Field>
 
@@ -1668,6 +1550,37 @@ export default function UsersPage() {
                     </SelectItem>
                   </SelectContent>
                 </Select>
+              </FieldContent>
+            </Field>
+
+            <Field>
+              <FieldLabel>Password Reset</FieldLabel>
+              <FieldContent>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!selectedUser) return
+                    if (!canManageUsers) {
+                      toast.error('You do not have permission to send password reset emails')
+                      return
+                    }
+                    sendPasswordResetMutation.mutate(selectedUser.id)
+                  }}
+                  disabled={sendPasswordResetMutation.isPending || !selectedUser}
+                  className="w-full"
+                >
+                  {sendPasswordResetMutation.isPending ? (
+                    <>
+                      <Spinner className="mr-2 h-4 w-4" />
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="mr-2 h-4 w-4" />
+                      Send Password Reset Email
+                    </>
+                  )}
+                </Button>
               </FieldContent>
             </Field>
 
@@ -1956,6 +1869,7 @@ export default function UsersPage() {
               </div>
             )}
           </div>
+          </ScrollArea>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               Cancel

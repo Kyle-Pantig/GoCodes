@@ -86,6 +86,22 @@ model AssetsImage {
   @@index([assetTagId])
 }
 
+model AssetsDocument {
+  id          String   @id @default(uuid())
+  assetTagId String   @map("asset_tag_id") @db.VarChar(100)
+  documentUrl String   @map("document_url") @db.VarChar(500)
+  documentType String?  @map("document_type") @db.VarChar(50) // receipt, purchase_order, manual, etc.
+  documentSize Int?     @map("document_size")
+  fileName     String?  @map("file_name") @db.VarChar(255)
+  mimeType     String?  @map("mime_type") @db.VarChar(100)
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("assets_documents")
+  @@index([assetTagId])
+}
+
 model Category {
   id          String       @id @default(uuid())
   name        String       @unique @map("name") @db.VarChar(100)

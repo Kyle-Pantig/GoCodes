@@ -2,9 +2,16 @@
 
 import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
+import { useEffect, useState } from "react"
 
 export function ThemeToggle() {
   const { setTheme, resolvedTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+
+  // Only render theme-dependent content after mounting to avoid hydration mismatch
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const toggleTheme = () => {
     // Use resolvedTheme to determine current state (handles system theme)
@@ -13,7 +20,8 @@ export function ThemeToggle() {
   }
 
   // Determine which icon to show based on resolved theme (handles system theme)
-  const isDark = resolvedTheme === "dark"
+  // Default to light theme during SSR to match initial client render
+  const isDark = mounted && resolvedTheme === "dark"
 
   return (
     <button

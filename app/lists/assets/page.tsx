@@ -12,6 +12,8 @@ import {
   ColumnDef,
   SortingState,
   VisibilityState,
+  HeaderGroup,
+  Header,
 } from '@tanstack/react-table'
 import {
   Table,
@@ -32,13 +34,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -50,13 +45,13 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
-import Image from 'next/image'
+import { Checkbox } from '@/components/ui/checkbox'
 import { EditAssetDialog } from '@/components/edit-asset-dialog'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { ManagerDialog } from '@/components/manager-dialog'
 import { AuditHistoryManager } from '@/components/audit-history-manager'
 import { CheckoutManager } from '@/components/checkout-manager'
-import { ImagePreviewDialog } from '@/components/image-preview-dialog'
+import { AssetMediaDialog } from '@/components/asset-media-dialog'
 
 interface Asset {
   id: string
@@ -1295,117 +1290,28 @@ const createColumns = (): ColumnDef<Asset>[] => [
 // Component for asset images icon with dialog
 function AssetImagesCell({ asset }: { asset: Asset }) {
   const [imagesDialogOpen, setImagesDialogOpen] = useState(false)
-  const [images, setImages] = useState<Array<{ id: string; imageUrl: string; assetTagId: string; fileName?: string; createdAt?: string }>>([])
-  const [loadingImages, setLoadingImages] = useState(false)
-  const [previewImageIndex, setPreviewImageIndex] = useState(0)
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
-
-  const fetchImages = async () => {
-    if (!imagesDialogOpen) return
-    
-    setLoadingImages(true)
-    try {
-      const response = await fetch(`/api/assets/images/${asset.assetTagId}`)
-      if (response.ok) {
-        const data = await response.json()
-        setImages(data.images || [])
-      } else {
-        setImages([])
-      }
-    } catch (error) {
-      console.error('Error fetching images:', error)
-      setImages([])
-    } finally {
-      setLoadingImages(false)
-    }
-  }
-
-  useEffect(() => {
-    if (imagesDialogOpen) {
-      fetchImages()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imagesDialogOpen])
 
   // If no images, show dash
   if (!asset.imagesCount || asset.imagesCount === 0) {
     return <span className="text-muted-foreground">-</span>
   }
 
-  const handleImageClick = (index: number) => {
-    setPreviewImageIndex(index)
-    setImagesDialogOpen(false) // Close the grid dialog first
-    setIsPreviewOpen(true)
-  }
-
-  const existingImagesForPreview = images.map((img) => ({
-    id: img.id,
-    imageUrl: img.imageUrl,
-    fileName: img.fileName || `Image ${img.id}`,
-  }))
-
   return (
-    <>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => setImagesDialogOpen(true)}
-        className="h-8 w-8"
-      >
-        <ImageIcon className="h-4 w-4" />
-      </Button>
-      <Dialog open={imagesDialogOpen} onOpenChange={setImagesDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle>Asset Images - {asset.assetTagId}</DialogTitle>
-            <DialogDescription>
-              Images for {asset.description}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
-            {loadingImages ? (
-              <div className="flex items-center justify-center py-8">
-                <Spinner className="h-6 w-6" />
-              </div>
-            ) : images.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No images found for this asset
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                {images.map((image, index) => (
-                  <div
-                    key={image.id}
-                    className="relative group border rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
-                    onClick={() => handleImageClick(index)}
-                  >
-                    <div className="aspect-square bg-muted relative">
-                      <Image
-                        src={image.imageUrl}
-                        alt={`Asset ${asset.assetTagId} image`}
-                        fill
-                        className="object-cover"
-                        unoptimized
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Image Preview Dialog */}
-      <ImagePreviewDialog
-        open={isPreviewOpen}
-        onOpenChange={setIsPreviewOpen}
-        existingImages={existingImagesForPreview}
-        title={`Asset Images - ${asset.assetTagId}`}
-        maxHeight="h-[70vh] max-h-[600px]"
-        initialIndex={previewImageIndex}
-      />
-    </>
+    <AssetMediaDialog
+      asset={asset}
+      open={imagesDialogOpen}
+      onOpenChange={setImagesDialogOpen}
+      trigger={
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setImagesDialogOpen(true)}
+          className="h-8 w-8"
+        >
+          <ImageIcon className="h-4 w-4" />
+        </Button>
+      }
+    />
   )
 }
 
@@ -1480,12 +1386,13 @@ function AssetActions({ asset }: { asset: Asset }) {
 
   return (
     <>
-      <div className="flex justify-end">
+      <div className="flex justify-center">
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button 
                 variant="ghost" 
                 size="icon"
+                className="h-8 w-8 p-0 hover:bg-transparent!"
               >
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
@@ -1509,7 +1416,7 @@ function AssetActions({ asset }: { asset: Asset }) {
                 className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete
+                Move to Trash
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1531,9 +1438,9 @@ function AssetActions({ asset }: { asset: Asset }) {
         onConfirm={confirmDelete}
         itemName={asset.assetTagId}
         isLoading={deleteMutation.isPending}
-        title={`Delete ${asset.assetTagId}?`}
-        description={`Are you sure you want to delete "${asset.assetTagId}"? This asset will be moved to Trash and can be restored within 30 days. After 30 days, it will be permanently deleted.`}
-        confirmLabel="Delete Asset"
+        title={`Move ${asset.assetTagId} to Trash?`}
+        description={`This asset will be moved to Trash and can be restored later if needed.`}
+        confirmLabel="Move to Trash"
       />
 
       {/* Audit History Dialog */}
@@ -2004,29 +1911,7 @@ export default function ListOfAssetsPage() {
                       disabled={isAlwaysVisible}
                     >
                       <div className="flex items-center gap-2">
-                        <div
-                          className={`size-4 rounded border flex items-center justify-center ${
-                            isVisible
-                              ? 'bg-primary border-primary'
-                              : 'border-input'
-                          } ${isAlwaysVisible ? 'opacity-50' : ''}`}
-                        >
-                          {isVisible && (
-                            <svg
-                              className="size-3 text-primary-foreground"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M5 13l4 4L19 7"
-                              />
-                            </svg>
-                          )}
-                        </div>
+                        <Checkbox checked={isVisible} disabled={isAlwaysVisible} className={isAlwaysVisible ? 'opacity-50' : ''} />
                         <span className={isAlwaysVisible ? 'opacity-50' : ''}>
                           {column.label}
                           {isAlwaysVisible && ' (Always visible)'}
@@ -2054,7 +1939,7 @@ export default function ListOfAssetsPage() {
         </CardHeader>
         <CardContent className="flex-1 px-0 relative">
           {isFetching && data && isManualRefresh && (
-            <div className="absolute inset-x-0 top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+            <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
               <Spinner variant="default" size={24} className="text-muted-foreground" />
             </div>
           )}
@@ -2085,19 +1970,23 @@ export default function ListOfAssetsPage() {
               </div>
             ) : (
               <div className="min-w-full">
-                <ScrollArea className='h-132'>
-                <Table className='border-t'>
-                  <TableHeader>
-                    {table.getHeaderGroups().map((headerGroup) => (
-                      <TableRow key={headerGroup.id} className="group">
-                        {headerGroup.headers.map((header) => {
+                <ScrollArea className='h-132 relative'>
+                <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
+                <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
+                <Table className='border-b'>
+                  <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-2.5">
+                    {table.getHeaderGroups().map((headerGroup: HeaderGroup<Asset>) => (
+                      <TableRow key={headerGroup.id} className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-[1.5px] after:h-px after:bg-border after:z-30">
+                        {headerGroup.headers.map((header: Header<Asset, unknown>) => {
                           const isActionsColumn = header.column.id === 'actions'
                           return (
                             <TableHead 
                               key={header.id}
                               className={cn(
-                                isActionsColumn ? "text-right" : "text-left",
-                                isActionsColumn && "sticky right-0 bg-card z-0 border-l group-hover:bg-muted/50 transition-colors"
+                                isActionsColumn ? "text-center" : "text-left",
+                                "bg-card transition-colors",
+                                !isActionsColumn && "group-hover:bg-muted/50",
+                                isActionsColumn && "sticky z-10 right-0 group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 "
                               )}
                             >
                             {header.isPlaceholder
@@ -2112,14 +2001,14 @@ export default function ListOfAssetsPage() {
                   <TableBody>
                     {table.getRowModel().rows?.length ? (
                       table.getRowModel().rows.map((row) => (
-                        <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'} className="group">
+                        <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'} className="group relative">
                           {row.getVisibleCells().map((cell) => {
                             const isActionsColumn = cell.column.id === 'actions'
                             return (
                               <TableCell 
                                 key={cell.id}
                                 className={cn(
-                                  isActionsColumn && "sticky right-0 bg-card z-10 group-hover:bg-muted/50 border-l transition-colors"
+                                  isActionsColumn && "sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 "
                                 )}
                               >
                               {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -2137,8 +2026,9 @@ export default function ListOfAssetsPage() {
                     )}
                   </TableBody>
                 </Table>
-                <ScrollBar orientation="horizontal" className='z-10' />
-                <ScrollBar orientation="vertical" className='z-10' />
+                </div>
+                <ScrollBar orientation="horizontal" />
+                <ScrollBar orientation="vertical" className='z-50' />
                 </ScrollArea>
               </div>
             )}
@@ -2146,7 +2036,7 @@ export default function ListOfAssetsPage() {
         </CardContent>
         
         {/* Pagination Bar - Fixed at Bottom */}
-        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-bl-xl rounded-br-xl">
+        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto ">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3">
             {/* Left Side - Navigation */}
             <div className="flex items-center justify-center sm:justify-start gap-2">

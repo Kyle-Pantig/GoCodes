@@ -43,6 +43,9 @@ export async function POST(
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
+  const permissionCheck = await requirePermission('canAudit')
+  if (!permissionCheck.allowed) return permissionCheck.error
+
   try {
     const { id } = await params
     const body = await request.json()

@@ -3,8 +3,7 @@ import { verifyAuth } from '@/lib/auth-utils'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/prisma'
 
-// Image extensions - kept for reference but filtering is now done by folder path
-// const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']
+const DOCUMENT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv', '.rtf', '.jpg', '.jpeg', '.png', '.gif', '.webp']
 
 // Simple in-memory cache for file listings (cleared on server restart)
 // Cache expires after 5 minutes
@@ -23,7 +22,7 @@ const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
 // Declare global type for cache
 declare global {
-  var mediaFilesCache: CacheEntry | undefined
+  var documentFilesCache: CacheEntry | undefined
 }
 
 export async function GET(request: NextRequest) {
@@ -37,7 +36,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Allow viewing media without canManageMedia permission
+    // Allow viewing documents without canManageMedia permission
     // Users can view but actions (upload/delete) are controlled by client-side checks
 
     const { searchParams } = new URL(request.url)
@@ -83,10 +82,11 @@ export async function GET(request: NextRequest) {
 
       for (const item of data) {
         const itemPath = folder ? `${folder}/${item.name}` : item.name
+        const lastDotIndex = item.name.lastIndexOf('.')
+        const ext = lastDotIndex > 0 
+          ? item.name.toLowerCase().substring(lastDotIndex)
+          : ''
         
-        // In Supabase Storage:
-        // - Files have an id and metadata
-        // - Folders don't have an id (id is null/undefined)
         // Check if it's a folder by checking if id is missing
         const isFolder = item.id === null || item.id === undefined
         
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
           allFiles.push(...subFiles)
         } else {
           // Include all files (filtering by folder path happens later)
-          // This ensures we get all files from the assets_images folder
+          // This ensures we get all files from the assets_documents folder
           allFiles.push({
             name: item.name,
             id: item.id || itemPath,
@@ -126,21 +126,18 @@ export async function GET(request: NextRequest) {
       }
     }> = []
     
-    // Note: Supabase Storage doesn't support true server-side pagination for recursive listings
-    // We need to fetch all file metadata to sort properly, then paginate in memory
-    // This is cached to reduce redundant API calls
-    const cached = globalThis.mediaFilesCache
+    const cached = globalThis.documentFilesCache
     
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       // Use cached file list
       allFiles = cached.files
     } else {
       // Fetch fresh file list
-      // List files from assets_images folder in assets bucket
-      const assetsFiles = await listAllFiles('assets', 'assets_images')
+      // List files from assets_documents folder in assets bucket
+      const assetsFiles = await listAllFiles('assets', 'assets_documents')
 
-      // List files from assets_images folder in file-history bucket
-      const fileHistoryFiles = await listAllFiles('file-history', 'assets/assets_images')
+      // List files from assets_documents folder in file-history bucket
+      const fileHistoryFiles = await listAllFiles('file-history', 'assets/assets_documents')
 
       // Combine files from both buckets
       const combinedFiles: Array<{
@@ -155,11 +152,11 @@ export async function GET(request: NextRequest) {
         }
       }> = []
 
-      // Add files from assets bucket (only from assets_images folder)
-      // Filter by path to ensure we only get images, not documents from assets_documents
+      // Add files from assets bucket (only from assets_documents folder)
+      // Filter by path to ensure we only get documents, not images from assets_images
       assetsFiles.forEach((file) => {
-        // Ensure file is in assets_images folder and NOT in assets_documents folder
-        if (file.path.startsWith('assets_images/') && !file.path.startsWith('assets_documents/')) {
+        // Ensure file is in assets_documents folder and NOT in assets_images folder
+        if (file.path.startsWith('assets_documents/') && !file.path.startsWith('assets_images/')) {
           combinedFiles.push({
             ...file,
             bucket: 'assets',
@@ -169,11 +166,11 @@ export async function GET(request: NextRequest) {
         }
       })
 
-      // Add files from file-history bucket (only from assets/assets_images folder)
-      // Filter by path to ensure we only get images, not documents from assets_documents
+      // Add files from file-history bucket (only from assets/assets_documents folder)
+      // Filter by path to ensure we only get documents, not images from assets_images
       fileHistoryFiles.forEach((file) => {
-        // Ensure file is in assets/assets_images folder and NOT in assets/assets_documents folder
-        if (file.path.startsWith('assets/assets_images/') && !file.path.startsWith('assets/assets_documents/')) {
+        // Ensure file is in assets/assets_documents folder and NOT in assets/assets_images folder
+        if (file.path.startsWith('assets/assets_documents/') && !file.path.startsWith('assets/assets_images/')) {
           combinedFiles.push({
             ...file,
             bucket: 'file-history',
@@ -193,7 +190,7 @@ export async function GET(request: NextRequest) {
       allFiles = combinedFiles
 
       // Cache the result
-      globalThis.mediaFilesCache = {
+      globalThis.documentFilesCache = {
         files: allFiles,
         timestamp: Date.now(),
       }
@@ -215,18 +212,14 @@ export async function GET(request: NextRequest) {
       const actualFileName = pathParts[pathParts.length - 1]
       
       // Extract assetTagId - filename format is: assetTagId-timestamp.ext
-      // Try to get assetTagId by removing timestamp and extension
-      // Timestamp is in ISO format: YYYY-MM-DDTHH-MM-SS-sssZ
       const fileNameWithoutExt = actualFileName.substring(0, actualFileName.lastIndexOf('.'))
-      // Try to match pattern: assetTagId-YYYY-MM-DDTHH-MM-SS-sssZ
       const timestampMatch = fileNameWithoutExt.match(/-(20\d{2}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)$/)
       let assetTagId = timestampMatch 
         ? fileNameWithoutExt.substring(0, timestampMatch.index)
         : fileNameWithoutExt.split('-')[0] || fileNameWithoutExt
       
-      // If the extracted assetTagId is "media", it's a standalone media upload, not linked to an asset
-      // Set it to null so it won't be displayed as an asset
-      if (assetTagId === 'media') {
+      // If the extracted assetTagId is "documents", it's a standalone document upload, not linked to an asset
+      if (assetTagId === 'documents') {
         assetTagId = ''
       }
 
@@ -237,13 +230,12 @@ export async function GET(request: NextRequest) {
         publicUrl,
         assetTagId,
         actualFileName,
-        // Get file size and type from storage metadata, fallback to database if available
         storageSize: file.metadata?.size,
         storageMimeType: file.metadata?.mimetype,
       }
     })
 
-    // Batch query: Get all linked images in a single query
+    // Batch query: Get all linked documents in a single query
     const allPublicUrls = fileData.map(fd => fd.publicUrl).filter(Boolean)
     
     // Normalize URLs by removing query parameters and fragments for better matching
@@ -260,129 +252,86 @@ export async function GET(request: NextRequest) {
     const normalizedPublicUrls = allPublicUrls.map(normalizeUrl)
     
     // Build OR conditions for URL and filename matching
-    // Match by exact URL, normalized URL, or URL contains filename
-    const urlConditions: Array<{ imageUrl: { contains: string } } | { imageUrl: { in: string[] } }> = []
+    const urlConditions: Array<{ documentUrl: { contains: string } } | { documentUrl: { in: string[] } }> = []
     
     // Add exact URL matches (both original and normalized)
     if (allPublicUrls.length > 0) {
-      urlConditions.push({ imageUrl: { in: allPublicUrls } })
+      urlConditions.push({ documentUrl: { in: allPublicUrls } })
     }
     if (normalizedPublicUrls.length > 0) {
-      urlConditions.push({ imageUrl: { in: normalizedPublicUrls } })
+      urlConditions.push({ documentUrl: { in: normalizedPublicUrls } })
     }
     
     // Add filename-based matches (more flexible - matches if URL contains the filename)
     fileData.forEach(fd => {
       if (fd.actualFileName) {
-        urlConditions.push({ imageUrl: { contains: fd.actualFileName } })
+        urlConditions.push({ documentUrl: { contains: fd.actualFileName } })
       }
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const allLinkedImages = await (prisma as any).assetsImage.findMany({
+    const allLinkedDocuments = await (prisma as any).assetsDocument.findMany({
       where: {
-        OR: urlConditions.length > 0 ? urlConditions : [{ imageUrl: { in: [] } }], // Empty condition if no URLs
+        OR: urlConditions.length > 0 ? urlConditions : [{ documentUrl: { in: [] } }], // Empty condition if no URLs
       },
       select: {
         assetTagId: true,
-        imageUrl: true,
-        imageType: true,
-        imageSize: true,
+        documentUrl: true,
+        documentType: true,
+        documentSize: true,
+        fileName: true,
+        mimeType: true,
       },
     })
 
-    // Create a map for quick lookup: imageUrl -> assetTagIds and image metadata
-    const imageUrlToAssetTagIds = new Map<string, Set<string>>()
-    const assetTagIdToImageUrls = new Map<string, Set<string>>()
-    const imageUrlToMetadata = new Map<string, { imageType: string | null; imageSize: number | null }>()
+    // Create a map for quick lookup: documentUrl -> assetTagIds and document metadata
+    const documentUrlToAssetTagIds = new Map<string, Set<string>>()
+    const assetTagIdToDocumentUrls = new Map<string, Set<string>>()
+    const documentUrlToMetadata = new Map<string, { documentType: string | null; documentSize: number | null; fileName: string | null; mimeType: string | null }>()
     
-    allLinkedImages.forEach((img: { assetTagId: string; imageUrl: string; imageType: string | null; imageSize: number | null }) => {
-      if (!img.assetTagId || !img.imageUrl) return
+    allLinkedDocuments.forEach((doc: { assetTagId: string; documentUrl: string; documentType: string | null; documentSize: number | null; fileName: string | null; mimeType: string | null }) => {
+      if (!doc.assetTagId || !doc.documentUrl) return
       
       // Store metadata
-      imageUrlToMetadata.set(img.imageUrl, {
-        imageType: img.imageType || null,
-        imageSize: img.imageSize || null,
+      documentUrlToMetadata.set(doc.documentUrl, {
+        documentType: doc.documentType || null,
+        documentSize: doc.documentSize || null,
+        fileName: doc.fileName || null,
+        mimeType: doc.mimeType || null,
       })
       
-      // Normalize database URL for matching
-      const normalizedDbUrl = normalizeUrl(img.imageUrl)
-      
-      // Map database imageUrl to assetTagIds (for exact matches)
-      if (!imageUrlToAssetTagIds.has(img.imageUrl)) {
-        imageUrlToAssetTagIds.set(img.imageUrl, new Set())
+      // Map by documentUrl
+      if (!documentUrlToAssetTagIds.has(doc.documentUrl)) {
+        documentUrlToAssetTagIds.set(doc.documentUrl, new Set())
       }
-      imageUrlToAssetTagIds.get(img.imageUrl)!.add(img.assetTagId)
-      
-      // Also map normalized URL to assetTagIds
-      if (!imageUrlToAssetTagIds.has(normalizedDbUrl)) {
-        imageUrlToAssetTagIds.set(normalizedDbUrl, new Set())
-      }
-      imageUrlToAssetTagIds.get(normalizedDbUrl)!.add(img.assetTagId)
+      documentUrlToAssetTagIds.get(doc.documentUrl)!.add(doc.assetTagId)
       
       // Map by assetTagId (for filename matching)
-      if (!assetTagIdToImageUrls.has(img.assetTagId)) {
-        assetTagIdToImageUrls.set(img.assetTagId, new Set())
+      if (!assetTagIdToDocumentUrls.has(doc.assetTagId)) {
+        assetTagIdToDocumentUrls.set(doc.assetTagId, new Set())
       }
-      assetTagIdToImageUrls.get(img.assetTagId)!.add(img.imageUrl)
-    })
-    
-    // Map database URLs to storage publicUrls (direct matching)
-    fileData.forEach(({ publicUrl }) => {
-      const normalizedPublicUrl = normalizeUrl(publicUrl)
-      
-      // Check if any database URL matches this publicUrl (exact or normalized)
-      allLinkedImages.forEach((img: { assetTagId: string; imageUrl: string }) => {
-        if (!img.assetTagId || !img.imageUrl) return
-        
-        const normalizedDbUrl = normalizeUrl(img.imageUrl)
-        
-        // Match by exact URL or normalized URL
-        if (img.imageUrl === publicUrl || normalizedDbUrl === normalizedPublicUrl) {
-          if (!imageUrlToAssetTagIds.has(publicUrl)) {
-            imageUrlToAssetTagIds.set(publicUrl, new Set())
-          }
-          imageUrlToAssetTagIds.get(publicUrl)!.add(img.assetTagId)
-        }
-      })
+      assetTagIdToDocumentUrls.get(doc.assetTagId)!.add(doc.documentUrl)
     })
 
-    // Also check for filename matches in imageUrl (bidirectional matching)
-    // Match database URLs to file URLs by filename
-    fileData.forEach(({ publicUrl, actualFileName }) => {
-      if (!actualFileName) return
+    // Also check for filename matches in documentUrl
+    fileData.forEach(({ publicUrl, assetTagId, actualFileName }) => {
+      if (!assetTagId) return
       
-      // Normalize the public URL for comparison
-      const normalizedPublicUrl = normalizeUrl(publicUrl)
-      const fileNameLower = actualFileName.toLowerCase()
+      const matchingUrls = Array.from(assetTagIdToDocumentUrls.get(assetTagId) || [])
+        .filter(url => url.includes(actualFileName))
       
-      // Find all database image URLs that contain this filename
-      allLinkedImages.forEach((img: { assetTagId: string; imageUrl: string }) => {
-        if (!img.assetTagId || !img.imageUrl) return
-        
-        // Normalize database URL for comparison
-        const normalizedDbUrl = normalizeUrl(img.imageUrl)
-        const dbUrlLower = img.imageUrl.toLowerCase()
-        
-        // Check multiple matching strategies:
-        // 1. Exact URL match (normalized)
-        // 2. Database URL contains filename
-        // 3. Public URL contains filename from database
-        if (normalizedDbUrl === normalizedPublicUrl || 
-            dbUrlLower.includes(fileNameLower) || 
-            normalizedPublicUrl.includes(fileNameLower)) {
-          if (!imageUrlToAssetTagIds.has(publicUrl)) {
-            imageUrlToAssetTagIds.set(publicUrl, new Set())
-          }
-          imageUrlToAssetTagIds.get(publicUrl)!.add(img.assetTagId)
+      matchingUrls.forEach(url => {
+        if (!documentUrlToAssetTagIds.has(url)) {
+          documentUrlToAssetTagIds.set(url, new Set())
         }
+        documentUrlToAssetTagIds.get(url)!.add(assetTagId)
       })
     })
 
     // Get all unique asset tag IDs that are linked
     const allLinkedAssetTagIds = new Set<string>()
     fileData.forEach(({ publicUrl }) => {
-      const tagIds = imageUrlToAssetTagIds.get(publicUrl)
+      const tagIds = documentUrlToAssetTagIds.get(publicUrl)
       if (tagIds) {
         tagIds.forEach(id => allLinkedAssetTagIds.add(id))
       }
@@ -407,14 +356,22 @@ export async function GET(request: NextRequest) {
     }
 
     // Calculate total storage used from ALL files (not just paginated)
-    // Filter to only include files from assets_images folder
-    const imagesFiles = allFiles.filter(file => 
-      file.path.startsWith('assets_images/') || file.path.startsWith('assets/assets_images/')
+    // Filter to only include files from assets_documents folder
+    const documentsFiles = allFiles.filter(file => 
+      file.path.startsWith('assets_documents/') || file.path.startsWith('assets/assets_documents/')
     )
-    const allFileData = imagesFiles.map((file) => {
+    const allFileData = documentsFiles.map((file) => {
       const { data: urlData } = supabaseAdmin.storage
         .from(file.bucket)
         .getPublicUrl(file.path)
+
+      const pathParts = file.path.split('/')
+      const actualFileName = pathParts[pathParts.length - 1]
+      const fileNameWithoutExt = actualFileName.substring(0, actualFileName.lastIndexOf('.'))
+      const timestampMatch = fileNameWithoutExt.match(/-(20\d{2}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)$/)
+      const assetTagId = timestampMatch 
+        ? fileNameWithoutExt.substring(0, timestampMatch.index)
+        : fileNameWithoutExt.split('-')[0] || fileNameWithoutExt
 
       const publicUrl = urlData?.publicUrl || ''
 
@@ -429,65 +386,69 @@ export async function GET(request: NextRequest) {
     // Get metadata for all files from database
     const allFilePublicUrls = allFileData.map(fd => fd.publicUrl).filter(Boolean)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const allDbImages = await (prisma as any).assetsImage.findMany({
+    const allDbDocuments = await (prisma as any).assetsDocument.findMany({
       where: {
-        imageUrl: { in: allFilePublicUrls },
+        documentUrl: { in: allFilePublicUrls },
       },
       select: {
-        imageUrl: true,
-        imageType: true,
-        imageSize: true,
+        documentUrl: true,
+        documentType: true,
+        documentSize: true,
+        fileName: true,
+        mimeType: true,
       },
     })
 
-    const allImageUrlToMetadata = new Map<string, { imageType: string | null; imageSize: number | null }>()
-    allDbImages.forEach((img: { imageUrl: string; imageType: string | null; imageSize: number | null }) => {
-      if (img.imageUrl) {
-        allImageUrlToMetadata.set(img.imageUrl, {
-          imageType: img.imageType || null,
-          imageSize: img.imageSize || null,
+    const allDocumentUrlToMetadata = new Map<string, { documentType: string | null; documentSize: number | null; fileName: string | null; mimeType: string | null }>()
+    allDbDocuments.forEach((doc: { documentUrl: string; documentType: string | null; documentSize: number | null; fileName: string | null; mimeType: string | null }) => {
+      if (doc.documentUrl) {
+        allDocumentUrlToMetadata.set(doc.documentUrl, {
+          documentType: doc.documentType || null,
+          documentSize: doc.documentSize || null,
+          fileName: doc.fileName || null,
+          mimeType: doc.mimeType || null,
         })
       }
     })
 
     // Calculate total storage used from all files
     const totalStorageUsed = allFileData.reduce((sum, { publicUrl, storageSize }) => {
-      const dbMetadata = allImageUrlToMetadata.get(publicUrl) || { imageType: null, imageSize: null }
-      const imageSize = storageSize || dbMetadata.imageSize || null
-      return sum + (imageSize || 0)
+      const dbMetadata = allDocumentUrlToMetadata.get(publicUrl) || { documentType: null, documentSize: null, fileName: null, mimeType: null }
+      const documentSize = storageSize || dbMetadata.documentSize || null
+      return sum + (documentSize || 0)
     }, 0)
 
-    // Build the response (only for paginated images)
-    const images = fileData.map(({ file, publicUrl, assetTagId, actualFileName, storageSize, storageMimeType }) => {
-      // Find matching database imageUrl(s) for this publicUrl
+    // Build the response (only for paginated documents)
+    const documents = fileData.map(({ file, publicUrl, assetTagId, actualFileName, storageSize, storageMimeType }) => {
+      // Find matching database documentUrl(s) for this publicUrl
       // Check both exact match and normalized match
       const normalizedPublicUrl = normalizeUrl(publicUrl)
-      let matchingDbImageUrl: string | null = null
+      let matchingDbDocumentUrl: string | null = null
       
-      // Find the database imageUrl that matches this publicUrl
-      for (const [dbImageUrl] of imageUrlToAssetTagIds.entries()) {
-        const normalizedDbUrl = normalizeUrl(dbImageUrl)
-        if (dbImageUrl === publicUrl || normalizedDbUrl === normalizedPublicUrl) {
-          matchingDbImageUrl = dbImageUrl
+      // Find the database documentUrl that matches this publicUrl
+      for (const [dbDocumentUrl] of documentUrlToAssetTagIds.keys()) {
+        const normalizedDbUrl = normalizeUrl(dbDocumentUrl)
+        if (dbDocumentUrl === publicUrl || normalizedDbUrl === normalizedPublicUrl) {
+          matchingDbDocumentUrl = dbDocumentUrl
           break
         }
       }
       
       // Also check by filename if no exact match found
-      if (!matchingDbImageUrl && actualFileName) {
-        for (const [dbImageUrl] of imageUrlToAssetTagIds.entries()) {
-          if (dbImageUrl.toLowerCase().includes(actualFileName.toLowerCase())) {
-            matchingDbImageUrl = dbImageUrl
+      if (!matchingDbDocumentUrl && actualFileName) {
+        for (const [dbDocumentUrl] of documentUrlToAssetTagIds.keys()) {
+          if (dbDocumentUrl.toLowerCase().includes(actualFileName.toLowerCase())) {
+            matchingDbDocumentUrl = dbDocumentUrl
             break
           }
         }
       }
       
-      // Use database imageUrl if found, otherwise use storage publicUrl
-      const finalImageUrl = matchingDbImageUrl || publicUrl
+      // Use database documentUrl if found, otherwise use storage publicUrl
+      const finalDocumentUrl = matchingDbDocumentUrl || publicUrl
       
-      // Get linked asset tag IDs using the final imageUrl (database URL takes precedence)
-      const linkedAssetTagIds = Array.from(imageUrlToAssetTagIds.get(finalImageUrl) || imageUrlToAssetTagIds.get(publicUrl) || [])
+      // Get linked asset tag IDs using the final documentUrl (database URL takes precedence)
+      const linkedAssetTagIds = Array.from(documentUrlToAssetTagIds.get(finalDocumentUrl) || documentUrlToAssetTagIds.get(publicUrl) || [])
       const linkedAssetsInfo = linkedAssetTagIds.map(tagId => ({
         assetTagId: tagId,
         isDeleted: linkedAssetsInfoMap.get(tagId) || false,
@@ -495,31 +456,34 @@ export async function GET(request: NextRequest) {
       const hasDeletedAsset = linkedAssetsInfo.some(info => info.isDeleted)
       
       // Get metadata - prefer database metadata if using database URL
-      const dbMetadata = imageUrlToMetadata.get(finalImageUrl) || imageUrlToMetadata.get(publicUrl) || { imageType: null, imageSize: null }
+      const dbMetadata = documentUrlToMetadata.get(finalDocumentUrl) || documentUrlToMetadata.get(publicUrl) || { documentType: null, documentSize: null, fileName: null, mimeType: null }
 
       // Prefer storage metadata over database metadata (storage is source of truth)
       // Fallback to database metadata if storage metadata is not available
-      const imageType = storageMimeType || dbMetadata.imageType || null
-      const imageSize = storageSize || dbMetadata.imageSize || null
+      const documentType = dbMetadata.documentType || null
+      const documentSize = storageSize || dbMetadata.documentSize || null
+      const fileName = dbMetadata.fileName || actualFileName
+      const mimeType = storageMimeType || dbMetadata.mimeType || null
 
       return {
         id: file.id || file.path,
-        imageUrl: finalImageUrl, // Use database imageUrl if available, otherwise storage publicUrl
+        documentUrl: finalDocumentUrl, // Use database documentUrl if available, otherwise storage publicUrl
         assetTagId,
-        fileName: actualFileName,
+        fileName: fileName,
         createdAt: file.created_at || new Date().toISOString(),
         isLinked: linkedAssetTagIds.length > 0,
         linkedAssetTagId: linkedAssetTagIds[0] || null, // Keep first one for backward compatibility
         linkedAssetTagIds: linkedAssetTagIds, // Array of all linked asset tag IDs
         linkedAssetsInfo: linkedAssetsInfo, // Array with deletion status for each
         assetIsDeleted: hasDeletedAsset,
-        imageType: imageType,
-        imageSize: imageSize,
+        documentType: documentType,
+        documentSize: documentSize,
+        mimeType: mimeType,
       }
     })
 
     return NextResponse.json({
-      images,
+      documents,
       pagination: {
         total: totalCount,
         page,
@@ -532,9 +496,9 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error fetching media:', error)
+    console.error('Error fetching documents:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch media' },
+      { error: 'Failed to fetch documents' },
       { status: 500 }
     )
   }

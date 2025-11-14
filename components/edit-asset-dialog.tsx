@@ -21,6 +21,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { MediaBrowserDialog } from '@/components/media-browser-dialog'
+import { DocumentBrowserDialog } from '@/components/document-browser-dialog'
+import { DownloadConfirmationDialog } from '@/components/download-confirmation-dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,7 +38,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Controller } from 'react-hook-form'
-import { Upload, Image as ImageIcon, Eye, X, PlusIcon } from 'lucide-react'
+import { Upload, Image as ImageIcon, Eye, X, PlusIcon, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import { editAssetSchema, type EditAssetFormData } from '@/lib/validations/assets'
@@ -110,10 +112,25 @@ export function EditAssetDialog({
   const [mediaBrowserOpen, setMediaBrowserOpen] = useState(false)
   const [previewImageIndex, setPreviewImageIndex] = useState(0)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [previewSource, setPreviewSource] = useState<'images' | 'documents'>('images')
   const [, startTransition] = useTransition()
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false)
   const [subCategoryDialogOpen, setSubCategoryDialogOpen] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  
+  // Document states
+  const [selectedDocuments, setSelectedDocuments] = useState<File[]>([])
+  const [selectedExistingDocuments, setSelectedExistingDocuments] = useState<Array<{ id: string; documentUrl: string; fileName: string }>>([])
+  const [uploadingDocuments, setUploadingDocuments] = useState(false)
+  const [documentUploadProgress, setDocumentUploadProgress] = useState<number>(0)
+  const [documentBrowserOpen, setDocumentBrowserOpen] = useState(false)
+  const [documentToDelete, setDocumentToDelete] = useState<string | null>(null)
+  const [isDeleteDocumentDialogOpen, setIsDeleteDocumentDialogOpen] = useState(false)
+  const [isDeletingDocument, setIsDeletingDocument] = useState(false)
+  const [documentToDownload, setDocumentToDownload] = useState<{ id: string; documentUrl: string; fileName?: string; mimeType?: string | null; documentSize?: number | null } | null>(null)
+  const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false)
+  const [isUnsavedChangesDialogOpen, setIsUnsavedChangesDialogOpen] = useState(false)
+  const documentInputRef = useRef<HTMLInputElement>(null)
 
   // Categories and subcategories - only fetch when dialog is open to avoid unnecessary requests
   const { data: categories = [] } = useCategories(open)
@@ -229,15 +246,62 @@ export function EditAssetDialog({
     } else {
       setSelectedImages([])
       setSelectedExistingImages([])
+      setSelectedDocuments([])
+      setSelectedExistingDocuments([])
     }
   }, [open, asset, form])
+
+  // Create object URLs for selected documents
+  const selectedDocumentUrls = useMemo(() => {
+    return selectedDocuments.map(file => URL.createObjectURL(file))
+  }, [selectedDocuments])
 
   // Cleanup object URLs when component unmounts or selectedImages change
   useEffect(() => {
     return () => {
       selectedImageUrls.forEach(url => URL.revokeObjectURL(url))
+      selectedDocumentUrls.forEach(url => URL.revokeObjectURL(url))
     }
-  }, [selectedImageUrls])
+  }, [selectedImageUrls, selectedDocumentUrls])
+
+  // Check if there are unsaved changes
+  const hasUnsavedChanges = useMemo(() => {
+    const formIsDirty = form.formState.isDirty
+    const hasSelectedImages = selectedImages.length > 0 || selectedExistingImages.length > 0
+    const hasSelectedDocuments = selectedDocuments.length > 0 || selectedExistingDocuments.length > 0
+    return formIsDirty || hasSelectedImages || hasSelectedDocuments
+  }, [form.formState.isDirty, selectedImages.length, selectedExistingImages.length, selectedDocuments.length, selectedExistingDocuments.length])
+
+  // Handle dialog close with unsaved changes check
+  const handleDialogClose = useCallback((shouldClose: boolean) => {
+    if (!shouldClose) {
+      // Dialog is being closed
+      if (hasUnsavedChanges) {
+        // Show confirmation dialog
+        setIsUnsavedChangesDialogOpen(true)
+      } else {
+        // No unsaved changes, close immediately
+        onOpenChange(false)
+      }
+    } else {
+      // Dialog is being opened
+      setIsUnsavedChangesDialogOpen(false)
+      onOpenChange(true)
+    }
+  }, [hasUnsavedChanges, onOpenChange])
+
+  // Handle unsaved changes confirmation
+  const handleDiscardChanges = useCallback(() => {
+    setIsUnsavedChangesDialogOpen(false)
+    // Reset form and clear selections
+    form.reset()
+    setSelectedImages([])
+    setSelectedExistingImages([])
+    setSelectedDocuments([])
+    setSelectedExistingDocuments([])
+    // Close dialog
+    onOpenChange(false)
+  }, [form, onOpenChange])
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Asset> }) => updateAsset(id, data),
@@ -281,6 +345,28 @@ export function EditAssetDialog({
   })
 
   const existingImages = existingImagesData?.images || []
+
+  // Fetch documents using React Query for caching
+  const { data: existingDocumentsData, isLoading: loadingExistingDocuments, refetch: refetchExistingDocuments } = useQuery({
+    queryKey: ['assets', 'documents', asset.assetTagId],
+    queryFn: async () => {
+      if (!asset.assetTagId) return { documents: [] }
+      const response = await fetch(`/api/assets/documents/${asset.assetTagId}`)
+      if (response.ok) {
+        const data = await response.json()
+        return { documents: data.documents || [] }
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Failed to fetch documents:', errorData)
+        return { documents: [] }
+      }
+    },
+    enabled: open && !!asset.assetTagId,
+    staleTime: 0,
+    gcTime: 10 * 60 * 1000,
+  })
+
+  const existingDocuments = existingDocumentsData?.documents || []
 
   // Check if asset tag ID exists (excluding current asset)
   const checkAssetTagExists = useCallback(async (assetTagId: string): Promise<boolean> => {
@@ -441,6 +527,110 @@ export function EditAssetDialog({
     }
   }
 
+  const uploadDocument = async (file: File, assetTagId: string, onProgress?: (progress: number) => void): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('assetTagId', assetTagId)
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && onProgress) {
+          const percentComplete = (e.loaded / e.total) * 100
+          onProgress(percentComplete)
+        }
+      })
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve()
+        } else {
+          try {
+            const error = JSON.parse(xhr.responseText)
+            reject(new Error(error.error || 'Failed to upload document'))
+          } catch {
+            reject(new Error('Failed to upload document'))
+          }
+        }
+      })
+
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error while uploading document'))
+      })
+
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload aborted'))
+      })
+
+      xhr.open('POST', '/api/assets/upload-document')
+      xhr.send(formData)
+    })
+  }
+
+  const linkExistingDocument = async (documentUrl: string, assetTagId: string): Promise<void> => {
+    const response = await fetch('/api/assets/upload-document', {
+      method: 'POST',
+      body: JSON.stringify({
+        documentUrl,
+        assetTagId,
+        linkExisting: true,
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to link document')
+    }
+  }
+
+  const handleDeleteDocumentClick = (documentId: string) => {
+    setDocumentToDelete(documentId)
+    setIsDeleteDocumentDialogOpen(true)
+  }
+
+  const deleteExistingDocument = async () => {
+    if (!documentToDelete) return
+
+    setIsDeletingDocument(true)
+    try {
+      const response = await fetch(`/api/assets/documents/delete/${documentToDelete}`, {
+        method: 'DELETE',
+      })
+      if (response.ok) {
+        queryClient.invalidateQueries({ queryKey: ['assets', 'documents', asset.assetTagId] })
+        queryClient.invalidateQueries({ queryKey: ['assets'] })
+        queryClient.invalidateQueries({ queryKey: ['assets-list'] })
+        queryClient.invalidateQueries({ queryKey: ['assets', 'documents'] })
+        toast.success('Document deleted successfully')
+        setIsDeleteDocumentDialogOpen(false)
+        setDocumentToDelete(null)
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        if (response.status === 404) {
+          queryClient.invalidateQueries({ queryKey: ['assets', 'documents', asset.assetTagId] })
+          queryClient.invalidateQueries({ queryKey: ['assets'] })
+          queryClient.invalidateQueries({ queryKey: ['assets-list'] })
+          queryClient.invalidateQueries({ queryKey: ['assets', 'documents'] })
+          toast.success('Document removed')
+        } else {
+          toast.error(errorData.error || 'Failed to delete document')
+        }
+        setIsDeleteDocumentDialogOpen(false)
+        setDocumentToDelete(null)
+      }
+    } catch (error) {
+      console.error('Error deleting document:', error)
+      toast.error('Failed to delete document')
+      setIsDeleteDocumentDialogOpen(false)
+      setDocumentToDelete(null)
+    } finally {
+      setIsDeletingDocument(false)
+    }
+  }
+
   const onSubmit = async (data: EditAssetFormData) => {
     // Final uniqueness check if asset tag changed
     if (data.assetTagId !== asset.assetTagId) {
@@ -483,62 +673,109 @@ export function EditAssetDialog({
 
       const updatedAssetTagId = data.assetTagId.trim()
       const totalImages = selectedImages.length + selectedExistingImages.length
-      if (totalImages > 0 && updatedAssetTagId) {
-        setUploadingImages(true)
-        setUploadProgress(0)
-        try {
-          if (selectedImages.length > 0) {
-            const totalNewImages = selectedImages.length
-            let uploadedCount = 0
-
-            for (let i = 0; i < selectedImages.length; i++) {
-              await uploadImage(selectedImages[i], updatedAssetTagId, (progress) => {
-                const overallProgress = ((uploadedCount + progress / 100) / totalNewImages) * 100
-                setUploadProgress(Math.min(overallProgress, 100))
-              })
-              uploadedCount++
-              setUploadProgress((uploadedCount / totalNewImages) * 100)
-            }
-          }
-
-          if (selectedExistingImages.length > 0) {
-            await Promise.all(
-              selectedExistingImages.map(img => linkExistingImage(img.imageUrl, updatedAssetTagId))
-            )
-          }
-
-          toast.success(`Asset updated successfully with ${totalImages} image(s)`)
-          // Close dialog immediately for responsive UX
-          onOpenChange(false)
-          // Cleanup state in transition (non-urgent)
-          startTransition(() => {
-            setSelectedImages([])
-            setSelectedExistingImages([])
-            setUploadProgress(0)
-          })
-          // Invalidate queries in background (non-blocking)
-          queryClient.invalidateQueries({ queryKey: ['assets', 'images', updatedAssetTagId] })
-          if (updatedAssetTagId !== asset.assetTagId) {
-            queryClient.invalidateQueries({ queryKey: ['assets', 'images', asset.assetTagId] })
-          }
-          queryClient.invalidateQueries({ queryKey: ['assets', 'media'] })
-          refetchExistingImages()
-          queryClient.refetchQueries({ queryKey: ['assets'] })
-          queryClient.refetchQueries({ queryKey: ['assets-list'] })
-        } catch (error) {
-          console.error('Error uploading images:', error)
-          toast.error('Asset updated but some images failed to upload')
+      const totalDocuments = selectedDocuments.length + selectedExistingDocuments.length
+      
+      if ((totalImages > 0 || totalDocuments > 0) && updatedAssetTagId) {
+        if (totalImages > 0) {
+          setUploadingImages(true)
           setUploadProgress(0)
-        } finally {
-          setUploadingImages(false)
+          try {
+            if (selectedImages.length > 0) {
+              const totalNewImages = selectedImages.length
+              let uploadedCount = 0
+
+              for (let i = 0; i < selectedImages.length; i++) {
+                await uploadImage(selectedImages[i], updatedAssetTagId, (progress) => {
+                  const overallProgress = ((uploadedCount + progress / 100) / totalNewImages) * 100
+                  setUploadProgress(Math.min(overallProgress, 100))
+                })
+                uploadedCount++
+                setUploadProgress((uploadedCount / totalNewImages) * 100)
+              }
+            }
+
+            if (selectedExistingImages.length > 0) {
+              await Promise.all(
+                selectedExistingImages.map(img => linkExistingImage(img.imageUrl, updatedAssetTagId))
+              )
+            }
+          } catch (error) {
+            console.error('Error uploading images:', error)
+            toast.error('Asset updated but some images failed to upload')
+            setUploadProgress(0)
+          } finally {
+            setUploadingImages(false)
+          }
         }
+
+        if (totalDocuments > 0) {
+          setUploadingDocuments(true)
+          setDocumentUploadProgress(0)
+          try {
+            if (selectedDocuments.length > 0) {
+              const totalNewDocuments = selectedDocuments.length
+              let uploadedCount = 0
+
+              for (let i = 0; i < selectedDocuments.length; i++) {
+                await uploadDocument(selectedDocuments[i], updatedAssetTagId, (progress) => {
+                  const overallProgress = ((uploadedCount + progress / 100) / totalNewDocuments) * 100
+                  setDocumentUploadProgress(Math.min(overallProgress, 100))
+                })
+                uploadedCount++
+                setDocumentUploadProgress((uploadedCount / totalNewDocuments) * 100)
+              }
+            }
+
+            if (selectedExistingDocuments.length > 0) {
+              await Promise.all(
+                selectedExistingDocuments.map(doc => linkExistingDocument(doc.documentUrl, updatedAssetTagId))
+              )
+            }
+          } catch (error) {
+            console.error('Error uploading documents:', error)
+            toast.error('Asset updated but some documents failed to upload')
+            setDocumentUploadProgress(0)
+          } finally {
+            setUploadingDocuments(false)
+          }
+        }
+
+        const mediaCount = totalImages + totalDocuments
+        toast.success(`Asset updated successfully with ${mediaCount} file(s)`)
+        // Close dialog immediately for responsive UX
+        onOpenChange(false)
+        // Cleanup state in transition (non-urgent)
+        startTransition(() => {
+          setSelectedImages([])
+          setSelectedExistingImages([])
+          setSelectedDocuments([])
+          setSelectedExistingDocuments([])
+          setUploadProgress(0)
+          setDocumentUploadProgress(0)
+          form.reset() // Reset form to clear dirty state
+        })
+        // Invalidate queries in background (non-blocking)
+        queryClient.invalidateQueries({ queryKey: ['assets', 'images', updatedAssetTagId] })
+        queryClient.invalidateQueries({ queryKey: ['assets', 'documents', updatedAssetTagId] })
+        if (updatedAssetTagId !== asset.assetTagId) {
+          queryClient.invalidateQueries({ queryKey: ['assets', 'images', asset.assetTagId] })
+          queryClient.invalidateQueries({ queryKey: ['assets', 'documents', asset.assetTagId] })
+        }
+        queryClient.invalidateQueries({ queryKey: ['assets', 'media'] })
+        queryClient.invalidateQueries({ queryKey: ['assets', 'documents'] })
+        refetchExistingImages()
+        refetchExistingDocuments()
+        queryClient.refetchQueries({ queryKey: ['assets'] })
+        queryClient.refetchQueries({ queryKey: ['assets-list'] })
       } else {
         toast.success('Asset updated successfully')
         // Close dialog immediately for better UX
         onOpenChange(false)
         // Invalidate queries in background (non-blocking)
         queryClient.invalidateQueries({ queryKey: ['assets', 'images', asset.assetTagId] })
+        queryClient.invalidateQueries({ queryKey: ['assets', 'documents', asset.assetTagId] })
         refetchExistingImages()
+        refetchExistingDocuments()
         queryClient.refetchQueries({ queryKey: ['assets'] })
         queryClient.refetchQueries({ queryKey: ['assets-list'] })
       }
@@ -549,7 +786,7 @@ export function EditAssetDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={handleDialogClose}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Asset</DialogTitle>
@@ -975,6 +1212,7 @@ export function EditAssetDialog({
                               className="relative group border rounded-lg overflow-visible cursor-pointer"
                               onClick={() => {
                                 // Set the index of the clicked image and open preview
+                                setPreviewSource('images')
                                 setPreviewImageIndex(index)
                                 setIsPreviewOpen(true)
                               }}
@@ -1077,7 +1315,12 @@ export function EditAssetDialog({
                               accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
                               multiple
                               className="hidden"
+                              onClick={(e) => {
+                                // Prevent any accidental form submission
+                                e.stopPropagation()
+                              }}
                               onChange={(e) => {
+                                e.stopPropagation()
                                 const files = Array.from(e.target.files || [])
 
                                 const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
@@ -1095,6 +1338,7 @@ export function EditAssetDialog({
                                   return true
                                 })
 
+                                // Only add to state - upload will happen on form submit
                                 setSelectedImages(prev => [...prev, ...validFiles])
 
                                 if (imageInputRef.current) {
@@ -1115,7 +1359,9 @@ export function EditAssetDialog({
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="start">
                                 <DropdownMenuItem
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
                                     imageInputRef.current?.click()
                                   }}
                                 >
@@ -1123,7 +1369,9 @@ export function EditAssetDialog({
                                   Upload Images
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
                                     setMediaBrowserOpen(true)
                                   }}
                                 >
@@ -1137,15 +1385,309 @@ export function EditAssetDialog({
                       </div>
                     )}
                   </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="documents">Asset Documents</Label>
+
+                    {loadingExistingDocuments ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Spinner className="h-4 w-4" />
+                      </div>
+                    ) : (
+                      <div className="space-y-2 mb-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                          {existingDocuments.map((doc: { id: string; documentUrl: string; assetTagId: string; fileName?: string; mimeType?: string | null; documentSize?: number | null; createdAt?: string }) => {
+                            const isImage = doc.mimeType?.startsWith('image/') || 
+                              /\.(jpg|jpeg|png|gif|webp)$/i.test(doc.fileName || '')
+                            return (
+                              <div
+                                key={doc.id}
+                                className="relative group border rounded-lg overflow-visible cursor-pointer"
+                                onClick={() => {
+                                  if (isImage) {
+                                    // Find index of this document among image documents
+                                    // The preview dialog shows: [existingImages, ...imageDocuments]
+                                    // So we need to offset by existingImages.length
+                                    const imageDocuments = existingDocuments.filter((document: { mimeType?: string | null; fileName?: string }) => {
+                                      const docIsImage = document.mimeType?.startsWith('image/') || 
+                                        /\.(jpg|jpeg|png|gif|webp)$/i.test(document.fileName || '')
+                                      return docIsImage
+                                    })
+                                    const imageIndex = imageDocuments.findIndex((document: { id: string }) => document.id === doc.id)
+                                    if (imageIndex >= 0) {
+                                      // Show only document images when clicking from documents section
+                                      setPreviewSource('documents')
+                                      setPreviewImageIndex(imageIndex)
+                                      setIsPreviewOpen(true)
+                                    }
+                                  } else {
+                                    // For non-image documents, open in new tab or show download confirmation
+                                    const isPdf = doc.mimeType === 'application/pdf' || 
+                                      /\.pdf$/i.test(doc.fileName || '')
+                                    const isDownloadable = doc.mimeType?.includes('excel') || 
+                                      doc.mimeType?.includes('spreadsheet') ||
+                                      doc.mimeType?.includes('word') ||
+                                      doc.mimeType?.includes('document') ||
+                                      /\.(xls|xlsx|doc|docx)$/i.test(doc.fileName || '')
+                                    
+                                    if (isPdf) {
+                                      // PDF: open in new tab
+                                      window.open(doc.documentUrl, '_blank')
+                                    } else if (isDownloadable) {
+                                      // Excel, Word, etc.: show download confirmation dialog
+                                      setDocumentToDownload({
+                                        id: doc.id,
+                                        documentUrl: doc.documentUrl,
+                                        fileName: doc.fileName,
+                                        mimeType: doc.mimeType,
+                                        documentSize: doc.documentSize,
+                                      })
+                                      setIsDownloadDialogOpen(true)
+                                    } else {
+                                      // Other files: try to open in new tab
+                                      window.open(doc.documentUrl, '_blank')
+                                    }
+                                  }
+                                }}
+                              >
+                                <div className="aspect-square bg-muted relative overflow-hidden rounded-lg flex items-center justify-center">
+                                  {isImage ? (
+                                    <Image
+                                      src={doc.documentUrl}
+                                      alt={doc.fileName || 'Document'}
+                                      fill
+                                      className="object-cover"
+                                      unoptimized
+                                    />
+                                  ) : (
+                                    <FileText className="h-12 w-12 text-muted-foreground" />
+                                  )}
+                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center z-10">
+                                    <div className="bg-white/50 rounded-full p-3 shadow-lg">
+                                      <Eye className="h-6 w-6 text-black" />
+                                    </div>
+                                  </div>
+                                </div>
+                                {doc.fileName && !isImage && (
+                                  <div className="absolute inset-x-0 bottom-0 bg-black/70 text-white text-[10px] px-1 py-0.5 truncate rounded-b-lg">
+                                    {doc.fileName}
+                                  </div>
+                                )}
+                                <Button
+                                  type="button"
+                                  variant="default"
+                                  size="icon"
+                                  className="absolute top-0 right-0 h-5 w-5 bg-red-500 hover:bg-red-400 rounded-tr-lg rounded-br-none rounded-tl-none z-20 shadow-lg"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteDocumentClick(doc.id)
+                                  }}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            )
+                          })}
+                          {selectedExistingDocuments.map((doc) => {
+                            const isImage = doc.documentUrl && (
+                              doc.documentUrl.includes('.jpg') || 
+                              doc.documentUrl.includes('.jpeg') || 
+                              doc.documentUrl.includes('.png') || 
+                              doc.documentUrl.includes('.gif') || 
+                              doc.documentUrl.includes('.webp')
+                            )
+                            return (
+                              <div key={doc.id} className="relative group border rounded-lg overflow-hidden">
+                                <div className="aspect-square bg-muted relative overflow-hidden rounded-lg flex items-center justify-center">
+                                  {isImage ? (
+                                    <Image
+                                      src={doc.documentUrl}
+                                      alt={doc.fileName}
+                                      fill
+                                      className="object-cover"
+                                      unoptimized
+                                    />
+                                  ) : (
+                                    <FileText className="h-12 w-12 text-muted-foreground" />
+                                  )}
+                                  {uploadingDocuments && (
+                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-30">
+                                      <div className="text-center">
+                                        <div className="text-white text-sm font-medium mb-1">
+                                          {Math.round(documentUploadProgress)}%
+                                        </div>
+                                        <div className="w-16 h-1 bg-white/30 rounded-full overflow-hidden">
+                                          <div
+                                            className="h-full bg-white transition-all duration-300"
+                                            style={{ width: `${documentUploadProgress}%` }}
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                {doc.fileName && !isImage && (
+                                  <div className="absolute inset-x-0 bottom-0 bg-black/70 text-white text-[10px] px-1 py-0.5 truncate rounded-b-lg">
+                                    {doc.fileName}
+                                  </div>
+                                )}
+                                {!uploadingDocuments && (
+                                  <Button
+                                    type="button"
+                                    variant="default"
+                                    size="icon"
+                                    className="absolute top-0 right-0 h-5 w-5 bg-red-500 hover:bg-red-400 rounded-tr-lg rounded-br-none rounded-tl-none z-20 shadow-lg"
+                                    onClick={() => setSelectedExistingDocuments(prev => prev.filter(d => d.id !== doc.id))}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
+                            )
+                          })}
+                          {selectedDocuments.map((file, index) => {
+                            const isImage = file.type.startsWith('image/')
+                            return (
+                              <div key={`selected-doc-${index}`} className="relative group border rounded-lg overflow-hidden">
+                                <div className="aspect-square bg-muted relative overflow-hidden rounded-lg flex items-center justify-center">
+                                  {isImage ? (
+                                    <Image
+                                      src={selectedDocumentUrls[index]}
+                                      alt={file.name}
+                                      fill
+                                      className="object-cover"
+                                      unoptimized
+                                    />
+                                  ) : (
+                                    <FileText className="h-12 w-12 text-muted-foreground" />
+                                  )}
+                                  {uploadingDocuments && (
+                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-30">
+                                      <div className="text-center">
+                                        <div className="text-white text-sm font-medium mb-1">
+                                          {Math.round(documentUploadProgress)}%
+                                        </div>
+                                        <div className="w-16 h-1 bg-white/30 rounded-full overflow-hidden">
+                                          <div
+                                            className="h-full bg-white transition-all duration-300"
+                                            style={{ width: `${documentUploadProgress}%` }}
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                {file.name && !isImage && (
+                                  <div className="absolute inset-x-0 bottom-0 bg-black/70 text-white text-[10px] px-1 py-0.5 truncate rounded-b-lg">
+                                    {file.name}
+                                  </div>
+                                )}
+                                {!uploadingDocuments && (
+                                  <Button
+                                    type="button"
+                                    variant="default"
+                                    size="icon"
+                                    className="absolute top-0 right-0 h-5 w-5 bg-red-500 hover:bg-red-400 rounded-tr-lg rounded-br-none rounded-tl-none z-20 shadow-lg"
+                                    onClick={() => setSelectedDocuments(prev => prev.filter((_, i) => i !== index))}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
+                            )
+                          })}
+                          <div className="aspect-square border-2 border-dashed border-muted rounded-lg flex items-center justify-center">
+                            <input
+                              ref={documentInputRef}
+                              type="file"
+                              accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.rtf,.jpg,.jpeg,.png,.gif,.webp"
+                              multiple
+                              className="hidden"
+                              onClick={(e) => {
+                                // Prevent any accidental form submission
+                                e.stopPropagation()
+                              }}
+                              onChange={(e) => {
+                                e.stopPropagation()
+                                const files = Array.from(e.target.files || [])
+                                const allowedTypes = [
+                                  'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                  'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                  'text/plain', 'text/csv', 'application/rtf',
+                                  'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+                                ]
+                                const allowedExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv', '.rtf', '.jpg', '.jpeg', '.png', '.gif', '.webp']
+                                const maxSize = 5 * 1024 * 1024 // 5MB
+
+                                const validFiles = files.filter(file => {
+                                  const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase()
+                                  if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
+                                    toast.error(`${file.name} is not a valid document type. Only PDF, DOC, DOCX, XLS, XLSX, TXT, CSV, RTF, JPEG, PNG, GIF, and WebP are allowed.`)
+                                    return false
+                                  }
+                                  if (file.size > maxSize) {
+                                    toast.error(`${file.name} is too large. Maximum size is 5MB.`)
+                                    return false
+                                  }
+                                  return true
+                                })
+
+                                // Only add to state - upload will happen on form submit
+                                setSelectedDocuments(prev => [...prev, ...validFiles])
+
+                                if (documentInputRef.current) {
+                                  documentInputRef.current.value = ''
+                                }
+                              }}
+                            />
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-full w-full"
+                                >
+                                  <Upload className="h-6 w-6" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start">
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    documentInputRef.current?.click()
+                                  }}
+                                >
+                                  <Upload className="mr-2 h-4 w-4" />
+                                  Upload Documents
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    setDocumentBrowserOpen(true)
+                                  }}
+                                >
+                                  <FileText className="mr-2 h-4 w-4" />
+                                  Select from Media
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </ScrollArea>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => handleDialogClose(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={updateMutation.isPending || uploadingImages}>
-                {updateMutation.isPending ? (
+              <Button type="submit" disabled={updateMutation.isPending || uploadingImages || uploadingDocuments}>
+                {updateMutation.isPending || uploadingImages || uploadingDocuments ? (
                   <>
                     <Spinner className="mr-2 h-4 w-4" />
                     Saving...
@@ -1169,6 +1711,15 @@ export function EditAssetDialog({
         existingImageUrls={existingImages.map((img: { imageUrl: string }) => img.imageUrl)}
       />
 
+      <DocumentBrowserDialog
+        open={documentBrowserOpen}
+        onOpenChange={setDocumentBrowserOpen}
+        selectedDocuments={selectedExistingDocuments}
+        onSelectDocuments={setSelectedExistingDocuments}
+        pageSize={24}
+        currentAssetTagId={asset.assetTagId}
+      />
+
       <DeleteConfirmationDialog
         open={isDeleteImageDialogOpen}
         onOpenChange={setIsDeleteImageDialogOpen}
@@ -1179,16 +1730,75 @@ export function EditAssetDialog({
         isLoading={isDeletingImage}
       />
 
+      <DeleteConfirmationDialog
+        open={isDeleteDocumentDialogOpen}
+        onOpenChange={setIsDeleteDocumentDialogOpen}
+        onConfirm={deleteExistingDocument}
+        title="Delete Document"
+        description="Are you sure you want to delete this document? This action cannot be undone."
+        confirmLabel="Delete Document"
+        isLoading={isDeletingDocument}
+      />
+
+      {/* Unsaved Changes Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        open={isUnsavedChangesDialogOpen}
+        onOpenChange={setIsUnsavedChangesDialogOpen}
+        onConfirm={handleDiscardChanges}
+        title="Unsaved Changes"
+        description="You have unsaved changes. Are you sure you want to close? All unsaved changes will be lost."
+        confirmLabel="Discard Changes"
+        cancelLabel="Keep Editing"
+      />
+
+      {/* Download Confirmation Dialog */}
+      <DownloadConfirmationDialog
+        open={isDownloadDialogOpen}
+        onOpenChange={setIsDownloadDialogOpen}
+        fileName={documentToDownload?.fileName || null}
+        fileSize={documentToDownload?.documentSize || null}
+        onConfirm={() => {
+          if (documentToDownload) {
+            // Create a temporary anchor element to trigger download
+            const link = document.createElement('a')
+            link.href = documentToDownload.documentUrl
+            link.download = documentToDownload.fileName || 'download'
+            link.target = '_blank'
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+          }
+          setDocumentToDownload(null)
+        }}
+        onCancel={() => {
+          setDocumentToDownload(null)
+        }}
+      />
+
       {/* Image Preview Dialog */}
       <ImagePreviewDialog
         open={isPreviewOpen}
         onOpenChange={setIsPreviewOpen}
-        existingImages={existingImages.map((img: { id: string; imageUrl: string; assetTagId: string; fileName?: string; createdAt?: string }) => ({
-          id: img.id,
-          imageUrl: img.imageUrl,
-          fileName: img.fileName || `Image ${img.id}`,
-        }))}
-        title={`Asset Images - ${asset.assetTagId}`}
+        existingImages={
+          previewSource === 'images'
+            ? existingImages.map((img: { id: string; imageUrl: string; assetTagId: string; fileName?: string; createdAt?: string }) => ({
+                id: img.id,
+                imageUrl: img.imageUrl,
+                fileName: img.fileName || `Image ${img.id}`,
+              }))
+            : existingDocuments
+                .filter((doc: { mimeType?: string | null; fileName?: string }) => {
+                  const isImage = doc.mimeType?.startsWith('image/') || 
+                    /\.(jpg|jpeg|png|gif|webp)$/i.test(doc.fileName || '')
+                  return isImage
+                })
+                .map((doc: { id: string; documentUrl: string; fileName?: string }) => ({
+                  id: doc.id,
+                  imageUrl: doc.documentUrl,
+                  fileName: doc.fileName || `Document ${doc.id}`,
+                }))
+        }
+        title={previewSource === 'images' ? `Asset Images - ${asset.assetTagId}` : `Asset Documents - ${asset.assetTagId}`}
         maxHeight="h-[70vh] max-h-[600px]"
         initialIndex={previewImageIndex}
       />

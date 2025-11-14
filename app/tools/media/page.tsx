@@ -7,7 +7,6 @@ import { usePermissions } from '@/hooks/use-permissions'
 import Image from 'next/image'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import {
   Select,
   SelectContent,
@@ -28,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Eye, ChevronLeft, ChevronRight, MoreVertical, Trash2, Link2, ChevronDown, RotateCw, Upload } from 'lucide-react'
+import { Eye, ChevronLeft, ChevronRight, MoreVertical, Trash2, Link2, ChevronDown, RotateCw, FileText, Image as ImageIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import {
   DropdownMenu,
@@ -38,11 +37,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { BulkDeleteDialog } from '@/components/bulk-delete-dialog'
+import { DownloadConfirmationDialog } from '@/components/download-confirmation-dialog'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
-import { ImagePreviewDialog, type ImagePreviewData } from '@/components/image-preview-dialog'
+import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 
 interface MediaImage {
   id: string
@@ -59,6 +59,22 @@ interface MediaImage {
   imageSize?: number | null
 }
 
+interface MediaDocument {
+  id: string
+  documentUrl: string
+  assetTagId: string
+  fileName: string
+  createdAt: string
+  isLinked?: boolean
+  linkedAssetTagId?: string | null
+  linkedAssetTagIds?: string[]
+  linkedAssetsInfo?: Array<{ assetTagId: string; isDeleted: boolean }>
+  assetIsDeleted?: boolean
+  documentType?: string | null
+  documentSize?: number | null
+  mimeType?: string | null
+}
+
 export default function MediaPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -66,30 +82,76 @@ export default function MediaPage() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canManageMedia = hasPermission('canManageMedia')
 
-  const [previewImage, setPreviewImage] = useState<MediaImage | null>(null)
+  // Initialize activeTab from URL params, default to 'media'
+  const tabFromUrl = searchParams.get('tab') as 'media' | 'documents' | null
+  const [activeTab, setActiveTab] = useState<'media' | 'documents'>(tabFromUrl === 'documents' ? 'documents' : 'media')
+
+  // Sync activeTab with URL params when URL changes (e.g., back/forward navigation)
+  useEffect(() => {
+    const currentTabFromUrl = searchParams.get('tab') as 'media' | 'documents' | null
+    const urlTab = currentTabFromUrl === 'documents' ? 'documents' : 'media'
+    setActiveTab(prevTab => {
+      // Only update if different to avoid unnecessary re-renders
+      return prevTab !== urlTab ? urlTab : prevTab
+    })
+  }, [searchParams])
+  const [previewImageIndex, setPreviewImageIndex] = useState<number>(0)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
   const [imageToDelete, setImageToDelete] = useState<MediaImage | null>(null)
+  const [documentToDelete, setDocumentToDelete] = useState<MediaDocument | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
   const [imageDetails, setImageDetails] = useState<MediaImage | null>(null)
+  const [documentDetails, setDocumentDetails] = useState<MediaDocument | null>(null)
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false)
+  const [documentToDownload, setDocumentToDownload] = useState<MediaDocument | null>(null)
+  const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false)
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set())
+  const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set())
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [isPending, startTransition] = useTransition()
+  const documentInputRef = useRef<HTMLInputElement>(null)
+  const [, startTransition] = useTransition()
 
   // Get page from URL params
   const currentPage = parseInt(searchParams.get('page') || '1', 10)
 
-  // Grid columns selection (stored in localStorage)
-  const [gridColumns, setGridColumns] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('media-grid-columns')
-      return saved ? parseInt(saved, 10) : 8
+  // Update URL when tab changes
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (activeTab === 'documents') {
+      params.set('tab', 'documents')
+    } else {
+      params.delete('tab') // Remove tab param for media (default)
     }
-    return 8
-  })
+    
+    const newUrl = params.toString() 
+      ? `${window.location.pathname}?${params.toString()}`
+      : window.location.pathname
+    
+    // Only update URL if it's different to avoid unnecessary navigation
+    if (window.location.search !== (params.toString() ? `?${params.toString()}` : '')) {
+      router.replace(newUrl, { scroll: false })
+    }
+  }, [activeTab, router, searchParams])
+
+  // Grid columns selection (stored in localStorage)
+  const [gridColumns, setGridColumns] = useState<number>(8)
+  const [isClient, setIsClient] = useState(false)
+
+  // Load gridColumns from localStorage after mount to prevent hydration mismatch
+  useEffect(() => {
+    setIsClient(true)
+    const saved = localStorage.getItem('media-grid-columns')
+    if (saved) {
+      const parsed = parseInt(saved, 10)
+      if (parsed >= 4 && parsed <= 10) {
+        setGridColumns(parsed)
+      }
+    }
+  }, [])
 
   // Save grid columns to localStorage
   useEffect(() => {
@@ -222,6 +284,11 @@ export default function MediaPage() {
     }
   }
 
+  // Ensure component is mounted before rendering Radix UI components to avoid hydration mismatch
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
   // Fetch images with pagination - allow viewing even without permission
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['assets', 'media', currentPage, gridColumns],
@@ -244,15 +311,48 @@ export default function MediaPage() {
         }
       }>
     },
-    enabled: !permissionsLoading, // Allow viewing even without canManageMedia permission
+    enabled: !permissionsLoading && activeTab === 'media', // Allow viewing even without canManageMedia permission
     staleTime: 0, // Always refetch when invalidated
     gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
   })
 
+  // Fetch documents with pagination
+  const { data: documentsData, isLoading: isLoadingDocuments, isError: isDocumentsError, refetch: refetchDocuments } = useQuery({
+    queryKey: ['assets', 'documents', currentPage, gridColumns],
+    queryFn: async () => {
+      const response = await fetch(`/api/assets/documents?page=${currentPage}&pageSize=${pageSize}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch documents')
+      }
+      return response.json() as Promise<{
+        documents: MediaDocument[]
+        pagination: {
+          total: number
+          page: number
+          pageSize: number
+          totalPages: number
+        }
+        storage?: {
+          used: number
+          limit: number
+        }
+      }>
+    },
+    enabled: !permissionsLoading && activeTab === 'documents',
+    staleTime: 0,
+    gcTime: 5 * 60 * 1000,
+  })
+
   const handleRefresh = () => {
+    if (activeTab === 'media') {
     queryClient.invalidateQueries({ queryKey: ['assets', 'media'] })
     refetch()
     toast.success('Media refreshed')
+    } else {
+      queryClient.invalidateQueries({ queryKey: ['assets', 'documents'] })
+      refetchDocuments()
+      toast.success('Documents refreshed')
+    }
   }
 
   const uploadImage = async (file: File, onProgress?: (progress: number) => void) => {
@@ -349,6 +449,8 @@ export default function MediaPage() {
       // Invalidate and refetch media
       await queryClient.invalidateQueries({ queryKey: ['assets', 'media'] })
       await refetch()
+      // Also invalidate documents cache in case storage changed
+      await queryClient.invalidateQueries({ queryKey: ['assets', 'documents'] })
       
       // Reset input
       if (fileInputRef.current) {
@@ -363,18 +465,146 @@ export default function MediaPage() {
     }
   }
 
+  const uploadDocument = async (file: File, onProgress?: (progress: number) => void) => {
+    return new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      const formData = new FormData()
+      formData.append('file', file)
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && onProgress) {
+          const progress = (e.loaded / e.total) * 100
+          onProgress(progress)
+        }
+      })
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status === 200) {
+          resolve()
+        } else {
+          try {
+            const error = JSON.parse(xhr.responseText)
+            reject(new Error(error.error || 'Upload failed'))
+          } catch {
+            reject(new Error('Upload failed'))
+          }
+        }
+      })
+
+      xhr.addEventListener('error', () => {
+        reject(new Error('Upload failed'))
+      })
+
+      xhr.open('POST', '/api/assets/documents/upload')
+      xhr.send(formData)
+    })
+  }
+
+  const handleDocumentFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    
+    if (files.length === 0) return
+
+    // Validate file types - allow documents and images
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain',
+      'text/csv',
+      'application/rtf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+    ]
+    const allowedExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv', '.rtf', '.jpg', '.jpeg', '.png', '.gif', '.webp']
+    const maxSize = 5 * 1024 * 1024 // 5MB
+    
+    const validFiles = files.filter(file => {
+      const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase()
+      if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
+        toast.error(`${file.name} is not a valid document type. Only PDF, DOC, DOCX, XLS, XLSX, TXT, CSV, RTF, JPEG, PNG, GIF, and WebP are allowed.`)
+        return false
+      }
+      if (file.size > maxSize) {
+        toast.error(`${file.name} is too large. Maximum size is 5MB.`)
+        return false
+      }
+      return true
+    })
+
+    if (validFiles.length === 0) return
+
+    // Check storage limit before uploading
+    const storageLimit = documentsData?.storage?.limit || 5 * 1024 * 1024 // 5MB default
+    const currentStorageUsed = documentsData?.storage?.used || 0
+    const totalNewSize = validFiles.reduce((sum, file) => sum + file.size, 0)
+    
+    if (currentStorageUsed + totalNewSize > storageLimit) {
+      toast.error(
+        `Storage limit exceeded. Current usage: ${formatFileSize(currentStorageUsed)} / ${formatFileSize(storageLimit)}. ` +
+        `Cannot upload ${formatFileSize(totalNewSize)}. Please delete some documents first.`
+      )
+      return
+    }
+
+    setIsUploading(true)
+    setUploadProgress(0)
+
+    try {
+      // Upload files sequentially to track progress properly
+      const totalFiles = validFiles.length
+      let uploadedCount = 0
+
+      for (let i = 0; i < validFiles.length; i++) {
+        await uploadDocument(validFiles[i], (progress) => {
+          // Calculate overall progress: (uploaded files + current file progress) / total
+          const overallProgress = ((uploadedCount + progress / 100) / totalFiles) * 100
+          setUploadProgress(Math.min(overallProgress, 100))
+        })
+        uploadedCount++
+        setUploadProgress((uploadedCount / totalFiles) * 100)
+      }
+
+      toast.success(`Successfully uploaded ${validFiles.length} document(s)`)
+      
+      // Invalidate and refetch documents
+      await queryClient.invalidateQueries({ queryKey: ['assets', 'documents'] })
+      await refetchDocuments()
+      // Also invalidate media cache in case storage changed
+      await queryClient.invalidateQueries({ queryKey: ['assets', 'media'] })
+      
+      // Reset input
+      if (documentInputRef.current) {
+        documentInputRef.current.value = ''
+      }
+    } catch (error) {
+      console.error('Error uploading documents:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to upload documents')
+    } finally {
+      setIsUploading(false)
+      setUploadProgress(0)
+    }
+  }
+
   const handlePageChange = (page: number) => {
     startTransition(() => {
       router.push(`/tools/media?page=${page}`)
       // Clear selections when page changes
       setSelectedImages(new Set())
+      setSelectedDocuments(new Set())
     })
     // Scroll to top when page changes
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleImageClick = (image: MediaImage) => {
-    setPreviewImage(image)
+    const index = images.findIndex(img => img.id === image.id)
+    setPreviewImageIndex(index >= 0 ? index : 0)
     setIsPreviewOpen(true)
   }
 
@@ -387,6 +617,12 @@ export default function MediaPage() {
   const handleDetailsClick = (e: React.MouseEvent, image: MediaImage) => {
     e.stopPropagation()
     setImageDetails(image)
+    setIsDetailsDialogOpen(true)
+  }
+
+  const handleDocumentDetailsClick = (e: React.MouseEvent, document: MediaDocument) => {
+    e.stopPropagation()
+    setDocumentDetails(document)
     setIsDetailsDialogOpen(true)
   }
 
@@ -442,11 +678,6 @@ export default function MediaPage() {
     },
   })
 
-  const handleConfirmDelete = () => {
-    if (imageToDelete) {
-      deleteImageMutation.mutate(imageToDelete)
-    }
-  }
 
   // Handle checkbox selection
   const handleImageSelect = (e: React.MouseEvent, imageId: string) => {
@@ -512,6 +743,7 @@ export default function MediaPage() {
   })
 
   const handleBulkDelete = () => {
+    if (activeTab === 'media') {
     const selectedImageUrls = images
       .filter(img => selectedImages.has(img.id))
       .map(img => img.imageUrl)
@@ -522,14 +754,134 @@ export default function MediaPage() {
     }
 
     bulkDeleteMutation.mutate(selectedImageUrls)
+    } else {
+      const selectedDocumentUrls = documents
+        .filter(doc => selectedDocuments.has(doc.id))
+        .map(doc => doc.documentUrl)
+      
+      if (selectedDocumentUrls.length === 0) {
+        toast.error('No documents selected')
+        return
+      }
+
+      bulkDeleteDocumentMutation.mutate(selectedDocumentUrls)
+    }
+  }
+
+  // Delete document mutation
+  const deleteDocumentMutation = useMutation({
+    mutationFn: async (document: MediaDocument) => {
+      const response = await fetch(`/api/assets/documents/delete?documentUrl=${encodeURIComponent(document.documentUrl)}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to delete document')
+      }
+
+      return response.json()
+    },
+    onSuccess: async (data) => {
+      const deletedLinks = data.deletedLinks || 0
+      if (deletedLinks > 0) {
+        toast.success(`Document deleted successfully. Removed ${deletedLinks} link(s) from asset(s).`)
+      } else {
+        toast.success('Document deleted successfully')
+      }
+      setIsDeleteDialogOpen(false)
+      setDocumentToDelete(null)
+      await queryClient.invalidateQueries({ queryKey: ['assets', 'documents'] })
+      await refetchDocuments()
+      await queryClient.invalidateQueries({ queryKey: ['assets'] })
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete document')
+      setIsDeleteDialogOpen(false)
+      setDocumentToDelete(null)
+    },
+  })
+
+  // Bulk delete document mutation
+  const bulkDeleteDocumentMutation = useMutation({
+    mutationFn: async (documentUrls: string[]) => {
+      const response = await fetch('/api/assets/documents/bulk-delete', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ documentUrls }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to delete documents')
+      }
+
+      return response.json()
+    },
+    onSuccess: async (data) => {
+      const deletedCount = data.deletedCount || 0
+      const deletedLinks = data.deletedLinks || 0
+      if (deletedLinks > 0) {
+        toast.success(`Deleted ${deletedCount} document(s) and removed ${deletedLinks} link(s)`)
+      } else {
+        toast.success(`Deleted ${deletedCount} document(s)`)
+      }
+      setIsBulkDeleteDialogOpen(false)
+      setSelectedDocuments(new Set())
+      await queryClient.invalidateQueries({ queryKey: ['assets', 'documents'] })
+      await refetchDocuments()
+      await queryClient.invalidateQueries({ queryKey: ['assets'] })
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete documents')
+      setIsBulkDeleteDialogOpen(false)
+    },
+  })
+
+  const handleDocumentDeleteClick = (e: React.MouseEvent, document: MediaDocument) => {
+    e.stopPropagation()
+    setDocumentToDelete(document)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleDocumentSelect = (e: React.MouseEvent, documentId: string) => {
+    e.stopPropagation()
+    setSelectedDocuments(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(documentId)) {
+        newSet.delete(documentId)
+      } else {
+        newSet.add(documentId)
+      }
+      return newSet
+    })
+  }
+
+  const handleToggleSelectAllDocuments = () => {
+    if (selectedDocuments.size === documents.length) {
+      setSelectedDocuments(new Set())
+    } else {
+      setSelectedDocuments(new Set(documents.map(doc => doc.id)))
+    }
+  }
+
+  const handleConfirmDelete = () => {
+    if (activeTab === 'media' && imageToDelete) {
+      deleteImageMutation.mutate(imageToDelete)
+    } else if (activeTab === 'documents' && documentToDelete) {
+      deleteDocumentMutation.mutate(documentToDelete)
+    }
   }
 
   // Combined loading state
-  const isLoadingData = permissionsLoading || isLoading
+  const isLoadingData = permissionsLoading || (activeTab === 'media' ? isLoading : isLoadingDocuments)
 
-  const images = data?.images || []
-  const pagination = data?.pagination
-  const storage = data?.storage
+  const images = useMemo(() => data?.images || [], [data?.images])
+  const documents = useMemo(() => documentsData?.documents || [], [documentsData?.documents])
+  const pagination = activeTab === 'media' ? data?.pagination : documentsData?.pagination
+  const storage = activeTab === 'media' ? data?.storage : documentsData?.storage
 
   // Calculate storage usage percentage
   const storageUsed = storage?.used || 0
@@ -560,13 +912,13 @@ export default function MediaPage() {
   }, [images])
 
   // Early returns must come AFTER all hooks
-  if (isError && !permissionsLoading) {
+  if ((activeTab === 'media' && isError && !permissionsLoading) || (activeTab === 'documents' && isDocumentsError && !permissionsLoading)) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Card className="w-full max-w-md">
           <CardContent className="pt-6">
             <p className="text-center text-destructive">
-              Failed to load media. Please try again.
+              Failed to load {activeTab === 'media' ? 'media' : 'documents'}. Please try again.
             </p>
           </CardContent>
         </Card>
@@ -577,16 +929,51 @@ export default function MediaPage() {
   return (
     <>
       <div className="mb-6 space-y-4">
+        {/* Tabs */}
+        <div className="flex items-center gap-2 border-b">
+          <button
+            onClick={() => setActiveTab('media')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === 'media'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <ImageIcon className="h-4 w-4" />
+              Media
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('documents')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === 'documents'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Documents
+            </div>
+          </button>
+        </div>
+
         {/* Header Section */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Media</h1>
+            <h1 className="text-3xl font-bold tracking-tight">
+              {activeTab === 'media' ? 'Media' : 'Documents'}
+            </h1>
             <p className="text-muted-foreground mt-1">
-              {pagination ? `Total: ${pagination.total} images` : 'Loading...'}
+              {activeTab === 'media' 
+                ? (pagination ? `Total: ${pagination.total} images` : 'Loading...')
+                : 'Manage asset documents (receipts, purchase orders, manuals)'
+              }
             </p>
           </div>
           <div className="flex items-center gap-2">
-          {selectedImages.size > 0 && (
+          {activeTab === 'media' && selectedImages.size > 0 && (
             <Button
               variant="ghost"
               size="icon"
@@ -602,7 +989,23 @@ export default function MediaPage() {
               <Trash2 className="h-4 w-4" />
             </Button>
           )}
-          {images.length > 0 && selectedImages.size > 0 && (
+          {activeTab === 'documents' && selectedDocuments.size > 0 && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (!canManageMedia) {
+                  toast.error('You do not have permission to delete documents')
+                  return
+                }
+                setIsBulkDeleteDialogOpen(true)
+              }}
+              title={`Delete ${selectedDocuments.size} document(s)`}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
+          {activeTab === 'media' && images.length > 0 && selectedImages.size > 0 && (
             <div className="flex items-center gap-2 px-2">
               <Checkbox
                 id="select-all-media"
@@ -619,6 +1022,23 @@ export default function MediaPage() {
               </span>
             </div>
           )}
+          {activeTab === 'documents' && documents.length > 0 && selectedDocuments.size > 0 && (
+            <div className="flex items-center gap-2 px-2">
+              <Checkbox
+                id="select-all-documents"
+                checked={selectedDocuments.size === documents.length && documents.length > 0}
+                onCheckedChange={handleToggleSelectAllDocuments}
+                disabled={documents.length === 0}
+                title={selectedDocuments.size === documents.length && documents.length > 0
+                  ? 'Deselect All'
+                  : 'Select All'}
+                className='cursor-pointer'
+              />
+              <span className="text-sm text-muted-foreground">
+                {selectedDocuments.size}
+              </span>
+            </div>
+          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -626,6 +1046,15 @@ export default function MediaPage() {
             multiple
             className="hidden"
             onChange={handleFileSelect}
+            disabled={isUploading}
+          />
+          <input
+            ref={documentInputRef}
+            type="file"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.rtf,.jpg,.jpeg,.png,.gif,.webp,image/jpeg,image/jpg,image/png,image/gif,image/webp"
+            multiple
+            className="hidden"
+            onChange={handleDocumentFileSelect}
             disabled={isUploading}
           />
           <Button
@@ -654,6 +1083,7 @@ export default function MediaPage() {
                 <SelectItem value="10">10 Columns</SelectItem>
               </SelectContent>
             </Select>
+            {isMounted && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -661,6 +1091,7 @@ export default function MediaPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {activeTab === 'media' && (
                 <DropdownMenuItem
                   onClick={() => {
                     if (!canManageMedia) {
@@ -676,21 +1107,60 @@ export default function MediaPage() {
                 >
                   {isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Upload Images'}
                 </DropdownMenuItem>
-                {images.length > 0 && (
+                )}
+                {activeTab === 'documents' && (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      if (!canManageMedia) {
+                        toast.error('You do not have permission to upload documents')
+                        return
+                      }
+                      if (isUploading) {
+                        return
+                      }
+                      documentInputRef.current?.click()
+                    }}
+                    disabled={isUploading}
+                  >
+                    {isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Upload Documents'}
+                  </DropdownMenuItem>
+                )}
+                {activeTab === 'media' && images.length > 0 && (
                   <DropdownMenuItem onClick={handleToggleSelectAll}>
                     {selectedImages.size === images.length && images.length > 0
                       ? 'Deselect All'
                       : 'Select All'}
                   </DropdownMenuItem>
                 )}
+                {activeTab === 'documents' && documents.length > 0 && (
+                  <DropdownMenuItem onClick={handleToggleSelectAllDocuments}>
+                    {selectedDocuments.size === documents.length && documents.length > 0
+                      ? 'Deselect All'
+                      : 'Select All'}
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
+            )}
           </div>
         </div>
 
+        {/* Upload Progress */}
+        {isUploading && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium">
+                {activeTab === 'media' ? 'Uploading images...' : 'Uploading documents...'}
+              </span>
+              <span className="text-muted-foreground">{Math.round(uploadProgress)}%</span>
+            </div>
+            <Progress value={uploadProgress} className="h-2" />
+          </div>
+        )}
+
         {/* Storage Usage Card */}
         {storage && (
-          <div className="p-5 border rounded-lg bg-gradient-to-br from-muted/50 to-muted/30 shadow-sm">
+          <div className="p-5 border rounded-lg bg-linear-to-br from-muted/50 to-muted/30 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2.5">
                 <span className="text-sm font-semibold">Storage Usage</span>
@@ -700,18 +1170,16 @@ export default function MediaPage() {
               </span>
             </div>
             <div className="space-y-2">
-              <div className="relative h-3 w-full overflow-hidden rounded-full bg-primary/20">
-                <div
-                  className={`h-full transition-all ${
+              <Progress 
+                value={Math.min(storagePercentage, 100)} 
+                className={`h-3 rounded-none ${
                     storagePercentage >= 90
-                      ? 'bg-destructive'
+                    ? '[&>div]:bg-destructive'
                       : storagePercentage >= 70
-                        ? 'bg-amber-500'
-                        : 'bg-primary'
+                      ? '[&>div]:bg-amber-500'
+                      : ''
                   }`}
-                  style={{ width: `${Math.min(storagePercentage, 100)}%` }}
                 />
-              </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">
                   {storagePercentage.toFixed(1)}% used
@@ -733,12 +1201,75 @@ export default function MediaPage() {
         )}
       </div>
 
-      {isLoadingData ? (
-        <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
-          <Spinner className="h-8 w-8" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        </div>
-      ) : images.length === 0 ? (
+      {isLoadingData && activeTab === 'media' ? (
+        <>
+          {/* Placeholder Storage Usage Card */}
+          <div className="p-5 border rounded-lg bg-linear-to-br from-muted/50 to-muted/30 shadow-sm animate-pulse mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm font-semibold bg-muted h-4 w-24 rounded" />
+              </div>
+              <span className="text-sm font-medium bg-muted h-4 w-32 rounded" />
+            </div>
+            <div className="space-y-2">
+              <div className="h-3 bg-muted rounded-none" />
+              <div className="flex items-center justify-between">
+                <span className="text-xs bg-muted h-3 w-16 rounded" />
+                <span className="text-xs bg-muted h-3 w-20 rounded" />
+              </div>
+            </div>
+          </div>
+          {/* Placeholder cards for images */}
+          {isClient && (
+            <div className={`grid ${gridClasses[gridColumns as keyof typeof gridClasses]} gap-3 mb-6`}>
+              {Array.from({ length: pageSize }).map((_, index) => (
+                <div
+                  key={`placeholder-${index}`}
+                  className="relative aspect-square rounded-lg overflow-hidden border bg-muted"
+                >
+                  <div className="absolute inset-0 bg-linear-to-br from-muted via-muted/50 to-muted flex items-center justify-center animate-pulse">
+                    <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : isLoadingData && activeTab === 'documents' ? (
+        <>
+          {/* Placeholder Storage Usage Card */}
+          <div className="p-5 border rounded-lg bg-linear-to-br from-muted/50 to-muted/30 shadow-sm animate-pulse mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm font-semibold bg-muted h-4 w-24 rounded" />
+              </div>
+              <span className="text-sm font-medium bg-muted h-4 w-32 rounded" />
+            </div>
+            <div className="space-y-2">
+              <div className="h-3 bg-muted rounded-none" />
+              <div className="flex items-center justify-between">
+                <span className="text-xs bg-muted h-3 w-16 rounded" />
+                <span className="text-xs bg-muted h-3 w-20 rounded" />
+              </div>
+            </div>
+          </div>
+          {/* Placeholder cards for documents */}
+          {isClient && (
+            <div className={`grid ${gridClasses[gridColumns as keyof typeof gridClasses]} gap-3 mb-6`}>
+              {Array.from({ length: pageSize }).map((_, index) => (
+                <div
+                  key={`placeholder-doc-${index}`}
+                  className="relative aspect-square rounded-lg overflow-hidden border bg-muted"
+                >
+                  <div className="absolute inset-0 bg-linear-to-br from-muted via-muted/50 to-muted flex items-center justify-center animate-pulse">
+                    <FileText className="h-8 w-8 text-muted-foreground/30" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : activeTab === 'media' && images.length === 0 ? (
         <Card>
           <CardContent className="pt-6">
             <p className="text-center text-muted-foreground">
@@ -746,18 +1277,29 @@ export default function MediaPage() {
             </p>
           </CardContent>
         </Card>
-      ) : (
+      ) : activeTab === 'documents' && documents.length === 0 ? (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-center text-muted-foreground">
+              No documents found.
+            </p>
+          </CardContent>
+        </Card>
+      ) : !isClient ? (
+        null
+      ) : activeTab === 'media' ? (
         <>
           {/* Image Grid */}
           <div className={`grid ${gridClasses[gridColumns as keyof typeof gridClasses]} gap-3 mb-6`}>
             {images.map((image) => (
               <div
                 key={image.id}
-                className={`relative group aspect-square rounded-lg overflow-hidden border cursor-pointer hover:opacity-90 transition-all ${
+                className={`relative group aspect-square rounded-lg overflow-hidden border cursor-pointer hover:opacity-90 ${
                   selectedImages.has(image.id)
                     ? 'border-primary'
                     : ''
                 }`}
+                style={{ transition: 'opacity 0.2s, border-color 0.2s' }}
                 onClick={() => handleImageClick(image)}
               >
                 {/* Checkbox */}
@@ -802,10 +1344,11 @@ export default function MediaPage() {
                 {/* Hover overlay */}
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"/>
                 {/* Linked to Asset Indicator */}
-                {image.isLinked && (
+                {(image.isLinked || (image.linkedAssetTagIds && image.linkedAssetTagIds.length > 0) || image.linkedAssetTagId) && (
                   <div className="absolute top-0 right-0 z-10">
                     {image.linkedAssetTagIds && image.linkedAssetTagIds.length > 1 ? (
                       // Multiple assets - show dropdown
+                      isMounted ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <div 
@@ -841,29 +1384,58 @@ export default function MediaPage() {
                           </div>
                         </DropdownMenuContent>
                       </DropdownMenu>
+                      ) : (
+                        // Show indicator during SSR (before mount) - always visible
+                        <div 
+                          className={`${getImageColor(image)} text-white p-1 rounded-full shadow-lg flex items-center gap-0.5 cursor-pointer`}
+                          title={`Linked to ${image.linkedAssetTagIds.length} assets`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // Navigate to first asset if available
+                            const firstAsset = image.linkedAssetTagIds?.[0]
+                            if (firstAsset) {
+                              const assetInfo = image.linkedAssetsInfo?.find(info => info.assetTagId === firstAsset)
+                              if (assetInfo?.isDeleted) {
+                                router.push(`/tools/trash?search=${encodeURIComponent(firstAsset)}`)
+                              } else {
+                                router.push(`/assets?search=${encodeURIComponent(firstAsset)}`)
+                              }
+                            }
+                          }}
+                        >
+                          <Link2 className="h-2.5 w-2.5" />
+                          <ChevronDown className="h-2 w-2" />
+                        </div>
+                      )
                     ) : (
                       // Single asset - show simple link
+                      (() => {
+                        const tagId = image.linkedAssetTagId || image.linkedAssetTagIds?.[0]
+                        const assetInfo = image.linkedAssetsInfo?.find(info => info.assetTagId === tagId)
+                        const isDeleted = image.assetIsDeleted || assetInfo?.isDeleted || false
+                        
+                        if (!tagId) return null
+                        
+                        return (
                       <div 
-                        className={`${getImageColor(image)} ${image.assetIsDeleted ? 'hover:bg-gray-600/90' : getAssetHoverColor(image.linkedAssetTagId)} text-white p-1 rounded-full shadow-lg cursor-pointer transition-colors`}
+                            className={`${getImageColor(image)} ${isDeleted ? 'hover:bg-gray-600/90' : getAssetHoverColor(tagId)} text-white p-1 rounded-full shadow-lg cursor-pointer transition-colors`}
                         onClick={(e) => {
                           e.stopPropagation()
-                          if (image.linkedAssetTagId) {
                             // Navigate to trash page if asset is deleted, otherwise to assets page
-                            if (image.assetIsDeleted) {
-                              router.push(`/tools/trash?search=${encodeURIComponent(image.linkedAssetTagId)}`)
+                              if (isDeleted) {
+                                router.push(`/tools/trash?search=${encodeURIComponent(tagId)}`)
                             } else {
-                              router.push(`/assets?search=${encodeURIComponent(image.linkedAssetTagId)}`)
-                            }
+                                router.push(`/assets?search=${encodeURIComponent(tagId)}`)
                           }
                         }}
-                        title={image.linkedAssetTagId 
-                          ? image.assetIsDeleted 
-                            ? `Linked to archived asset: ${image.linkedAssetTagId} (Click to view in Trash)`
-                            : `Linked to asset: ${image.linkedAssetTagId}`
-                          : 'Linked to asset'}
+                            title={isDeleted 
+                              ? `Linked to archived asset: ${tagId} (Click to view in Trash)`
+                              : `Linked to asset: ${tagId}`}
                       >
                         <Link2 className="h-2.5 w-2.5" />
                       </div>
+                        )
+                      })()
                     )}
                   </div>
                 )}
@@ -875,12 +1447,13 @@ export default function MediaPage() {
                 </div>
                 {/* 3-dot menu - show Details for all users, Delete for all but with permission check */}
                 <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                  {isMounted && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 hover:!bg-transparent"
+                        className="h-8 w-8 hover:bg-transparent!"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <MoreVertical className="h-4 w-4 text-white" />
@@ -906,6 +1479,7 @@ export default function MediaPage() {
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  )}
                 </div>
               </div>
             ))}
@@ -978,54 +1552,442 @@ export default function MediaPage() {
             </div>
           )}
 
-          {/* Delete Confirmation Dialog */}
-          <DeleteConfirmationDialog
-            open={isDeleteDialogOpen}
-            onOpenChange={setIsDeleteDialogOpen}
-            onConfirm={handleConfirmDelete}
-            isLoading={deleteImageMutation.isPending}
-            title="Delete Image"
-            description={
-              imageToDelete?.linkedAssetsInfo && imageToDelete.linkedAssetsInfo.length > 0
-                ? `Are you sure you want to delete this image? This will remove it from ${imageToDelete.linkedAssetsInfo.length} linked asset(s). This action cannot be undone.`
-                : imageToDelete?.isLinked
-                  ? `Are you sure you want to delete this image? This will remove it from the linked asset. This action cannot be undone.`
-                  : `Are you sure you want to delete this image? This action cannot be undone.`
-            }
-            itemName="image"
-            affectedAssets={imageToDelete?.linkedAssetsInfo || undefined}
-          />
+        </>
+      ) : activeTab === 'documents' && isClient ? (
+        <>
+          {/* Documents Grid */}
+          <div className={`grid ${gridClasses[gridColumns as keyof typeof gridClasses]} gap-3 mb-6`}>
+            {documents.map((document) => {
+              const isImage = document.mimeType?.startsWith('image/') || 
+                /\.(jpg|jpeg|png|gif|webp)$/i.test(document.fileName || '')
+              
+              return (
+                <div
+                  key={document.id}
+                className={`relative group aspect-square rounded-lg overflow-hidden border cursor-pointer hover:opacity-90 transition-all bg-muted flex flex-col ${
+                  selectedDocuments.has(document.id)
+                    ? 'border-primary'
+                    : ''
+                }`}
+                onClick={() => {
+                  if (isImage) {
+                    // For images, open in preview dialog (similar to media tab)
+                    const index = documents
+                      .filter(doc => {
+                        const docIsImage = doc.mimeType?.startsWith('image/') || 
+                          /\.(jpg|jpeg|png|gif|webp)$/i.test(doc.fileName || '')
+                        return docIsImage
+                      })
+                      .findIndex(doc => doc.id === document.id)
+                    setPreviewImageIndex(index >= 0 ? index : 0)
+                    setIsPreviewOpen(true)
+                  } else {
+                    // Check file type
+                    const isPdf = document.mimeType === 'application/pdf' || 
+                      /\.pdf$/i.test(document.fileName || '')
+                    const isDownloadable = document.mimeType?.includes('excel') || 
+                      document.mimeType?.includes('spreadsheet') ||
+                      document.mimeType?.includes('word') ||
+                      document.mimeType?.includes('document') ||
+                      /\.(xls|xlsx|doc|docx)$/i.test(document.fileName || '')
+                    
+                    if (isPdf) {
+                      // PDF: open in new tab
+                      window.open(document.documentUrl, '_blank')
+                    } else if (isDownloadable) {
+                      // Excel, Word, etc.: show download confirmation dialog
+                      setDocumentToDownload(document)
+                      setIsDownloadDialogOpen(true)
+                    } else {
+                      // Other files: try to open in new tab
+                      window.open(document.documentUrl, '_blank')
+                    }
+                  }
+                }}
+              >
+                {/* Checkbox */}
+                <div 
+                  className={`absolute top-2 left-2 z-20 transition-opacity ${
+                    selectedDocuments.has(document.id)
+                      ? 'opacity-100'
+                      : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                  onClick={(e) => handleDocumentSelect(e, document.id)}
+                >
+                  <div>
+                    <Checkbox
+                      checked={selectedDocuments.has(document.id)}
+                      onCheckedChange={() => {
+                        setSelectedDocuments(prev => {
+                          const newSet = new Set(prev)
+                          if (newSet.has(document.id)) {
+                            newSet.delete(document.id)
+                          } else {
+                            newSet.add(document.id)
+                          }
+                          return newSet
+                        })
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="border-white data-[state=checked]:bg-white data-[state=checked]:text-black cursor-pointer"
+                    />
+                  </div>
+                </div>
+                {/* Selection overlay */}
+                {selectedDocuments.has(document.id) && (
+                  <div className="absolute inset-0 bg-primary/20 border-2 border-primary rounded-lg pointer-events-none z-10" />
+                )}
+                {/* Check if document is an image */}
+                {(() => {
+                  const isImage = document.mimeType?.startsWith('image/') || 
+                    /\.(jpg|jpeg|png|gif|webp)$/i.test(document.fileName || '')
+                  
+                  if (isImage) {
+                    // Display image
+                    return (
+                      <>
+                        <Image
+                          src={document.documentUrl}
+                          alt={document.fileName || 'Document'}
+                          fill
+                          className="object-cover"
+                          unoptimized
+                        />
+                        {/* Image overlay */}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"/>
+                        {/* Document Info */}
+                        <div className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/60 via-black/30 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <p className="text-white text-xs truncate" title={document.fileName}>
+                            {document.fileName}
+                          </p>
+                          {document.documentSize && (
+                            <p className="text-white/80 text-xs">
+                              {formatFileSize(document.documentSize)}
+                            </p>
+                          )}
+                        </div>
+                      </>
+                    )
+                  } else {
+                    // Display file icon for non-image documents
+                    return (
+                      <>
+                        <div className="flex-1 flex items-center justify-center p-4">
+                          <FileText className="h-16 w-16 text-muted-foreground" />
+                        </div>
+                        {/* Document Info */}
+                        <div className="p-2 bg-background/80 backdrop-blur-sm">
+                          <p className="text-xs font-medium truncate" title={document.fileName}>
+                            {document.fileName}
+                          </p>
+                          {document.documentSize && (
+                            <p className="text-xs text-muted-foreground">
+                              {formatFileSize(document.documentSize)}
+                            </p>
+                          )}
+                        </div>
+                      </>
+                    )
+                  }
+                })()}
+                {/* Linked to Asset Indicator */}
+                {(() => {
+                  // Filter out STANDALONE from linked assets
+                  const realLinkedAssetIds = document.linkedAssetTagIds?.filter(id => id !== 'STANDALONE') || []
+                  const realLinkedAssetId = document.linkedAssetTagId && document.linkedAssetTagId !== 'STANDALONE' ? document.linkedAssetTagId : null
+                  const hasRealLinks = realLinkedAssetIds.length > 0 || realLinkedAssetId !== null || (document.isLinked && realLinkedAssetIds.length > 0)
+                  
+                  if (!hasRealLinks) return null
+                  
+                  return (
+                    <div className="absolute top-0 right-0 z-10">
+                      {realLinkedAssetIds.length > 1 ? (
+                      isMounted ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <div 
+                            className={`${getAssetColor(realLinkedAssetIds[0])} hover:opacity-80 text-white p-1 rounded-full shadow-lg cursor-pointer transition-all flex items-center gap-0.5`}
+                            onClick={(e) => e.stopPropagation()}
+                            title={`Linked to ${realLinkedAssetIds.length} assets (Click to view)`}
+                          >
+                            <Link2 className="h-2.5 w-2.5" />
+                            <ChevronDown className="h-2 w-2" />
+                          </div>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                          {realLinkedAssetIds.map((tagId) => {
+                            const assetInfo = document.linkedAssetsInfo?.find(info => info.assetTagId === tagId)
+                            return (
+                              <DropdownMenuItem
+                                key={tagId}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (assetInfo?.isDeleted) {
+                                    router.push(`/tools/trash?search=${encodeURIComponent(tagId)}`)
+                                  } else {
+                                    router.push(`/assets?search=${encodeURIComponent(tagId)}`)
+                                  }
+                                }}
+                                disabled={assetInfo?.isDeleted}
+                              >
+                                <span className={assetInfo?.isDeleted ? 'line-through text-muted-foreground' : ''}>
+                                  {tagId}
+                                </span>
+                                {assetInfo?.isDeleted && (
+                                  <span className="ml-2 text-xs text-muted-foreground">(Archived)</span>
+                                )}
+                              </DropdownMenuItem>
+                            )
+                          })}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      ) : (
+                        // Show indicator during SSR (before mount) - always visible
+                        <div 
+                          className={`${getAssetColor(realLinkedAssetIds[0])} text-white p-1 rounded-full shadow-lg flex items-center gap-0.5 cursor-pointer`}
+                          title={`Linked to ${realLinkedAssetIds.length} assets`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // Navigate to first asset if available
+                            const firstAsset = realLinkedAssetIds[0]
+                            if (firstAsset) {
+                              const assetInfo = document.linkedAssetsInfo?.find(info => info.assetTagId === firstAsset)
+                              if (assetInfo?.isDeleted) {
+                                router.push(`/tools/trash?search=${encodeURIComponent(firstAsset)}`)
+                              } else {
+                                router.push(`/assets?search=${encodeURIComponent(firstAsset)}`)
+                              }
+                            }
+                          }}
+                        >
+                          <Link2 className="h-2.5 w-2.5" />
+                          <ChevronDown className="h-2 w-2" />
+                        </div>
+                      )
+                    ) : (
+                      (() => {
+                        const tagId = realLinkedAssetId || realLinkedAssetIds[0]
+                        const assetInfo = document.linkedAssetsInfo?.find(info => info.assetTagId === tagId)
+                        const isDeleted = document.assetIsDeleted || assetInfo?.isDeleted || false
+                        
+                        if (!tagId) return null
+                        
+                        return (
+                          <div 
+                            className={`${getAssetColor(tagId)} ${isDeleted ? 'hover:bg-gray-600/90' : getAssetHoverColor(tagId)} text-white p-1 rounded-full shadow-lg cursor-pointer transition-colors`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (isDeleted) {
+                                router.push(`/tools/trash?search=${encodeURIComponent(tagId)}`)
+                              } else {
+                                router.push(`/assets?search=${encodeURIComponent(tagId)}`)
+                              }
+                            }}
+                            title={isDeleted 
+                              ? `Linked to archived asset: ${tagId} (Click to view in Trash)`
+                              : `Linked to asset: ${tagId}`}
+                          >
+                            <Link2 className="h-2.5 w-2.5" />
+                          </div>
+                        )
+                      })()
+                    )}
+                  </div>
+                  )
+                })()}
+                {/* 3-dot menu - show Details for all users, Delete for all but with permission check */}
+                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                  {isMounted && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 hover:bg-transparent!"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MoreVertical className="h-4 w-4 text-white" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenuItem onClick={(e) => handleDocumentDetailsClick(e, document)}>
+                        <Eye className="mr-2 h-4 w-4" />
+                        Details
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={(e) => {
+                          if (!canManageMedia) {
+                            toast.error('You do not have permission to delete documents')
+                            return
+                          }
+                          handleDocumentDeleteClick(e, document)
+                        }}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  )}
+                </div>
+                </div>
+              )
+            })}
+          </div>
 
-          {/* Bulk Delete Confirmation Dialog */}
-          <BulkDeleteDialog
-            open={isBulkDeleteDialogOpen}
-            onOpenChange={setIsBulkDeleteDialogOpen}
-            onConfirm={handleBulkDelete}
-            itemCount={selectedImages.size}
-            itemName="image"
-            isDeleting={bulkDeleteMutation.isPending}
-          />
+          {/* Pagination */}
+          {pagination && (
+            <div className="flex justify-center">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                  </PaginationItem>
 
-          {/* Image Preview Dialog */}
+                  {/* Page numbers */}
+                  {Array.from({ length: Math.min(7, pagination.totalPages) }, (_, i) => {
+                    let pageNum: number
+                    if (pagination.totalPages <= 7) {
+                      pageNum = i + 1
+                    } else if (currentPage <= 4) {
+                      pageNum = i + 1
+                    } else if (currentPage >= pagination.totalPages - 3) {
+                      pageNum = pagination.totalPages - 6 + i
+                    } else {
+                      pageNum = currentPage - 3 + i
+                    }
+
+                    return (
+                      <PaginationItem key={pageNum}>
+                        <PaginationLink
+                          onClick={() => handlePageChange(pageNum)}
+                          isActive={currentPage === pageNum}
+                        >
+                          {pageNum}
+                        </PaginationLink>
+                      </PaginationItem>
+                    )
+                  })}
+
+                  {pagination.totalPages > 7 && currentPage < pagination.totalPages - 3 && (
+                    <PaginationItem>
+                      <PaginationEllipsis />
+                    </PaginationItem>
+                  )}
+
+                  <PaginationItem>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === pagination.totalPages}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
+        </>
+      ) : null}
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        onConfirm={handleConfirmDelete}
+        isLoading={activeTab === 'media' ? deleteImageMutation.isPending : deleteDocumentMutation.isPending}
+        title={activeTab === 'media' ? 'Delete Image' : 'Delete Document'}
+        description={
+          activeTab === 'media' 
+            ? (imageToDelete?.linkedAssetsInfo && imageToDelete.linkedAssetsInfo.length > 0
+            ? `Are you sure you want to permanently delete this image? This will remove it from ${imageToDelete.linkedAssetsInfo.length} linked asset(s). This action cannot be undone.`
+            : imageToDelete?.isLinked
+              ? `Are you sure you want to permanently delete this image? This will remove it from the linked asset. This action cannot be undone.`
+                  : `Are you sure you want to permanently delete this image? This action cannot be undone.`)
+            : (documentToDelete?.linkedAssetsInfo && documentToDelete.linkedAssetsInfo.length > 0
+                ? `Are you sure you want to permanently delete this document? This will remove it from ${documentToDelete.linkedAssetsInfo.length} linked asset(s). This action cannot be undone.`
+                : documentToDelete?.isLinked
+                  ? `Are you sure you want to permanently delete this document? This will remove it from the linked asset. This action cannot be undone.`
+                  : `Are you sure you want to permanently delete this document? This action cannot be undone.`)
+        }
+        itemName={activeTab === 'media' ? 'image' : 'document'}
+        confirmLabel="Delete"
+        loadingLabel="Deleting..."
+        affectedAssets={activeTab === 'media' ? (imageToDelete?.linkedAssetsInfo || undefined) : (documentToDelete?.linkedAssetsInfo || undefined)}
+      />
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <BulkDeleteDialog
+        open={isBulkDeleteDialogOpen}
+        onOpenChange={setIsBulkDeleteDialogOpen}
+        onConfirm={handleBulkDelete}
+        itemCount={activeTab === 'media' ? selectedImages.size : selectedDocuments.size}
+        itemName={activeTab === 'media' ? 'image' : 'document'}
+        isDeleting={activeTab === 'media' ? bulkDeleteMutation.isPending : bulkDeleteDocumentMutation.isPending}
+      />
+
+      {/* Image Preview Dialog */}
           <ImagePreviewDialog
             open={isPreviewOpen}
             onOpenChange={setIsPreviewOpen}
-            image={previewImage ? {
-              imageUrl: previewImage.imageUrl,
-              fileName: previewImage.fileName,
-              assetTagId: previewImage.assetTagId,
-              linkedAssetTagIds: previewImage.linkedAssetTagIds,
-              linkedAssetTagId: previewImage.linkedAssetTagId,
-              createdAt: previewImage.createdAt,
-              alt: `Asset ${previewImage.assetTagId} image`,
-            } : null}
+        existingImages={activeTab === 'media' 
+          ? images.map(img => ({
+              id: img.id,
+              imageUrl: img.imageUrl,
+              fileName: img.fileName,
+            }))
+          : documents
+              .filter(doc => {
+                const isImage = doc.mimeType?.startsWith('image/') || 
+                  /\.(jpg|jpeg|png|gif|webp)$/i.test(doc.fileName || '')
+                return isImage
+              })
+              .map(doc => ({
+                id: doc.id,
+                imageUrl: doc.documentUrl,
+                fileName: doc.fileName,
+              }))
+        }
+        initialIndex={previewImageIndex}
+        title={activeTab === 'media' ? 'Media Preview' : 'Document Preview'}
+        description={
+          activeTab === 'media' 
+            ? (images.length > 1 ? `Browse through ${images.length} images` : undefined)
+            : (documents.filter(doc => {
+                const isImage = doc.mimeType?.startsWith('image/') || 
+                  /\.(jpg|jpeg|png|gif|webp)$/i.test(doc.fileName || '')
+                return isImage
+              }).length > 1 
+                ? `Browse through ${documents.filter(doc => {
+                    const isImage = doc.mimeType?.startsWith('image/') || 
+                      /\.(jpg|jpeg|png|gif|webp)$/i.test(doc.fileName || '')
+                    return isImage
+                  }).length} images` 
+                : undefined)
+        }
           />
 
-          {/* Image Details Dialog */}
-          <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
+      {/* Image/Document Details Dialog */}
+      <Dialog open={isDetailsDialogOpen} onOpenChange={(open) => {
+        setIsDetailsDialogOpen(open)
+        if (!open) {
+          setImageDetails(null)
+          setDocumentDetails(null)
+        }
+      }}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
-                <DialogTitle>Image Details</DialogTitle>
+            <DialogTitle>{imageDetails ? 'Image Details' : 'Document Details'}</DialogTitle>
               </DialogHeader>
               {imageDetails && (
                 <div className="space-y-4 mt-4">
@@ -1112,10 +2074,131 @@ export default function MediaPage() {
                   </div>
                 </div>
               )}
+          {documentDetails && (
+            <div className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <div className="text-sm font-medium">File Name</div>
+                <div className="text-sm text-muted-foreground break-all">
+                  {documentDetails.fileName || 'N/A'}
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="text-sm font-medium">URL</div>
+                <div className="text-sm text-muted-foreground break-all">
+                  <a
+                    href={documentDetails.documentUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    {documentDetails.documentUrl}
+                  </a>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Type</div>
+                  <div className="text-sm text-muted-foreground">
+                    {documentDetails.mimeType || documentDetails.documentType || 'Unknown'}
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Size</div>
+                  <div className="text-sm text-muted-foreground">
+                    {formatFileSize(documentDetails.documentSize)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Created At</div>
+                <div className="text-sm text-muted-foreground">
+                  {documentDetails.createdAt
+                    ? format(new Date(documentDetails.createdAt), 'PPp')
+                    : 'Unknown'}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">
+                  Linked Asset{(() => {
+                    // Filter out STANDALONE from linked assets
+                    const realLinkedAssets = documentDetails.linkedAssetTagIds?.filter(id => id !== 'STANDALONE') || []
+                    return realLinkedAssets.length > 1 ? 's' : ''
+                  })()}
+                </div>
+                {(() => {
+                  // Filter out STANDALONE from linked assets
+                  const realLinkedAssets = documentDetails.linkedAssetTagIds?.filter(id => id !== 'STANDALONE') || []
+                  const realLinkedAssetsInfo = documentDetails.linkedAssetsInfo?.filter(info => info.assetTagId !== 'STANDALONE') || []
+                  
+                  if (realLinkedAssets.length > 0) {
+                    return (
+                      <div className="space-y-1">
+                        {realLinkedAssetsInfo.map((assetInfo) => (
+                          <div
+                            key={assetInfo.assetTagId}
+                            className="flex items-center gap-2 text-sm"
+                          >
+                            <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                            <button
+                              onClick={() => {
+                                if (assetInfo.isDeleted) {
+                                  router.push(`/tools/trash?search=${encodeURIComponent(assetInfo.assetTagId)}`)
+                                } else {
+                                  router.push(`/assets?search=${encodeURIComponent(assetInfo.assetTagId)}`)
+                                }
+                                setIsDetailsDialogOpen(false)
+                              }}
+                              className="text-primary hover:underline cursor-pointer"
+                            >
+                              {assetInfo.assetTagId}
+                            </button>
+                            {assetInfo.isDeleted && (
+                              <span className="text-xs text-muted-foreground">(Archived)</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  } else {
+                    return (
+                      <div className="text-sm text-muted-foreground">Not linked to any asset</div>
+                    )
+                  }
+                })()}
+              </div>
+            </div>
+          )}
             </DialogContent>
           </Dialog>
-        </>
-      )}
+
+      {/* Download Confirmation Dialog */}
+      <DownloadConfirmationDialog
+        open={isDownloadDialogOpen}
+        onOpenChange={setIsDownloadDialogOpen}
+        fileName={documentToDownload?.fileName || null}
+        fileSize={documentToDownload?.documentSize || null}
+        onConfirm={() => {
+          if (documentToDownload) {
+            // Create a temporary anchor element to trigger download
+            const link = document.createElement('a')
+            link.href = documentToDownload.documentUrl
+            link.download = documentToDownload.fileName || 'download'
+            link.target = '_blank'
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+          }
+          setDocumentToDownload(null)
+        }}
+        onCancel={() => {
+          setDocumentToDownload(null)
+        }}
+      />
     </>
   )
 }

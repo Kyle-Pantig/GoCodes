@@ -63,7 +63,7 @@ export function SelectedImagesListDialog({
                 key={`file-${index}`}
                 className="flex items-center gap-2 p-2 border-b last:border-b-0 rounded-none hover:bg-accent/50 transition-colors"
               >
-                <div className="relative w-12 h-12 flex-shrink-0 rounded-md overflow-hidden bg-muted">
+                <div className="relative w-12 h-12 shrink-0 rounded-md overflow-hidden bg-muted">
                   <Image
                     src={fileImageUrls[index]}
                     alt={file.name}
@@ -73,7 +73,7 @@ export function SelectedImagesListDialog({
                   />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{file.name}</p>
+                  <p className="text-sm font-medium truncate max-w-xs">{file.name}</p>
                   <p className="text-xs text-muted-foreground">
                     {(file.size / 1024 / 1024).toFixed(2)} MB
                   </p>
@@ -83,7 +83,7 @@ export function SelectedImagesListDialog({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="flex-shrink-0 h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="shrink-0 h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                     onClick={() => onRemoveImage(index)}
                   >
                     <X className="h-3.5 w-3.5" />
@@ -98,7 +98,7 @@ export function SelectedImagesListDialog({
                 key={img.id}
                 className="flex items-center gap-2 p-2 border rounded-lg hover:bg-accent/50 transition-colors"
               >
-                <div className="relative w-12 h-12 flex-shrink-0 rounded-md overflow-hidden bg-muted">
+                <div className="relative w-12 h-12 shrink-0 rounded-md overflow-hidden bg-muted">
                   <Image
                     src={img.imageUrl}
                     alt={img.fileName}
@@ -116,7 +116,7 @@ export function SelectedImagesListDialog({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="flex-shrink-0 h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="shrink-0 h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                     onClick={() => onRemoveExistingImage(img.id)}
                   >
                     <X className="h-3.5 w-3.5" />

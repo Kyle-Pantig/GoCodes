@@ -1,0 +1,997 @@
+'use client'
+
+import { useState, useRef, useEffect } from 'react'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { QrCode, CheckCircle2, X, FileText, History, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { QRScannerDialog } from '@/components/qr-scanner-dialog'
+import { AuditDialog } from '@/components/audit-dialog'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import { Spinner } from '@/components/ui/shadcn-io/spinner'
+import { usePermissions } from '@/hooks/use-permissions'
+import { cn } from '@/lib/utils'
+import type { AuditFormData } from '@/lib/validations/audit'
+
+interface Asset {
+  id: string
+  assetTagId: string
+  description: string
+  status: string | null
+  category: {
+    name: string
+  } | null
+  subCategory: {
+    name: string
+  } | null
+  location: string | null
+  brand: string | null
+  model: string | null
+  serialNo: string | null
+  cost: number | null
+  purchaseDate: string | null
+  department: string | null
+  site: string | null
+}
+
+interface ScannedAsset extends Asset {
+  scannedAt: Date
+}
+
+
+export default function AuditPage() {
+  const queryClient = useQueryClient()
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions()
+  const canAudit = hasPermission('canAudit')
+  const canViewAssets = hasPermission('canViewAssets')
+  const [isScannerOpen, setIsScannerOpen] = useState(false)
+  const [scannedAssets, setScannedAssets] = useState<ScannedAsset[]>([])
+  const [selectedAsset, setSelectedAsset] = useState<ScannedAsset | null>(null)
+  const [isAuditDialogOpen, setIsAuditDialogOpen] = useState(false)
+  const [assetIdInput, setAssetIdInput] = useState('')
+  const [auditToDelete, setAuditToDelete] = useState<{ id: string; auditType: string; assetTagId: string } | null>(null)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const suggestionRef = useRef<HTMLDivElement>(null)
+  const lastScannedCodeRef = useRef<string | null>(null)
+
+
+  // Fetch recent audit history
+  const { 
+    data: auditStatsData, 
+    isLoading: isLoadingAuditStats, 
+    error: auditStatsError 
+  } = useQuery<{ recentAudits: Array<{
+    id: string
+    assetId: string
+    auditType: string
+    auditDate: string
+    auditor: string | null
+    status: string | null
+    notes: string | null
+    createdAt: string
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+  }> }>({
+    queryKey: ['audit-stats'],
+    queryFn: async () => {
+      const response = await fetch('/api/assets/audit/stats')
+      if (!response.ok) {
+        throw new Error('Failed to fetch audit statistics')
+      }
+      return response.json()
+    },
+    enabled: canAudit,
+    staleTime: 30000, // Cache for 30 seconds
+    refetchOnWindowFocus: false,
+  })
+
+  const recentAudits = auditStatsData?.recentAudits || []
+
+  // Helper function to format time ago
+  const getTimeAgo = (dateString: string) => {
+    try {
+      const date = new Date(dateString)
+      const now = new Date()
+      const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+      
+      if (diffInSeconds < 60) {
+        return 'Just now'
+      } else if (diffInSeconds < 3600) {
+        const minutes = Math.floor(diffInSeconds / 60)
+        return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`
+      } else if (diffInSeconds < 86400) {
+        const hours = Math.floor(diffInSeconds / 3600)
+        return `${hours} hour${hours !== 1 ? 's' : ''} ago`
+      } else if (diffInSeconds < 604800) {
+        const days = Math.floor(diffInSeconds / 86400)
+        return `${days} day${days !== 1 ? 's' : ''} ago`
+      } else {
+        return date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+        })
+      }
+    } catch {
+      return 'Unknown'
+    }
+  }
+
+  // Fetch asset suggestions based on input
+  const { data: assetSuggestions = [], isLoading: isLoadingSuggestions } = useQuery<Asset[]>({
+    queryKey: ['asset-suggestions', assetIdInput, scannedAssets.length, showSuggestions],
+    queryFn: async () => {
+      const searchTerm = assetIdInput.trim() || ''
+      const response = await fetch(`/api/assets?search=${encodeURIComponent(searchTerm)}&pageSize=10000`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch assets')
+      }
+      const data = await response.json()
+      const assets = data.assets as Asset[]
+      
+      // Filter out assets already scanned
+      const scannedIds = scannedAssets.map(a => a.id.toLowerCase())
+      const filtered = assets
+        .filter(a => !scannedIds.includes(a.id.toLowerCase()))
+        .slice(0, 10) // Limit suggestions to 10 for UI
+      
+      return filtered
+    },
+    enabled: showSuggestions && canAudit,
+    staleTime: 300,
+  })
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        inputRef.current &&
+        !inputRef.current.contains(event.target as Node) &&
+        suggestionRef.current &&
+        !suggestionRef.current.contains(event.target as Node)
+      ) {
+        setShowSuggestions(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
+
+  // Find asset by assetTagId
+  const findAssetById = async (assetTagId: string): Promise<Asset | null> => {
+    try {
+      const response = await fetch(`/api/assets?search=${encodeURIComponent(assetTagId)}&pageSize=100`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch assets')
+      }
+      const data = await response.json()
+      const assets = data.assets as Asset[]
+      
+      // Find exact match by assetTagId (case-insensitive)
+      const asset = assets.find(
+        (a) => a.assetTagId.toLowerCase() === assetTagId.toLowerCase()
+      )
+      
+      return asset || null
+    } catch (error) {
+      console.error('Error looking up asset:', error)
+      return null
+    }
+  }
+
+  // Handle QR code scan
+  const handleQRScan = async (scannedCode: string) => {
+    if (!canAudit) {
+      toast.error('You do not have permission to conduct audits')
+      setIsScannerOpen(false)
+      return
+    }
+    
+    // Prevent duplicate scans
+    if (lastScannedCodeRef.current === scannedCode) {
+      return
+    }
+
+    lastScannedCodeRef.current = scannedCode
+    setIsScannerOpen(false)
+
+    // Set the input value and look up asset
+    setAssetIdInput(scannedCode)
+    const asset = await findAssetById(scannedCode)
+    
+    if (asset) {
+      await handleAddAsset(asset)
+    } else {
+      toast.error(`Asset with ID "${scannedCode}" not found`)
+    }
+    
+    // Clear last scanned code after a delay
+    setTimeout(() => {
+      lastScannedCodeRef.current = null
+    }, 2000)
+  }
+
+  // Add asset to scanned list
+  const handleAddAsset = async (asset?: Asset) => {
+    if (!canAudit) {
+      toast.error('You do not have permission to conduct audits')
+      return
+    }
+    
+    const assetToAdd = asset || await findAssetById(assetIdInput.trim())
+    
+    if (!assetToAdd) {
+      if (!asset) {
+        toast.error(`Asset with ID "${assetIdInput}" not found`)
+      }
+      return
+    }
+
+    // Check if already scanned
+    const alreadyScanned = scannedAssets.find(
+      (a) => a.assetTagId.toLowerCase() === assetToAdd.assetTagId.toLowerCase()
+    )
+    if (alreadyScanned) {
+      toast.info(`Asset "${assetToAdd.assetTagId}" already scanned in this session`)
+      setSelectedAsset(alreadyScanned)
+      setAssetIdInput('')
+      setShowSuggestions(false)
+      return
+    }
+
+    // Add to scanned assets
+    const scannedAsset: ScannedAsset = {
+      ...assetToAdd,
+      scannedAt: new Date(),
+    }
+    
+    setScannedAssets((prev) => [...prev, scannedAsset])
+    setSelectedAsset(scannedAsset)
+    setAssetIdInput('')
+    setShowSuggestions(false)
+    setSelectedSuggestionIndex(-1)
+    toast.success(`Asset "${assetToAdd.assetTagId}" found and added to audit list`)
+  }
+
+  // Handle suggestion selection
+  const handleSelectSuggestion = (asset: Asset) => {
+    handleAddAsset(asset)
+  }
+
+  // Handle keyboard navigation in suggestions
+  const handleSuggestionKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showSuggestions || assetSuggestions.length === 0) {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        if (assetIdInput.trim()) {
+          handleAddAsset()
+        }
+      }
+      return
+    }
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        setSelectedSuggestionIndex((prev) =>
+          prev < assetSuggestions.length - 1 ? prev + 1 : prev
+        )
+        break
+      case 'ArrowUp':
+        e.preventDefault()
+        setSelectedSuggestionIndex((prev) => (prev > 0 ? prev - 1 : -1))
+        break
+      case 'Enter':
+        e.preventDefault()
+        if (selectedSuggestionIndex >= 0 && selectedSuggestionIndex < assetSuggestions.length) {
+          handleSelectSuggestion(assetSuggestions[selectedSuggestionIndex])
+        } else if (assetIdInput.trim()) {
+          handleAddAsset()
+        }
+        break
+      case 'Escape':
+        e.preventDefault()
+        setShowSuggestions(false)
+        setSelectedSuggestionIndex(-1)
+        break
+    }
+  }
+
+  // Handle input change
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setAssetIdInput(e.target.value)
+    setShowSuggestions(true)
+    setSelectedSuggestionIndex(-1)
+  }
+
+  // Create audit record mutation
+  const createAuditMutation = useMutation({
+    mutationFn: async ({ assetId, data }: { assetId: string; data: AuditFormData }) => {
+      const response = await fetch(`/api/assets/${assetId}/audit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          auditType: data.auditType,
+          auditDate: data.auditDate,
+          auditor: data.auditor || null,
+          status: data.status || 'Completed',
+          notes: data.notes || null,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        // Handle permission errors (403)
+        if (response.status === 403) {
+          // Invalidate permissions cache to force refresh
+          await queryClient.invalidateQueries({ queryKey: ['user-permissions'] })
+          throw new Error(errorData.error || 'You do not have permission to conduct audits')
+        }
+        throw new Error(errorData.error || 'Failed to create audit record')
+      }
+
+      return response.json()
+    },
+    onSuccess: async (result, variables) => {
+      // Remove asset from scanned list after successful audit
+      setScannedAssets((prev) => prev.filter((a) => a.id !== variables.assetId))
+      
+      // Clear selected asset if it was the one that was audited
+      setSelectedAsset(null)
+
+      setIsAuditDialogOpen(false)
+      
+      // Invalidate queries
+      await queryClient.invalidateQueries({ queryKey: ['auditHistory', variables.assetId] })
+      await queryClient.invalidateQueries({ queryKey: ['audit-stats'] })
+      await queryClient.invalidateQueries({ queryKey: ['assets'] })
+      
+      toast.success('Audit record created successfully')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to create audit record')
+    },
+  })
+
+  // Delete audit record mutation
+  const deleteAuditMutation = useMutation({
+    mutationFn: async (auditId: string) => {
+      const response = await fetch(`/api/assets/audit/${auditId}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        // Handle permission errors (403)
+        if (response.status === 403) {
+          // Invalidate permissions cache to force refresh
+          await queryClient.invalidateQueries({ queryKey: ['user-permissions'] })
+          throw new Error(errorData.error || 'You do not have permission to delete audit records')
+        }
+        throw new Error(errorData.error || 'Failed to delete audit record')
+      }
+      return response.json()
+    },
+    onSuccess: async () => {
+      // Invalidate queries to refresh the list
+      await queryClient.invalidateQueries({ queryKey: ['audit-stats'] })
+      await queryClient.invalidateQueries({ queryKey: ['auditHistory'] })
+      setIsDeleteDialogOpen(false)
+      setAuditToDelete(null)
+      toast.success('Audit record deleted successfully')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete audit record')
+    },
+  })
+
+  // Handle audit form submit
+  const handleAuditSubmit = async (data: AuditFormData) => {
+    if (!selectedAsset) return
+    await createAuditMutation.mutateAsync({ assetId: selectedAsset.id, data })
+  }
+
+  // Remove asset from scanned list
+  const handleRemoveAsset = (assetTagId: string) => {
+    setScannedAssets((prev) => prev.filter((a) => a.assetTagId !== assetTagId))
+    if (selectedAsset?.assetTagId === assetTagId) {
+      setSelectedAsset(null)
+    }
+  }
+
+  // Format currency
+  const formatCurrency = (value: number | null | undefined) => {
+    if (!value) return 'N/A'
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'PHP',
+    }).format(value)
+  }
+
+  // Format date
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'N/A'
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })
+    } catch {
+      return dateString
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Asset Audit</h1>
+          <p className="text-muted-foreground mt-1">
+            Scan QR codes or search manually to verify and audit assets
+          </p>
+        </div>
+        <Button
+          onClick={() => {
+            if (!canAudit) {
+              toast.error('You do not have permission to conduct audits')
+              return
+            }
+            setIsScannerOpen(true)
+          }}
+          size="sm"
+          className="gap-2"
+        >
+          <QrCode className="h-5 w-5" />
+          Scan QR Code
+        </Button>
+      </div>
+
+      {/* Recent History - Always visible to show access denied message if needed */}
+      <Card className="flex flex-col py-0 gap-2">
+        <CardHeader className="p-4 pb-2">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-purple-100 text-purple-500">
+              <History className="h-4 w-4" />
+            </div>
+            <CardTitle className="text-sm font-medium">Recent History</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="p-4 pt-0">
+          {permissionsLoading || isLoadingAuditStats ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="flex flex-col items-center gap-3">
+                <Spinner variant="default" size={24} className="text-muted-foreground" />
+                <p className="text-muted-foreground text-sm">Loading...</p>
+              </div>
+            </div>
+          ) : !canAudit ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <History className="h-8 w-8 text-muted-foreground opacity-50 mb-2" />
+              <p className="text-sm font-medium">Access Denied</p>
+              <p className="text-xs text-muted-foreground">
+                You do not have permission to conduct audits. Please contact your administrator.
+              </p>
+            </div>
+          ) : !canViewAssets ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <History className="h-8 w-8 text-muted-foreground opacity-50 mb-2" />
+              <p className="text-sm font-medium">Access Denied</p>
+              <p className="text-xs text-muted-foreground">
+                You do not have permission to view assets.
+              </p>
+            </div>
+          ) : auditStatsError ? (
+            <p className="text-sm text-destructive text-center py-4">
+              Failed to load history. Please try again.
+            </p>
+          ) : recentAudits.length > 0 ? (
+            <ScrollArea className="h-52">
+              <div className="relative w-full">
+                <Table className="w-full caption-bottom text-sm">
+                  <TableHeader className="sticky top-0 z-0 bg-card">
+                    <TableRow>
+                      <TableHead className="h-8 text-xs bg-card">Asset ID</TableHead>
+                      <TableHead className="h-8 text-xs bg-card">Description</TableHead>
+                      <TableHead className="h-8 text-xs bg-card">Audit Type</TableHead>
+                      <TableHead className="h-8 text-xs bg-card">Auditor</TableHead>
+                      <TableHead className="h-8 text-xs bg-card">Status</TableHead>
+                      <TableHead className="h-8 text-xs bg-card">Audit Date</TableHead>
+                      <TableHead className="h-8 text-xs text-right bg-card">Time Ago</TableHead>
+                      <TableHead className="h-8 text-xs text-center bg-card">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentAudits.map((audit) => (
+                      <TableRow key={audit.id} className="h-10">
+                        <TableCell className="py-1.5">
+                          <Badge variant="outline" className="text-xs">
+                            {audit.asset.assetTagId}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-1.5 text-xs max-w-[200px] truncate">
+                          {audit.asset.description}
+                        </TableCell>
+                        <TableCell className="py-1.5 text-xs text-muted-foreground">
+                          {audit.auditType}
+                        </TableCell>
+                        <TableCell className="py-1.5 text-xs text-muted-foreground">
+                          {audit.auditor || '-'}
+                        </TableCell>
+                        <TableCell className="py-1.5">
+                          {audit.status ? (
+                            <Badge
+                              variant={
+                                audit.status === 'Completed'
+                                  ? 'default'
+                                  : audit.status === 'Pending'
+                                  ? 'secondary'
+                                  : 'destructive'
+                              }
+                              className="text-xs"
+                            >
+                              {audit.status}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-1.5 text-xs text-muted-foreground">
+                          {formatDate(audit.auditDate)}
+                        </TableCell>
+                        <TableCell className="py-1.5 text-xs text-muted-foreground text-right">
+                          {getTimeAgo(audit.createdAt)}
+                        </TableCell>
+                        <TableCell className="py-1.5 text-center">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => {
+                              setAuditToDelete({
+                                id: audit.id,
+                                auditType: audit.auditType,
+                                assetTagId: audit.asset.assetTagId,
+                              })
+                              setIsDeleteDialogOpen(true)
+                            }}
+                            title="Delete audit record"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <ScrollBar orientation="horizontal" />
+              <ScrollBar orientation="vertical" className="z-30" />
+            </ScrollArea>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No recent audits
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Asset Selection */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Asset Selection</CardTitle>
+          <CardDescription className="text-xs">
+            Type asset ID and press Enter, or select an asset from the suggestions to add to the audit list
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-2 pb-4">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Input
+                ref={inputRef}
+                placeholder="Enter asset ID (e.g., AT-001) or select from suggestions"
+                value={assetIdInput}
+                onChange={handleInputChange}
+                onKeyDown={handleSuggestionKeyDown}
+                onFocus={() => {
+                  if (!canAudit) {
+                    toast.error('You do not have permission to conduct audits')
+                    return
+                  }
+                  setShowSuggestions(true)
+                }}
+                className="w-full"
+                autoComplete="off"
+                disabled={!canAudit}
+              />
+          
+          {/* Suggestions dropdown */}
+          {showSuggestions && (
+            <div
+              ref={suggestionRef}
+              className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-60 overflow-auto"
+            >
+              {isLoadingSuggestions ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="flex flex-col items-center gap-2">
+                    <Spinner variant="default" size={20} className="text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground">Loading assets...</p>
+                  </div>
+                </div>
+              ) : assetSuggestions.length > 0 ? (
+                assetSuggestions.map((asset, index) => (
+                  <div
+                    key={asset.id}
+                    onClick={() => handleSelectSuggestion(asset)}
+                    onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                    className={cn(
+                      'px-4 py-3 cursor-pointer transition-colors',
+                      'hover:bg-accent',
+                      selectedSuggestionIndex === index && 'bg-accent'
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">{asset.assetTagId}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {asset.category?.name || 'No Category'}
+                          {asset.subCategory?.name && ` - ${asset.subCategory.name}`}
+                        </div>
+                      </div>
+                      <Badge variant="outline">{asset.status || 'Available'}</Badge>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="px-3 py-2 text-sm text-muted-foreground">
+                  No assets found. Start typing to search...
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        {canAudit && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={() => setIsScannerOpen(true)}
+            title="Scan QR Code"
+          >
+            <QrCode className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+    </CardContent>
+  </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:grid-rows-1">
+        {/* Scanned Assets List */}
+        <div className="lg:col-span-2 flex flex-col min-h-0">
+          <Card className="flex flex-col flex-1 min-h-0">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Scanned Assets</CardTitle>
+                  <CardDescription>
+                    {scannedAssets.length} asset{scannedAssets.length !== 1 ? 's' : ''} scanned
+                  </CardDescription>
+                </div>
+                {scannedAssets.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setScannedAssets([])
+                      setSelectedAsset(null)
+                    }}
+                  >
+                    Clear All
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 flex flex-col min-h-0">
+              {scannedAssets.length === 0 ? (
+                <div className="flex flex-col items-center justify-center flex-1 py-12 text-center">
+                  <div className="rounded-full bg-muted p-3 mb-4">
+                    <QrCode className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground mb-1">
+                    No assets scanned yet
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Scan a QR code or search manually to get started
+                  </p>
+                </div>
+              ) : (
+                <ScrollArea className="flex-1">
+                  <div className="space-y-2">
+                    {scannedAssets.map((asset) => (
+                      <Card
+                        key={asset.assetTagId}
+                        className={`cursor-pointer transition-all border py-0 ${
+                          selectedAsset?.assetTagId === asset.assetTagId
+                            ? 'border-primary bg-primary/5 shadow-sm'
+                            : 'hover:bg-accent/50 hover:border-border'
+                        }`}
+                        onClick={() => setSelectedAsset(asset)}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex-1 min-w-0 space-y-2.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono font-semibold text-sm text-foreground">
+                                  {asset.assetTagId}
+                                </span>
+                                {asset.status && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {asset.status}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-foreground font-medium line-clamp-1">
+                                {asset.description}
+                              </p>
+                              <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                                {asset.category && (
+                                  <span className="flex items-center gap-1">
+                                    <span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
+                                    {asset.category.name}
+                                    {asset.subCategory?.name && ` - ${asset.subCategory.name}`}
+                                  </span>
+                                )}
+                                {asset.location && (
+                                  <span className="flex items-center gap-1">
+                                    <span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
+                                    {asset.location}
+                                  </span>
+                                )}
+                                {asset.brand && (
+                                  <span className="flex items-center gap-1">
+                                    <span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
+                                    {asset.brand}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                <span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
+                                Scanned: {asset.scannedAt.toLocaleTimeString()}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setSelectedAsset(asset)
+                                  setIsAuditDialogOpen(true)
+                                }}
+                                className="shrink-0"
+                              >
+                                <FileText className="h-3.5 w-3.5 mr-1" />
+                                Audit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleRemoveAsset(asset.assetTagId)
+                                }}
+                                className="text-muted-foreground hover:text-destructive shrink-0"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Asset Details */}
+        <div className="flex flex-col min-h-0 h-full">
+          {/* Selected Asset Details */}
+          {selectedAsset ? (
+            <Card className="flex flex-col flex-1 min-h-0">
+              <CardHeader>
+                <CardTitle>Asset Details</CardTitle>
+                <CardDescription>Verify asset information</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 flex flex-col space-y-4 min-h-0">
+                <ScrollArea className="flex-1">
+                  <div className="space-y-3 pr-4">
+                    <div>
+                      <div className="text-xs font-medium text-muted-foreground mb-1">
+                        Asset Tag ID
+                      </div>
+                      <div className="font-mono font-semibold">{selectedAsset.assetTagId}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-medium text-muted-foreground mb-1">
+                        Description
+                      </div>
+                      <div className="text-sm">{selectedAsset.description}</div>
+                    </div>
+                    {selectedAsset.category && (
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                          Category
+                        </div>
+                        <div className="text-sm">{selectedAsset.category.name}</div>
+                      </div>
+                    )}
+                    {selectedAsset.subCategory && (
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                          Sub Category
+                        </div>
+                        <div className="text-sm">{selectedAsset.subCategory.name}</div>
+                      </div>
+                    )}
+                    {selectedAsset.status && (
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                          Status
+                        </div>
+                        <Badge variant="outline">{selectedAsset.status}</Badge>
+                      </div>
+                    )}
+                    {selectedAsset.location && (
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                          Location
+                        </div>
+                        <div className="text-sm">{selectedAsset.location}</div>
+                      </div>
+                    )}
+                    {selectedAsset.department && (
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                          Department
+                        </div>
+                        <div className="text-sm">{selectedAsset.department}</div>
+                      </div>
+                    )}
+                    {selectedAsset.brand && (
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                          Brand
+                        </div>
+                        <div className="text-sm">{selectedAsset.brand}</div>
+                      </div>
+                    )}
+                    {selectedAsset.model && (
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                          Model
+                        </div>
+                        <div className="text-sm">{selectedAsset.model}</div>
+                      </div>
+                    )}
+                    {selectedAsset.serialNo && (
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                          Serial Number
+                        </div>
+                        <div className="text-sm font-mono">{selectedAsset.serialNo}</div>
+                      </div>
+                    )}
+                    {selectedAsset.cost && (
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                          Cost
+                        </div>
+                        <div className="text-sm">{formatCurrency(selectedAsset.cost)}</div>
+                      </div>
+                    )}
+                    {selectedAsset.purchaseDate && (
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                          Purchase Date
+                        </div>
+                        <div className="text-sm">{formatDate(selectedAsset.purchaseDate)}</div>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+                <Button
+                  className="w-full mt-4"
+                  onClick={() => setIsAuditDialogOpen(true)}
+                >
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  Create Audit Record
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="flex flex-col flex-1 min-h-0">
+              <CardContent className="flex flex-col items-center justify-center flex-1 py-12 text-center">
+                <div className="rounded-full bg-muted p-4 mb-4">
+                  <FileText className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <p className="text-sm font-medium text-foreground mb-1">
+                  No asset selected
+                </p>
+                <p className="text-xs text-muted-foreground max-w-[200px]">
+                  Select an asset from the scanned list to view details and create an audit record
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+      {/* QR Scanner Dialog */}
+      <QRScannerDialog
+        open={isScannerOpen}
+        onOpenChange={setIsScannerOpen}
+        onScan={handleQRScan}
+        title="Scan Asset QR Code"
+        description="Scan the QR code or barcode on the asset tag"
+      />
+
+      {/* Audit Dialog */}
+      {selectedAsset && (
+        <AuditDialog
+          open={isAuditDialogOpen}
+          onOpenChange={setIsAuditDialogOpen}
+          onSubmit={handleAuditSubmit}
+          isLoading={createAuditMutation.isPending}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setIsDeleteDialogOpen(open)
+          if (!open) {
+            setAuditToDelete(null)
+          }
+        }}
+        onConfirm={() => {
+          if (auditToDelete) {
+            deleteAuditMutation.mutate(auditToDelete.id)
+          }
+        }}
+        title="Delete Audit Record"
+        description={
+          auditToDelete
+            ? `Are you sure you want to delete audit record "${auditToDelete.auditType}" for asset "${auditToDelete.assetTagId}"? This action cannot be undone.`
+            : 'Are you sure you want to delete this audit record? This action cannot be undone.'
+        }
+        isLoading={deleteAuditMutation.isPending}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+      />
+    </div>
+  )
+}
+

@@ -62,9 +62,10 @@ export function LoginForm({
         return
       }
 
-      // Login successful, redirect to dashboard
+      // Login successful, check for redirect parameter
+      const redirectTo = searchParams.get('redirect') || '/dashboard'
       toast.success('Login successful')
-      router.push("/dashboard")
+      router.push(redirectTo)
       router.refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "An unexpected error occurred")

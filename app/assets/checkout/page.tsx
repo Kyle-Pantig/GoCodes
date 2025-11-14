@@ -630,7 +630,7 @@ export default function CheckoutPage() {
               <ScrollArea className="h-52">
                 <div className="relative w-full">
                   <Table className="w-full caption-bottom text-sm">
-                    <TableHeader className="sticky top-0 z-10 bg-card">
+                    <TableHeader className="sticky top-0 z-0 bg-card">
                     <TableRow>
                         <TableHead className="h-8 text-xs bg-card">Asset ID</TableHead>
                         <TableHead className="h-8 text-xs bg-card">Description</TableHead>

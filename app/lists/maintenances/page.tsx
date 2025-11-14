@@ -12,6 +12,8 @@ import {
   ColumnDef,
   SortingState,
   VisibilityState,
+  HeaderGroup,
+  Header,
 } from '@tanstack/react-table'
 import {
   Table,
@@ -41,6 +43,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import Image from 'next/image'
+import { Checkbox } from '@/components/ui/checkbox'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 
 interface Asset {
@@ -1516,17 +1519,17 @@ const createColumns = (
   },
   {
     id: 'maintenanceActions',
-    header: () => <div className="text-right">Actions</div>,
+    header: () => <div className="text-center">Actions</div>,
     cell: ({ row }) => {
       const maintenance = row.original.maintenances?.[0]
       if (!maintenance) return <div>-</div>
       return (
-        <div className="text-right">
+        <div className="text-center">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="h-8 w-8 p-0 hover:bg-transparent!"
             onClick={() => {
               if (!canManageMaintenance) {
                 toast.error('You do not have permission to take actions')
@@ -2200,29 +2203,7 @@ export default function ListOfMaintenancesPage() {
                     disabled={false}
                   >
                     <div className="flex items-center gap-2">
-                      <div
-                        className={`size-4 rounded border flex items-center justify-center ${
-                          visibleColumns.includes(column.key)
-                            ? 'bg-primary border-primary'
-                            : 'border-input'
-                        }`}
-                      >
-                        {visibleColumns.includes(column.key) && (
-                          <svg
-                            className="size-3 text-primary-foreground"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M5 13l4 4L19 7"
-                            />
-                          </svg>
-                        )}
-                      </div>
+                      <Checkbox checked={visibleColumns.includes(column.key)} />
                       {column.label}
                     </div>
                   </SelectItem>
@@ -2246,7 +2227,7 @@ export default function ListOfMaintenancesPage() {
         </CardHeader>
         <CardContent className="flex-1 px-0 relative">
           {isFetching && data && isManualRefresh && (
-            <div className="absolute inset-x-0 top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+            <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
               <Spinner variant="default" size={24} className="text-muted-foreground" />
             </div>
           )}
@@ -2277,19 +2258,23 @@ export default function ListOfMaintenancesPage() {
               </div>
             ) : (
               <div className="min-w-full ">
-                <ScrollArea className='h-132'>
-                <Table className='border-t'>
-                  <TableHeader>
-                    {table.getHeaderGroups().map((headerGroup) => (
-                      <TableRow key={headerGroup.id} className="group">
-                        {headerGroup.headers.map((header) => {
+                <ScrollArea className='h-132 relative'>
+                <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
+                <div className="pr-2.5">
+                <Table className='border-b'>
+                  <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-2.5">
+                    {table.getHeaderGroups().map((headerGroup: HeaderGroup<Asset>) => (
+                      <TableRow key={headerGroup.id} className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:bg-border after:z-30">
+                        {headerGroup.headers.map((header: Header<Asset, unknown>) => {
                           const isActionsColumn = header.column.id === 'maintenanceActions'
                           return (
                             <TableHead 
                               key={header.id} 
                               className={cn(
-                                isActionsColumn ? "text-right" : "text-left ",
-                                isActionsColumn && "sticky right-0 bg-card z-0 border-l group-hover:bg-muted/50 transition-colors"
+                                isActionsColumn ? "text-center" : "text-left ",
+                                "bg-card transition-colors",
+                                !isActionsColumn && "group-hover:bg-muted/50",
+                                isActionsColumn && "sticky z-10 right-0 border-r after:content-[''] after:absolute after:left-0 after:top-0 after:bottom-0 after:w-px after:bg-border after:z-30 "
                               )}
                             >
                               {header.isPlaceholder
@@ -2304,14 +2289,14 @@ export default function ListOfMaintenancesPage() {
                   <TableBody>
                     {table.getRowModel().rows?.length ? (
                       table.getRowModel().rows.map((row) => (
-                        <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'} className="group">
+                        <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'} className="group relative after:content-[''] after:absolute after:top-0 after:bottom-0 after:right-0 after:w-px after:bg-border after:z-10">
                           {row.getVisibleCells().map((cell) => {
                             const isActionsColumn = cell.column.id === 'maintenanceActions'
                             return (
                               <TableCell 
                                 key={cell.id}
                                 className={cn(
-                                  isActionsColumn && "sticky right-0 bg-card z-10 group-hover:bg-muted/50 border-l transition-colors"
+                                  isActionsColumn && "sticky text-center right-0 bg-card z-10 after:content-[''] after:absolute after:left-0 after:top-0 after:bottom-0 after:w-px after:bg-border after:z-30 "
                                 )}
                               >
                                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -2329,6 +2314,7 @@ export default function ListOfMaintenancesPage() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
                 <ScrollBar orientation="horizontal" className='z-10' />
                 <ScrollBar orientation="vertical" className='z-10' />
                 </ScrollArea>

@@ -39,7 +39,7 @@ import {
 import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
-import { leaseReturnSchema, type LeaseReturnFormData } from "@/lib/validations/assets"
+import { leaseReturnSchema } from "@/lib/validations/assets"
 
 interface Asset {
   id: string
@@ -92,7 +92,7 @@ export default function LeaseReturnPage() {
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
 
-  const form = useForm<LeaseReturnFormData>({
+  const form = useForm({
     resolver: zodResolver(leaseReturnSchema),
     defaultValues: {
       assetIds: [],
@@ -545,7 +545,7 @@ export default function LeaseReturnPage() {
 
     // Build updates object from form data
     const updates: Record<string, { condition?: string; notes?: string }> = {}
-    data.assetUpdates.forEach((update) => {
+    ;(data.assetUpdates || []).forEach((update: { assetId: string; condition?: string; notes?: string }) => {
       updates[update.assetId] = {
         condition: update.condition || undefined,
         notes: update.notes || undefined,
@@ -606,7 +606,7 @@ export default function LeaseReturnPage() {
               <ScrollArea className="h-52">
                 <div className="relative w-full">
                   <Table className="w-full caption-bottom text-sm">
-                    <TableHeader className="sticky top-0 z-10 bg-card">
+                    <TableHeader className="sticky top-0 z-0 bg-card">
                     <TableRow>
                         <TableHead className="h-8 text-xs bg-card">Asset ID</TableHead>
                         <TableHead className="h-8 text-xs bg-card">Lessee</TableHead>

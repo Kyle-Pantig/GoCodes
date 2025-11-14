@@ -163,10 +163,13 @@ export async function POST(request: NextRequest) {
 
     const existingAssets = await prisma.assets.findMany({
       where: { assetTagId: { in: assetTagIds } },
-      select: { assetTagId: true }
+      select: { assetTagId: true, isDeleted: true }
     })
     
     const existingAssetTags = new Set(existingAssets.map(asset => asset.assetTagId))
+    const deletedAssetTags = new Set(
+      existingAssets.filter(asset => asset.isDeleted).map(asset => asset.assetTagId)
+    )
 
     // Helper function to safely parse numbers, handling NaN, empty strings, null, undefined
     const parseNumber = (value: unknown): number | null => {
@@ -422,7 +425,11 @@ export async function POST(request: NextRequest) {
       .map(asset => {
         const assetTagId = asset.assetTagId as string
         if (existingAssetTags.has(assetTagId)) {
-          return { asset: assetTagId, action: 'skipped', reason: 'Duplicate asset tag' }
+          if (deletedAssetTags.has(assetTagId)) {
+            return { asset: assetTagId, action: 'skipped', reason: 'Asset exists in trash' }
+          } else {
+            return { asset: assetTagId, action: 'skipped', reason: 'Duplicate asset tag' }
+          }
         } else {
           return { asset: assetTagId, action: 'created' }
         }

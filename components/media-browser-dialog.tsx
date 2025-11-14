@@ -193,10 +193,10 @@ export function MediaBrowserDialog({
                 return (
                   <div
                     key={image.id}
-                    className={`relative aspect-square group border-2 rounded ${
+                    className={`relative aspect-square group rounded ${
                       isAlreadyLinked 
-                        ? 'border-gray-300 opacity-50 cursor-not-allowed' 
-                        : `cursor-pointer ${isSelected ? 'border-blue-500 ring-2 ring-blue-200' : 'border-transparent hover:border-gray-300'}`
+                        ? 'opacity-50 cursor-not-allowed' 
+                        : 'cursor-pointer'
                     }`}
                     onClick={() => handleImageClick(image)}
                   >
@@ -234,8 +234,8 @@ export function MediaBrowserDialog({
                     )}
                     
                     {isSelected && (
-                      <div className="absolute inset-0 bg-blue-500/30 flex items-center justify-center z-20">
-                        <div className="bg-blue-500 text-white rounded-full p-2">
+                      <div className="absolute inset-0 bg-primary/30 flex items-center justify-center z-20">
+                        <div className="bg-primary text-white rounded-full p-2">
                           <PlusIcon className="h-5 w-5" />
                         </div>
                       </div>

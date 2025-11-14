@@ -1,14 +1,25 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  flexRender,
+  ColumnDef,
+  SortingState,
+  HeaderGroup,
+  Header,
+} from '@tanstack/react-table'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Trash2, RotateCcw, AlertTriangle, Package, Search, RotateCw, X } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Trash2, RotateCcw, AlertTriangle, Package, Search, RotateCw, X, MoreHorizontal, ArrowLeft, ArrowRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -22,8 +33,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, ArrowLeft, ArrowRight } from 'lucide-react'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import { BulkDeleteDialog } from '@/components/bulk-delete-dialog'
 import {
   Select,
   SelectContent,
@@ -47,7 +58,7 @@ interface DeletedAsset {
   deletedAt: string
 }
 
-async function fetchDeletedAssets(page: number = 1, pageSize: number = 100, search?: string) {
+async function fetchDeletedAssets(page: number = 1, pageSize: number = 100, search?: string, searchType: string = 'unified') {
   // Fetch all deleted assets with a large page size to get accurate count
   const response = await fetch(`/api/assets?includeDeleted=true&page=1&pageSize=10000`)
   if (!response.ok) throw new Error('Failed to fetch deleted assets')
@@ -59,14 +70,30 @@ async function fetchDeletedAssets(page: number = 1, pageSize: number = 100, sear
   if (search && search.trim()) {
     const searchLower = search.toLowerCase().trim()
     allDeletedAssets = allDeletedAssets.filter((asset: DeletedAsset) => {
-      return (
-        asset.assetTagId?.toLowerCase().includes(searchLower) ||
-        asset.description?.toLowerCase().includes(searchLower) ||
-        asset.category?.name?.toLowerCase().includes(searchLower) ||
-        asset.subCategory?.name?.toLowerCase().includes(searchLower) ||
-        asset.location?.toLowerCase().includes(searchLower) ||
-        asset.status?.toLowerCase().includes(searchLower)
-      )
+      if (searchType === 'assetTag') {
+        return asset.assetTagId?.toLowerCase().includes(searchLower)
+      } else if (searchType === 'description') {
+        return asset.description?.toLowerCase().includes(searchLower)
+      } else if (searchType === 'category') {
+        return (
+          asset.category?.name?.toLowerCase().includes(searchLower) ||
+          asset.subCategory?.name?.toLowerCase().includes(searchLower)
+        )
+      } else if (searchType === 'location') {
+        return asset.location?.toLowerCase().includes(searchLower)
+      } else if (searchType === 'status') {
+        return asset.status?.toLowerCase().includes(searchLower)
+      } else {
+        // unified search
+        return (
+          asset.assetTagId?.toLowerCase().includes(searchLower) ||
+          asset.description?.toLowerCase().includes(searchLower) ||
+          asset.category?.name?.toLowerCase().includes(searchLower) ||
+          asset.subCategory?.name?.toLowerCase().includes(searchLower) ||
+          asset.location?.toLowerCase().includes(searchLower) ||
+          asset.status?.toLowerCase().includes(searchLower)
+        )
+      }
     })
   }
   
@@ -105,15 +132,26 @@ export default function TrashPage() {
   // Separate states for search input (immediate UI) and search query (debounced API calls)
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '')
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '')
+  const [searchType, setSearchType] = useState<'unified' | 'assetTag' | 'description' | 'category' | 'location' | 'status'>(
+    (searchParams.get('searchType') as 'unified' | 'assetTag' | 'description' | 'category' | 'location' | 'status') || 'unified'
+  )
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const previousSearchInputRef = useRef<string>(searchParams.get('search') || '')
   
   const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedAsset, setSelectedAsset] = useState<DeletedAsset | null>(null)
+  const [rowSelection, setRowSelection] = useState({})
+  const [isBulkRestoreDialogOpen, setIsBulkRestoreDialogOpen] = useState(false)
+  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
+  const [isBulkRestoring, setIsBulkRestoring] = useState(false)
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 })
+  const [sorting, setSorting] = useState<SortingState>([])
+  const [isManualRefresh, setIsManualRefresh] = useState(false)
 
   // Update URL parameters
-  const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string }) => {
+  const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string; searchType?: string }) => {
     const params = new URLSearchParams(searchParams.toString())
     
     if (updates.page !== undefined) {
@@ -136,8 +174,18 @@ export default function TrashPage() {
     if (updates.search !== undefined) {
       if (updates.search === '') {
         params.delete('search')
+        params.delete('searchType')
       } else {
         params.set('search', updates.search)
+      }
+      params.delete('page')
+    }
+
+    if (updates.searchType !== undefined) {
+      if (updates.searchType === 'unified') {
+        params.delete('searchType')
+      } else {
+        params.set('searchType', updates.searchType)
       }
       params.delete('page')
     }
@@ -160,7 +208,7 @@ export default function TrashPage() {
       previousSearchInputRef.current = searchInput
       const currentSearch = searchParams.get('search') || ''
       if (searchInput !== currentSearch) {
-        updateURL({ search: searchInput, page: 1 })
+        updateURL({ search: searchInput, searchType, page: 1 })
       }
     }, 500)
 
@@ -170,15 +218,23 @@ export default function TrashPage() {
         searchTimeoutRef.current = null
       }
     }
-  }, [searchInput, searchParams, updateURL])
+  }, [searchInput, searchParams, searchType, updateURL])
 
 
   // Fetch deleted assets
-  const { data, isLoading } = useQuery({
-    queryKey: ['deletedAssets', page, pageSize, searchQuery],
-    queryFn: () => fetchDeletedAssets(page, pageSize, searchQuery || undefined),
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['deletedAssets', page, pageSize, searchQuery, searchType],
+    queryFn: () => fetchDeletedAssets(page, pageSize, searchQuery || undefined, searchType),
     enabled: (canViewAssets || canManageTrash) && !permissionsLoading,
+    placeholderData: (previousData) => previousData,
   })
+
+  // Reset manual refresh flag after successful fetch
+  useEffect(() => {
+    if (!isFetching && isManualRefresh) {
+      setIsManualRefresh(false)
+    }
+  }, [isFetching, isManualRefresh])
 
   const handlePageSizeChange = (newPageSize: string) => {
     updateURL({ pageSize: parseInt(newPageSize), page: 1 })
@@ -235,23 +291,23 @@ export default function TrashPage() {
     },
   })
 
-  const handleRestore = (asset: DeletedAsset) => {
+  const handleRestore = useCallback((asset: DeletedAsset) => {
     if (!canManageTrash) {
       toast.error('You do not have permission to restore assets')
       return
     }
     setSelectedAsset(asset)
     setIsRestoreDialogOpen(true)
-  }
+  }, [canManageTrash])
 
-  const handleDelete = (asset: DeletedAsset) => {
+  const handleDelete = useCallback((asset: DeletedAsset) => {
     if (!canManageTrash) {
       toast.error('You do not have permission to permanently delete assets')
       return
     }
     setSelectedAsset(asset)
     setIsDeleteDialogOpen(true)
-  }
+  }, [canManageTrash])
 
   const confirmRestore = () => {
     if (selectedAsset) {
@@ -271,30 +327,384 @@ export default function TrashPage() {
     return Math.max(0, 30 - daysSinceDeleted)
   }
 
-  if (!canViewAssets && !canManageTrash && !permissionsLoading) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Trash</h1>
-          <p className="text-muted-foreground">
-            View and manage deleted assets
-          </p>
-        </div>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="flex flex-col items-center gap-3 text-center">
-            <Package className="h-12 w-12 text-muted-foreground opacity-50" />
-            <p className="text-lg font-medium">Access Denied</p>
-            <p className="text-sm text-muted-foreground">
-              You do not have permission to view deleted assets. Please contact your administrator.
-            </p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   const deletedAssets = data?.assets || []
   const pagination = data?.pagination
+
+  // Create column definitions
+  const columns = useMemo<ColumnDef<DeletedAsset>[]>(() => [
+    {
+      id: 'select',
+      enableHiding: false,
+      enableSorting: false,
+      header: ({ table }) => {
+        const isAllSelected = table.getIsAllPageRowsSelected()
+        const isSomeSelected = table.getIsSomePageRowsSelected()
+        return (
+          <Checkbox
+            checked={isAllSelected}
+            {...(isSomeSelected && !isAllSelected && { 'aria-checked': 'mixed' as const })}
+            onCheckedChange={(checked) => {
+              if (checked === true) {
+                table.toggleAllPageRowsSelected(true)
+              } else {
+                table.toggleAllPageRowsSelected(false)
+              }
+            }}
+          />
+        )
+      },
+      cell: ({ row }) => (
+        <Checkbox
+          checked={row.getIsSelected()}
+          onCheckedChange={(checked) => {
+            if (typeof checked === 'boolean') {
+              row.toggleSelected(checked)
+            }
+          }}
+        />
+      ),
+    },
+    {
+      accessorKey: 'assetTagId',
+      id: 'assetTag',
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+          >
+            Asset Tag
+            {column.getIsSorted() === 'asc' ? (
+              <ArrowUp className="ml-2 h-4 w-4" />
+            ) : column.getIsSorted() === 'desc' ? (
+              <ArrowDown className="ml-2 h-4 w-4" />
+            ) : (
+              <ArrowUpDown className="ml-2 h-4 w-4" />
+            )}
+          </Button>
+        )
+      },
+      cell: ({ row }) => (
+        <div className="font-medium">{row.original.assetTagId}</div>
+      ),
+      enableSorting: true,
+    },
+    {
+      accessorKey: 'description',
+      id: 'description',
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+          >
+            Description
+            {column.getIsSorted() === 'asc' ? (
+              <ArrowUp className="ml-2 h-4 w-4" />
+            ) : column.getIsSorted() === 'desc' ? (
+              <ArrowDown className="ml-2 h-4 w-4" />
+            ) : (
+              <ArrowUpDown className="ml-2 h-4 w-4" />
+            )}
+          </Button>
+        )
+      },
+      cell: ({ row }) => (
+        <div className="max-w-[300px] truncate">{row.original.description}</div>
+      ),
+      enableSorting: true,
+    },
+    {
+      id: 'category',
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+          >
+            Category
+            {column.getIsSorted() === 'asc' ? (
+              <ArrowUp className="ml-2 h-4 w-4" />
+            ) : column.getIsSorted() === 'desc' ? (
+              <ArrowDown className="ml-2 h-4 w-4" />
+            ) : (
+              <ArrowUpDown className="ml-2 h-4 w-4" />
+            )}
+          </Button>
+        )
+      },
+      cell: ({ row }) => (
+        <div>
+          {row.original.category?.name || '-'} / {row.original.subCategory?.name || '-'}
+        </div>
+      ),
+      sortingFn: (rowA, rowB) => {
+        const categoryA = rowA.original.category?.name || ''
+        const categoryB = rowB.original.category?.name || ''
+        const subCategoryA = rowA.original.subCategory?.name || ''
+        const subCategoryB = rowB.original.subCategory?.name || ''
+        const combinedA = `${categoryA} / ${subCategoryA}`
+        const combinedB = `${categoryB} / ${subCategoryB}`
+        return combinedA.localeCompare(combinedB)
+      },
+      enableSorting: true,
+    },
+    {
+      accessorKey: 'status',
+      id: 'status',
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+          >
+            Status
+            {column.getIsSorted() === 'asc' ? (
+              <ArrowUp className="ml-2 h-4 w-4" />
+            ) : column.getIsSorted() === 'desc' ? (
+              <ArrowDown className="ml-2 h-4 w-4" />
+            ) : (
+              <ArrowUpDown className="ml-2 h-4 w-4" />
+            )}
+          </Button>
+        )
+      },
+      cell: ({ row }) => (
+        <div>
+          {row.original.status ? (
+            <Badge variant="outline">{row.original.status}</Badge>
+          ) : (
+            '-'
+          )}
+        </div>
+      ),
+      enableSorting: true,
+    },
+    {
+      accessorKey: 'location',
+      id: 'location',
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+          >
+            Location
+            {column.getIsSorted() === 'asc' ? (
+              <ArrowUp className="ml-2 h-4 w-4" />
+            ) : column.getIsSorted() === 'desc' ? (
+              <ArrowDown className="ml-2 h-4 w-4" />
+            ) : (
+              <ArrowUpDown className="ml-2 h-4 w-4" />
+            )}
+          </Button>
+        )
+      },
+      cell: ({ row }) => <div>{row.original.location || '-'}</div>,
+      enableSorting: true,
+    },
+    {
+      accessorKey: 'deletedAt',
+      id: 'deletedDate',
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+          >
+            Deleted Date
+            {column.getIsSorted() === 'asc' ? (
+              <ArrowUp className="ml-2 h-4 w-4" />
+            ) : column.getIsSorted() === 'desc' ? (
+              <ArrowDown className="ml-2 h-4 w-4" />
+            ) : (
+              <ArrowUpDown className="ml-2 h-4 w-4" />
+            )}
+          </Button>
+        )
+      },
+      cell: ({ row }) => (
+        <div className="text-muted-foreground">
+          {format(new Date(row.original.deletedAt), 'MMM dd, yyyy')}
+        </div>
+      ),
+      enableSorting: true,
+    },
+    {
+      id: 'daysLeft',
+      accessorFn: (row) => getDaysUntilPermanentDelete(row.deletedAt),
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+          >
+            Days Left
+            {column.getIsSorted() === 'asc' ? (
+              <ArrowUp className="ml-2 h-4 w-4" />
+            ) : column.getIsSorted() === 'desc' ? (
+              <ArrowDown className="ml-2 h-4 w-4" />
+            ) : (
+              <ArrowUpDown className="ml-2 h-4 w-4" />
+            )}
+          </Button>
+        )
+      },
+      cell: ({ row }) => {
+        const daysLeft = getDaysUntilPermanentDelete(row.original.deletedAt)
+        return (
+          <div>
+            {daysLeft > 0 ? (
+              <Badge variant={daysLeft <= 7 ? 'destructive' : 'default'}>
+                {daysLeft} day{daysLeft !== 1 ? 's' : ''}
+              </Badge>
+            ) : (
+              <Badge variant="destructive">
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                Overdue
+              </Badge>
+            )}
+          </div>
+        )
+      },
+      enableSorting: true,
+    },
+    {
+      id: 'actions',
+      enableHiding: false,
+      enableSorting: false,
+      header: () => <div className="text-center">Actions</div>,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="ghost" 
+                className="h-8 w-8 p-0"
+              >
+                <span className="sr-only">Open menu</span>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => handleRestore(row.original)}
+                className="cursor-pointer"
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Restore
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => handleDelete(row.original)}
+                className="cursor-pointer text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Permanently
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+    },
+  ], [handleRestore, handleDelete])
+
+  // Create table instance
+  const table = useReactTable({
+    data: deletedAssets,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    onSortingChange: setSorting,
+    getRowId: (row) => row.id,
+    enableRowSelection: true,
+    onRowSelectionChange: setRowSelection,
+    state: {
+      sorting,
+      rowSelection,
+    },
+  })
+
+  // Get selected assets from table row selection
+  // Compute directly to ensure reactivity when rowSelection changes
+  const selectedAssets = (() => {
+    const selected = new Set<string>()
+    table.getSelectedRowModel().rows.forEach(row => {
+      selected.add(row.original.id)
+    })
+    return selected
+  })()
+
+  // Bulk restore handler
+  const handleBulkRestore = async () => {
+    if (selectedAssets.size === 0) return
+    setIsBulkRestoring(true)
+    const selectedArray = Array.from(selectedAssets)
+    setBulkProgress({ current: 0, total: selectedArray.length })
+
+    try {
+      for (let i = 0; i < selectedArray.length; i++) {
+        const assetId = selectedArray[i]
+        const response = await fetch(`/api/assets/${assetId}/restore`, {
+          method: 'PATCH',
+        })
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || `Failed to restore asset ${assetId}`)
+        }
+        setBulkProgress({ current: i + 1, total: selectedArray.length })
+      }
+
+      toast.success(`Successfully restored ${selectedArray.length} asset(s)`)
+      setRowSelection({})
+      setIsBulkRestoreDialogOpen(false)
+      setIsBulkRestoring(false)
+      queryClient.invalidateQueries({ queryKey: ['deletedAssets'] })
+      queryClient.invalidateQueries({ queryKey: ['assets'] })
+    } catch (error) {
+      console.error('Bulk restore error:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to restore assets')
+      setIsBulkRestoring(false)
+    }
+  }
+
+  // Bulk delete handler
+  const handleBulkDelete = async () => {
+    if (selectedAssets.size === 0) return
+    setIsBulkDeleting(true)
+    const selectedArray = Array.from(selectedAssets)
+    setBulkProgress({ current: 0, total: selectedArray.length })
+
+    try {
+      for (let i = 0; i < selectedArray.length; i++) {
+        const assetId = selectedArray[i]
+        const response = await fetch(`/api/assets/${assetId}?permanent=true`, {
+          method: 'DELETE',
+        })
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || `Failed to permanently delete asset ${assetId}`)
+        }
+        setBulkProgress({ current: i + 1, total: selectedArray.length })
+      }
+
+      toast.success(`Successfully permanently deleted ${selectedArray.length} asset(s)`)
+      setRowSelection({})
+      setIsBulkDeleteDialogOpen(false)
+      setIsBulkDeleting(false)
+      queryClient.invalidateQueries({ queryKey: ['deletedAssets'] })
+    } catch (error) {
+      console.error('Bulk delete error:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to permanently delete assets')
+      setIsBulkDeleting(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -307,54 +717,121 @@ export default function TrashPage() {
 
       <Card className="gap-0">
         <CardHeader className="shrink-0 pb-3">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
-            <div>
-              <CardTitle>Deleted Assets</CardTitle>
-              <CardDescription className="text-xs sm:text-sm">
-                View and manage deleted assets. Assets will be permanently deleted after 30 days.
-              </CardDescription>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="flex items-center w-full md:flex-1 md:max-w-md border rounded-md overflow-hidden">
+              <Select
+                value={searchType}
+                onValueChange={(value: 'unified' | 'assetTag' | 'description' | 'category' | 'location' | 'status') => {
+                  setSearchType(value)
+                  updateURL({ searchType: value, page: 1 })
+                }}
+              >
+                <SelectTrigger className="w-[140px] h-8 rounded-none border-0 border-r focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none" size='sm'>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unified">Unified Search</SelectItem>
+                  <SelectItem value="assetTag">Asset Tag</SelectItem>
+                  <SelectItem value="description">Description</SelectItem>
+                  <SelectItem value="category">Category</SelectItem>
+                  <SelectItem value="location">Location</SelectItem>
+                  <SelectItem value="status">Status</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="relative flex-1">
+                {searchInput ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchInput('')
+                      updateURL({ search: '', page: 1 })
+                    }}
+                    className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer z-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+                )}
+                <Input
+                  placeholder={
+                    searchType === 'unified'
+                      ? 'Search by asset tag, description, category, location...'
+                      : searchType === 'assetTag'
+                      ? 'Search by Asset Tag'
+                      : searchType === 'description'
+                      ? 'Search by Description'
+                      : searchType === 'category'
+                      ? 'Search by Category'
+                      : searchType === 'location'
+                      ? 'Search by Location'
+                      : 'Search by Status'
+                  }
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="pl-8 h-8 rounded-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
+                />
+              </div>
             </div>
             <div className="flex gap-2 sm:gap-3 items-center">
+              {selectedAssets.size > 0 && (
+                <>
+                  <Button
+                    onClick={() => {
+                      if (!canManageTrash) {
+                        toast.error('You do not have permission to restore assets')
+                        return
+                      }
+                      setIsBulkRestoreDialogOpen(true)
+                    }}
+                    variant="default"
+                    size="sm"
+                    className="flex-1 sm:flex-initial"
+                  >
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    <span className="sm:hidden">Restore</span>
+                    <span className="hidden sm:inline">Restore ({selectedAssets.size})</span>
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (!canManageTrash) {
+                        toast.error('You do not have permission to permanently delete assets')
+                        return
+                      }
+                      setIsBulkDeleteDialogOpen(true)
+                    }}
+                    variant="destructive"
+                    size="sm"
+                    className="flex-1 sm:flex-initial"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    <span className="sm:hidden">Delete</span>
+                    <span className="hidden sm:inline">Delete ({selectedAssets.size})</span>
+                  </Button>
+                </>
+              )}
               <Button
                 variant="outline"
+                size="icon"
                 onClick={() => {
+                  setIsManualRefresh(true)
                   queryClient.invalidateQueries({ queryKey: ['deletedAssets'] })
-                  toast.success('Deleted assets list refreshed')
                 }}
-                disabled={isLoading}
-                size='sm'
+                className="h-8 w-8"
+                title="Refresh table"
               >
-                <RotateCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                <RotateCw className="h-4 w-4" />
               </Button>
-            </div>
-          </div>
-          <div className="relative flex-1 mt-3 w-full md:w-sm">
-            <div className="relative flex-1 sm:flex-initial sm:min-w-[250px]">
-              {searchInput ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchInput('')
-                    updateURL({ search: '', page: 1 })
-                  }}
-                  className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              ) : (
-                <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-              )}
-              <Input
-                placeholder="Search by asset tag, description, category, location..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-8 h-8"
-              />
             </div>
           </div>
         </CardHeader>
 
-        <CardContent className="px-0">
+        <CardContent className="flex-1 px-0 relative">
+          {isFetching && data && isManualRefresh && (
+            <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+              <Spinner variant="default" size={24} className="text-muted-foreground" />
+            </div>
+          )}
           {permissionsLoading || isLoading ? (
             <div className="h-[calc(100vh-25rem)] min-h-[500px] flex items-center justify-center py-12">
               <div className="flex flex-col items-center gap-3">
@@ -378,98 +855,82 @@ export default function TrashPage() {
             </div>
           ) : (
             <div className="min-w-full">
-              <ScrollArea className="h-[calc(100vh-25rem)] min-h-[500px]">
-                <Table className="border-t">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Asset Tag</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Deleted Date</TableHead>
-                      <TableHead>Days Left</TableHead>
-                      <TableHead className={cn("text-center sticky right-0 bg-card z-10 ")}>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {deletedAssets.map((asset: DeletedAsset) => {
-                      const daysLeft = getDaysUntilPermanentDelete(asset.deletedAt)
-                      return (
-                        <TableRow key={asset.id}>
-                          <TableCell className="font-medium">{asset.assetTagId}</TableCell>
-                          <TableCell className="max-w-[300px] truncate">{asset.description}</TableCell>
-                          <TableCell>
-                            {asset.category?.name || '-'} / {asset.subCategory?.name || '-'}
-                          </TableCell>
-                          <TableCell>
-                            {asset.status ? (
-                              <Badge variant="outline">{asset.status}</Badge>
-                            ) : (
-                              '-'
-                            )}
-                          </TableCell>
-                          <TableCell>{asset.location || '-'}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {format(new Date(asset.deletedAt), 'MMM dd, yyyy')}
-                          </TableCell>
-                          <TableCell>
-                            {daysLeft > 0 ? (
-                              <Badge variant={daysLeft <= 7 ? 'destructive' : 'default'}>
-                                {daysLeft} day{daysLeft !== 1 ? 's' : ''}
-                              </Badge>
-                            ) : (
-                              <Badge variant="destructive">
-                                <AlertTriangle className="h-3 w-3 mr-1" />
-                                Overdue
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className={cn("sticky right-0 bg-card z-10 ")}>
-                            <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button 
-                                    variant="ghost" 
-                                    className="h-8 w-8 p-0"
-                                  >
-                                    <span className="sr-only">Open menu</span>
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    onClick={() => handleRestore(asset)}
-                                    className="cursor-pointer"
-                                  >
-                                    <RotateCcw className="mr-2 h-4 w-4" />
-                                    Restore
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleDelete(asset)}
-                                    className="cursor-pointer text-destructive"
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete Permanently
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
+              <ScrollArea className="h-[calc(100vh-25rem)] min-h-[500px] relative">
+                <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
+                <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
+                  <Table className="border-b">
+                    <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-2.5">
+                      {table.getHeaderGroups().map((headerGroup: HeaderGroup<DeletedAsset>) => (
+                        <TableRow key={headerGroup.id} className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-[1.5px] after:h-px after:bg-border after:z-30">
+                          {headerGroup.headers.map((header: Header<DeletedAsset, unknown>) => {
+                            const isActionsColumn = header.column.id === 'actions'
+                            return (
+                              <TableHead 
+                                key={header.id}
+                                className={cn(
+                                  isActionsColumn ? "text-center" : "text-left",
+                                  "bg-card transition-colors",
+                                  !isActionsColumn && "group-hover:bg-muted/50",
+                                  isActionsColumn && "sticky z-10 right-0 group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 "
+                                )}
+                              >
+                                {header.isPlaceholder
+                                  ? null
+                                  : flexRender(header.column.columnDef.header, header.getContext())}
+                              </TableHead>
+                            )
+                          })}
+                        </TableRow>
+                      ))}
+                    </TableHeader>
+                    <TableBody>
+                      {table.getRowModel().rows?.length ? (
+                        table.getRowModel().rows.map((row) => (
+                          <TableRow
+                            key={row.id}
+                            data-state={row.getIsSelected() && 'selected'}
+                            className="group relative"
+                          >
+                            {row.getVisibleCells().map((cell) => {
+                              const isActionsColumn = cell.column.id === 'actions'
+                              return (
+                                <TableCell 
+                                  key={cell.id}
+                                  className={cn(
+                                    isActionsColumn && "sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 "
+                                  )}
+                                >
+                                  {flexRender(
+                                    cell.column.columnDef.cell,
+                                    cell.getContext()
+                                  )}
+                                </TableCell>
+                              )
+                            })}
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={columns.length}
+                            className="h-24 text-center"
+                          >
+                            No results.
                           </TableCell>
                         </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
                 <ScrollBar orientation="horizontal" />
-                <ScrollBar orientation="vertical" className='z-10' />
+                <ScrollBar orientation="vertical" className='z-50' />
               </ScrollArea>
             </div>
           )}
         </CardContent>
 
         {/* Pagination Bar */}
-        <div className="sticky bottom-0 border-t bg-transparent z-10 shadow-sm mt-auto">
+        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3">
             <div className="flex items-center justify-center sm:justify-start gap-2">
               <Button
@@ -558,6 +1019,40 @@ export default function TrashPage() {
         title="Permanently Delete Asset"
         description={`Are you sure you want to permanently delete "${selectedAsset?.assetTagId}"? This action cannot be undone.`}
         confirmLabel="Delete Permanently"
+      />
+
+      {/* Bulk Restore Confirmation Dialog */}
+      <BulkDeleteDialog
+        open={isBulkRestoreDialogOpen}
+        onOpenChange={setIsBulkRestoreDialogOpen}
+        onConfirm={handleBulkRestore}
+        itemCount={selectedAssets.size}
+        itemName="Asset"
+        isDeleting={isBulkRestoring}
+        progress={isBulkRestoring ? { current: bulkProgress.current, total: bulkProgress.total } : undefined}
+        title={isBulkRestoring ? undefined : `Restore ${selectedAssets.size} Asset(s)?`}
+        description={`${selectedAssets.size} selected asset(s) will be restored and made available again.`}
+        confirmLabel={`Restore ${selectedAssets.size} Asset(s)`}
+        loadingLabel="Restoring assets, please wait..."
+        progressTitle={`Restoring Assets... ${bulkProgress.current}/${bulkProgress.total}`}
+        variant="restore"
+      />
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <BulkDeleteDialog
+        open={isBulkDeleteDialogOpen}
+        onOpenChange={setIsBulkDeleteDialogOpen}
+        onConfirm={handleBulkDelete}
+        itemCount={selectedAssets.size}
+        itemName="Asset"
+        isDeleting={isBulkDeleting}
+        progress={isBulkDeleting ? { current: bulkProgress.current, total: bulkProgress.total } : undefined}
+        title={isBulkDeleting ? undefined : `Permanently Delete ${selectedAssets.size} Asset(s)?`}
+        description={`Are you sure you want to permanently delete ${selectedAssets.size} selected asset(s)? This action cannot be undone.`}
+        confirmLabel={`Delete ${selectedAssets.size} Asset(s) Permanently`}
+        loadingLabel="Deleting assets permanently, please wait..."
+        progressTitle={`Deleting Assets... ${bulkProgress.current}/${bulkProgress.total}`}
+        variant="delete"
       />
     </div>
   )

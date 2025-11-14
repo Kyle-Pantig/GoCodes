@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useCallback, useTransition, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useForm, useWatch } from 'react-hook-form'
+import { useForm, useWatch, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSubCategories } from '@/hooks/use-categories'
@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Field, FieldError, FieldContent } from '@/components/ui/field'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Table,
   TableBody,
@@ -1033,11 +1034,16 @@ export default function AssetReportsPage() {
               <h3 className="text-lg font-semibold">Depreciation</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
+                  <Controller
+                    name="includeDepreciableOnly"
+                    control={control}
+                    render={({ field }) => (
+                      <Checkbox
                     id="includeDepreciableOnly"
-                      {...register('includeDepreciableOnly')}
-                    className="h-4 w-4"
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    )}
                   />
                   <Label htmlFor="includeDepreciableOnly" className="block cursor-pointer">
                     Include Depreciable Assets Only
@@ -1109,16 +1115,16 @@ export default function AssetReportsPage() {
             disabled={createMutation.isPending}
             className="min-w-[120px]"
           >
-            {createMutation.isPending ? (
-              <>
-                <Spinner className="mr-2 h-4 w-4" />
-                Creating...
-              </>
-            ) : (
-              'Create Report'
-            )}
-          </Button>
-        </div>
+                {createMutation.isPending ? (
+                  <>
+                    <Spinner className="mr-2 h-4 w-4" />
+                    Creating...
+                  </>
+                ) : (
+                  'Create Report'
+                )}
+              </Button>
+            </div>
       )}
     </div>
   )

@@ -204,9 +204,9 @@ export async function POST(request: NextRequest) {
     const userPassword = password || generateRandomPassword()
 
     // Validate password length
-    if (userPassword.length < 6) {
+    if (userPassword.length < 8) {
       return NextResponse.json(
-        { error: 'Password must be at least 6 characters long' },
+        { error: 'Password must be at least 8 characters long' },
         { status: 400 }
       )
     }

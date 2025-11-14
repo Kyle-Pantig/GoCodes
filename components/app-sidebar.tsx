@@ -137,6 +137,10 @@ const data = {
           url: "/tools/media",
         },
         {
+          title: "Audit",
+          url: "/tools/audit",
+        },
+        {
           title: "Import",
           url: "/tools/import",
         },

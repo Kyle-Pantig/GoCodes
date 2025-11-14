@@ -256,7 +256,10 @@ export default function ExportPage() {
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['exportHistory', historyPage],
     queryFn: () => fetchExportHistory(historyPage),
-    enabled: canViewAssets,
+    enabled: !permissionsLoading && canViewAssets,
+    staleTime: 30000, // Cache for 30 seconds
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnMount: false, // Don't refetch on mount if data exists
   })
 
   const queryClient = useQueryClient()
@@ -298,11 +301,11 @@ export default function ExportPage() {
   const { data, isLoading: assetsLoading } = useQuery({
     queryKey: ['assets', 'export'],
     queryFn: () => fetchAssets(1, 10000),
-    enabled: canViewAssets,
+    enabled: !permissionsLoading && canViewAssets,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnMount: false, // Don't refetch on mount if data exists
   })
-
-  // Combine loading states
-  const isLoading = permissionsLoading || (canViewAssets && (historyLoading || assetsLoading))
 
   const handleFieldToggle = (fieldKey: string) => {
     setSelectedExportFields(prev => {
@@ -479,24 +482,7 @@ export default function ExportPage() {
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Export Assets</h1>
-          <p className="text-muted-foreground">
-            Export asset data to Excel format with custom field selection
-          </p>
-        </div>
-        <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
-          <Spinner className="h-8 w-8" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!canViewAssets) {
+  if (!canViewAssets && !permissionsLoading) {
     return (
       <div className="space-y-6">
         <div>
@@ -535,38 +521,37 @@ export default function ExportPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-8">
-              <Spinner className="h-6 w-6" />
-              <p className="text-muted-foreground">Loading...</p>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    {data?.assets.length || 0} asset(s) available for export
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedExportFields.size} field(s) selected
-                  </p>
+          <div className="flex items-center justify-between">
+            <div>
+              {permissionsLoading || assetsLoading ? (
+                <div className="flex items-center gap-2">
+                  <Spinner className="h-4 w-4" />
+                  <p className="text-sm text-muted-foreground">Loading assets...</p>
                 </div>
-                <Button 
-                  onClick={() => {
-                    if (!canManageExport) {
-                      toast.error('You do not have permission to export assets')
-                      return
-                    }
-                    setIsExportDialogOpen(true)
-                  }}
-                  size='sm'
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Select Fields & Export
-                </Button>
-              </div>
-            </>
-          )}
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {data?.assets.length || 0} asset(s) available for export
+                </p>
+              )}
+              <p className="text-sm text-muted-foreground">
+                {selectedExportFields.size} field(s) selected
+              </p>
+            </div>
+            <Button 
+              onClick={() => {
+                if (!canManageExport) {
+                  toast.error('You do not have permission to export assets')
+                  return
+                }
+                setIsExportDialogOpen(true)
+              }}
+              size='sm'
+              disabled={permissionsLoading || !canViewAssets}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Select Fields & Export
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -594,13 +579,13 @@ export default function ExportPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {historyLoading ? (
-            <div className="flex flex-col items-center justify-center py-8">
+          {permissionsLoading || historyLoading ? (
+            <div className="flex flex-col items-center justify-center h-[400px] text-center">
               <Spinner className="h-6 w-6" />
-              <p className="text-muted-foreground mt-2">Loading history...</p>
+              <p className="text-muted-foreground mt-2">Loading...</p>
             </div>
           ) : !historyData?.fileHistory || historyData.fileHistory.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
+            <div className="flex items-center justify-center h-[400px] text-center text-muted-foreground">
               No export history found
             </div>
           ) : (

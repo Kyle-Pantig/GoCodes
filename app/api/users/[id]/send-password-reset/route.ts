@@ -61,82 +61,19 @@ export async function POST(
                       'http://localhost:3000')
     const redirectTo = `${baseUrl}/reset-password`
     
-    // Try using resetPasswordForEmail first
+    // Send password reset email via Supabase
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(userEmail, {
       redirectTo,
     })
 
     if (resetError) {
-      // If resetPasswordForEmail fails, try using admin API to generate link and send via Resend
-      // Fallback: Use admin API to generate password reset link, then send via Resend
-      try {
-        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-          type: 'recovery',
-          email: userEmail,
-        })
-
-        if (linkError || !linkData?.properties?.action_link) {
-          return NextResponse.json(
-            { 
-              error: linkError?.message || resetError.message || 'Failed to send password reset email',
-              details: 'Please check Supabase email configuration. Ensure email sending is enabled and not restricted to specific domains.',
-            },
-            { status: 400 }
-          )
-        }
-
-        // Extract token from Supabase link and create direct link to our reset-password page
-        // Supabase link format: https://...supabase.co/auth/v1/verify?token=...&type=recovery&redirect_to=...
-        // We need: /reset-password?access_token=...&type=recovery
-        const supabaseLink = linkData.properties.action_link
-        const url = new URL(supabaseLink)
-        const token = url.searchParams.get('token')
-        
-        if (!token) {
-          return NextResponse.json(
-            { 
-              error: 'Failed to extract reset token from Supabase link',
-              details: 'Please check Supabase link generation.',
-            },
-            { status: 400 }
-          )
-        }
-
-        // Create direct link to our reset-password page
-        const resetLink = `${baseUrl}/reset-password?access_token=${encodeURIComponent(token)}&type=recovery`
-
-        // Send the reset link via Resend as fallback
-        const { sendPasswordResetEmail } = await import('@/lib/email')
-        const emailResult = await sendPasswordResetEmail(userEmail, resetLink)
-
-        if (!emailResult.success) {
-          return NextResponse.json(
-            { 
-              error: 'Failed to send password reset email via alternative method',
-              details: emailResult.error || 'Please check your email service configuration.',
-              email: userEmail,
-            },
-            { status: 400 }
-          )
-        }
-
-        // Successfully sent via Resend fallback
-        return NextResponse.json(
-          { 
-            message: 'Password reset email sent successfully (via alternative method)',
-            email: userEmail,
-          },
-          { status: 200 }
-        )
-      } catch {
-        return NextResponse.json(
-          { 
-            error: resetError.message || 'Failed to send password reset email',
-            details: 'Please check Supabase email configuration in your project settings.',
-          },
-          { status: 400 }
-        )
-      }
+      return NextResponse.json(
+        { 
+          error: resetError.message || 'Failed to send password reset email',
+          details: 'Please check Supabase email configuration. Ensure email sending is enabled and not restricted to specific domains.',
+        },
+        { status: 400 }
+      )
     }
 
     // Password reset email has been sent successfully

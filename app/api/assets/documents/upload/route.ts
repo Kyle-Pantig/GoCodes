@@ -4,9 +4,9 @@ import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
 import { prisma } from '@/lib/prisma'
 
-// Clear the media files cache after upload
+// Clear the document files cache after upload
 declare global {
-  var mediaFilesCache: {
+  var documentFilesCache: {
     files: Array<{
       name: string
       id: string
@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
     // Get file from form data
     const formData = await request.formData()
     const file = formData.get('file') as File
+    const documentType = formData.get('documentType') as string | null // Optional: receipt, purchase_order, manual, etc.
 
     if (!file) {
       return NextResponse.json(
@@ -44,11 +45,28 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
-    if (!allowedTypes.includes(file.type)) {
+    // Validate file type - allow common document formats and images
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain',
+      'text/csv',
+      'application/rtf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+    ]
+    const allowedExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv', '.rtf', '.jpg', '.jpeg', '.png', '.gif', '.webp']
+    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase()
+    
+    if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
       return NextResponse.json(
-        { error: 'Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed.' },
+        { error: 'Invalid file type. Only PDF, DOC, DOCX, XLS, XLSX, TXT, CSV, RTF, JPEG, PNG, GIF, and WebP files are allowed.' },
         { status: 400 }
       )
     }
@@ -65,8 +83,6 @@ export async function POST(request: NextRequest) {
     // Check storage limit (5MB total - temporary)
     const storageLimit = 5 * 1024 * 1024 // 5MB limit
     
-    // Calculate current storage used directly from storage and database
-    // This avoids making an authenticated HTTP request
     const supabaseAdmin = createAdminSupabaseClient()
     
     try {
@@ -116,22 +132,22 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      // Also check database for images that might have size info
+      // Also check database for documents that might have size info
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const dbImages = await (prisma as any).assetsImage.findMany({
+      const dbDocuments = await (prisma as any).assetsDocument.findMany({
         select: {
-          imageUrl: true,
-          imageSize: true,
+          documentUrl: true,
+          documentSize: true,
         },
       })
 
       // Create a set of storage file sizes for quick lookup
       const storageSizes = new Set(allFiles.map(f => f.metadata?.size).filter((s): s is number => s !== undefined))
 
-      // Add database sizes for images not already counted from storage
-      dbImages.forEach((img: { imageUrl: string; imageSize: number | null }) => {
-        if (img.imageSize && !storageSizes.has(img.imageSize)) {
-          currentStorageUsed += img.imageSize
+      // Add database sizes for documents not already counted from storage
+      dbDocuments.forEach((doc: { documentUrl: string; documentSize: number | null }) => {
+        if (doc.documentSize && !storageSizes.has(doc.documentSize)) {
+          currentStorageUsed += doc.documentSize
         }
       })
 
@@ -150,11 +166,10 @@ export async function POST(request: NextRequest) {
 
     // Generate unique file path
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-    const fileExtension = file.name.split('.').pop() || 'jpg'
-    const sanitizedExtension = fileExtension.toLowerCase()
-    // Use timestamp-based filename for standalone media uploads
-    const fileName = `media-${timestamp}.${sanitizedExtension}`
-    const filePath = `assets_images/${fileName}` // Upload to assets folder in bucket
+    const sanitizedExtension = fileExtension.substring(1) // Remove the dot
+    // Use timestamp-based filename for standalone document uploads
+    const fileName = `documents-${timestamp}.${sanitizedExtension}`
+    const filePath = `assets_documents/${fileName}` // Upload to assets folder in bucket
 
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer()
@@ -174,7 +189,6 @@ export async function POST(request: NextRequest) {
     if (uploadError) {
       // If assets bucket doesn't exist, try file-history bucket
       if (uploadError.message.includes('Bucket not found') || uploadError.message.includes('not found')) {
-        // Keep the same path structure for file-history bucket
         const fallbackPath = filePath
         const { error: fallbackError } = await supabaseAdmin.storage
           .from('file-history')
@@ -186,7 +200,7 @@ export async function POST(request: NextRequest) {
         if (fallbackError) {
           console.error('Storage upload error:', fallbackError)
           return NextResponse.json(
-            { error: 'Failed to upload image to storage', details: fallbackError.message },
+            { error: 'Failed to upload document to storage', details: fallbackError.message },
             { status: 500 }
           )
         }
@@ -201,7 +215,7 @@ export async function POST(request: NextRequest) {
       } else {
         console.error('Storage upload error:', uploadError)
         return NextResponse.json(
-          { error: 'Failed to upload image to storage', details: uploadError.message },
+          { error: 'Failed to upload document to storage', details: uploadError.message },
           { status: 500 }
         )
       }
@@ -216,27 +230,66 @@ export async function POST(request: NextRequest) {
 
     if (!publicUrl) {
       return NextResponse.json(
-        { error: 'Failed to get public URL for uploaded image' },
+        { error: 'Failed to get public URL for uploaded document' },
         { status: 500 }
       )
     }
 
-    // Clear the media files cache so the new file appears immediately
-    if (typeof globalThis !== 'undefined') {
-      globalThis.mediaFilesCache = undefined
-    }
+    // Create database record for the document
+    // For standalone uploads (not linked to an asset), use "STANDALONE" as placeholder
+    // This can be updated later when linking to an asset
+    const assetTagId = 'STANDALONE'
+    
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const documentRecord = await (prisma as any).assetsDocument.create({
+        data: {
+          assetTagId: assetTagId,
+          documentUrl: publicUrl,
+          documentType: documentType || null,
+          documentSize: file.size,
+          fileName: file.name,
+          mimeType: file.type,
+        },
+      })
 
-    return NextResponse.json({
-      filePath: finalFilePath,
-      fileName: fileName,
-      fileSize: file.size,
-      mimeType: file.type,
-      publicUrl: publicUrl,
-    })
+      // Clear the document files cache so the new file appears immediately
+      if (typeof globalThis !== 'undefined') {
+        globalThis.documentFilesCache = undefined
+      }
+
+      return NextResponse.json({
+        id: documentRecord.id,
+        filePath: finalFilePath,
+        fileName: fileName,
+        fileSize: file.size,
+        mimeType: file.type,
+        publicUrl: publicUrl,
+        documentType: documentType || null,
+        assetTagId: assetTagId,
+      })
+    } catch (dbError) {
+      console.error('Error creating document record in database:', dbError)
+      // Even if database insert fails, the file is already uploaded to storage
+      // Return success but log the error
+      return NextResponse.json(
+        { 
+          error: 'Document uploaded to storage but failed to save to database',
+          details: dbError instanceof Error ? dbError.message : 'Unknown error',
+          filePath: finalFilePath,
+          fileName: fileName,
+          fileSize: file.size,
+          mimeType: file.type,
+          publicUrl: publicUrl,
+          documentType: documentType || null,
+        },
+        { status: 500 }
+      )
+    }
   } catch (error) {
-    console.error('Error uploading media:', error)
+    console.error('Error uploading document:', error)
     return NextResponse.json(
-      { error: 'Failed to upload media' },
+      { error: 'Failed to upload document' },
       { status: 500 }
     )
   }
