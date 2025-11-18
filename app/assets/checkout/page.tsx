@@ -32,6 +32,9 @@ import {
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
 import { EmployeeSelectField } from "@/components/employee-select-field"
+import { LocationSelectField } from "@/components/location-select-field"
+import { SiteSelectField } from "@/components/site-select-field"
+import { DepartmentSelectField } from "@/components/department-select-field"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
@@ -99,6 +102,7 @@ export default function CheckoutPage() {
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const canViewAssets = hasPermission('canViewAssets')
   const canCheckout = hasPermission('canCheckout')
+  const canManageSetup = hasPermission('canManageSetup')
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionRef = useRef<HTMLDivElement>(null)
   const [assetIdInput, setAssetIdInput] = useState("")
@@ -108,7 +112,6 @@ export default function CheckoutPage() {
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
-  const [selectedPurchaseDateForQR, setSelectedPurchaseDateForQR] = useState<string | null>(null)
 
   const form = useForm<CheckoutFormData>({
     resolver: zodResolver(checkoutSchema),
@@ -485,7 +488,6 @@ export default function CheckoutPage() {
         id: string
         assetTagId: string
         description: string
-        purchaseDate: string | null
       }
       employeeUser: {
         id: string
@@ -698,7 +700,6 @@ export default function CheckoutPage() {
                             className="text-xs cursor-pointer hover:bg-primary/10 hover:text-primary transition-colors"
                             onClick={() => {
                               setSelectedAssetTagForQR(checkout.asset.assetTagId)
-                              setSelectedPurchaseDateForQR(checkout.asset.purchaseDate)
                               setQrDisplayDialogOpen(true)
                             }}
                           >
@@ -946,71 +947,65 @@ export default function CheckoutPage() {
                       </span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3">
-                      <Field>
-                        <FieldLabel htmlFor={`department-${asset.id}`}>
-                          Department
-                          {asset.department && (
-                            <span className="text-xs text-muted-foreground font-normal ml-2">
-                              (Current: {asset.department})
-                            </span>
-                          )}
-                        </FieldLabel>
-                        <FieldContent>
-                          <Input
-                            id={`department-${asset.id}`}
-                            placeholder={asset.department || "Department"}
-                            value={asset.newDepartment || ""}
-                            onChange={(e) =>
-                              handleUpdateAssetInfo(asset.id, "newDepartment", e.target.value)
-                            }
-                            disabled={!canViewAssets || !canCheckout}
-                          />
-                        </FieldContent>
-                      </Field>
+                      <DepartmentSelectField
+                        value={asset.newDepartment || ""}
+                        onValueChange={(value) =>
+                          handleUpdateAssetInfo(asset.id, "newDepartment", value)
+                        }
+                        label={
+                          <>
+                            Department
+                            {asset.department && (
+                              <span className="text-xs text-muted-foreground font-normal ml-2">
+                                (Current: {asset.department})
+                              </span>
+                            )}
+                          </>
+                        }
+                        placeholder={asset.department || "Select or search department"}
+                        disabled={!canViewAssets || !canCheckout}
+                        canCreate={canManageSetup}
+                      />
 
-                      <Field>
-                        <FieldLabel htmlFor={`site-${asset.id}`}>
-                          Site
-                          {asset.site && (
-                            <span className="text-xs text-muted-foreground font-normal ml-2">
-                              (Current: {asset.site})
-                            </span>
-                          )}
-                        </FieldLabel>
-                        <FieldContent>
-                          <Input
-                            id={`site-${asset.id}`}
-                            placeholder={asset.site || "Site"}
-                            value={asset.newSite || ""}
-                            onChange={(e) =>
-                              handleUpdateAssetInfo(asset.id, "newSite", e.target.value)
-                            }
-                            disabled={!canViewAssets || !canCheckout}
-                          />
-                        </FieldContent>
-                      </Field>
+                      <SiteSelectField
+                        value={asset.newSite || ""}
+                        onValueChange={(value) =>
+                          handleUpdateAssetInfo(asset.id, "newSite", value)
+                        }
+                        label={
+                          <>
+                            Site
+                            {asset.site && (
+                              <span className="text-xs text-muted-foreground font-normal ml-2">
+                                (Current: {asset.site})
+                              </span>
+                            )}
+                          </>
+                        }
+                        placeholder={asset.site || "Select or search site"}
+                        disabled={!canViewAssets || !canCheckout}
+                        canCreate={canManageSetup}
+                      />
 
-                      <Field>
-                        <FieldLabel htmlFor={`location-${asset.id}`}>
-                          Location
-                          {asset.location && (
-                            <span className="text-xs text-muted-foreground font-normal ml-2">
-                              (Current: {asset.location})
-                            </span>
-                          )}
-                        </FieldLabel>
-                        <FieldContent>
-                          <Input
-                            id={`location-${asset.id}`}
-                            placeholder={asset.location || "Location"}
-                            value={asset.newLocation || ""}
-                            onChange={(e) =>
-                              handleUpdateAssetInfo(asset.id, "newLocation", e.target.value)
-                            }
-                            disabled={!canViewAssets || !canCheckout}
-                          />
-                        </FieldContent>
-                      </Field>
+                      <LocationSelectField
+                        value={asset.newLocation || ""}
+                        onValueChange={(value) =>
+                          handleUpdateAssetInfo(asset.id, "newLocation", value)
+                        }
+                        label={
+                          <>
+                            Location
+                            {asset.location && (
+                              <span className="text-xs text-muted-foreground font-normal ml-2">
+                                (Current: {asset.location})
+                              </span>
+                            )}
+                          </>
+                        }
+                        placeholder={asset.location || "Select or search location"}
+                        disabled={!canViewAssets || !canCheckout}
+                        canCreate={canManageSetup}
+                      />
         </div>
       </div>
                 ))}
@@ -1079,7 +1074,6 @@ export default function CheckoutPage() {
         open={qrDisplayDialogOpen}
         onOpenChange={setQrDisplayDialogOpen}
         assetTagId={selectedAssetTagForQR}
-        purchaseDate={selectedPurchaseDateForQR}
       />
     </div>
   )

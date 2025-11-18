@@ -16,7 +16,7 @@ interface UserPermissions {
   canEditAssets: boolean
   canViewAssets: boolean
   canManageEmployees: boolean
-  canManageCategories: boolean
+  canManageSetup: boolean
   canCheckout: boolean
   canCheckin: boolean
   canReserve: boolean
@@ -46,7 +46,7 @@ interface AssetUser {
   canEditAssets: boolean
   canViewAssets: boolean
   canManageEmployees: boolean
-  canManageCategories: boolean
+  canManageSetup: boolean
   canCheckout: boolean
   canCheckin: boolean
   canReserve: boolean
@@ -96,7 +96,7 @@ export async function getUserPermissions(): Promise<{ user: AssetUser | null; er
         canEditAssets: true,
         canViewAssets: true,
         canManageEmployees: true,
-        canManageCategories: true,
+        canManageSetup: true,
         canCheckout: true,
         canCheckin: true,
         canReserve: true,

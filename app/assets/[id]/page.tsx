@@ -35,6 +35,9 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
+import { LocationSelectField } from "@/components/location-select-field"
+import { SiteSelectField } from "@/components/site-select-field"
+import { DepartmentSelectField } from "@/components/department-select-field"
 import {
   Select,
   SelectContent,
@@ -83,7 +86,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const canEditAssets = hasPermission('canEditAssets')
-  const canManageCategories = hasPermission('canManageCategories')
+  const canManageSetup = hasPermission('canManageSetup')
   const [, startTransition] = useTransition()
   
   // Fetch asset data with retry logic
@@ -416,7 +419,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   }
 
   const handleCreateCategory = async (data: { name: string; description?: string }) => {
-    if (!canManageCategories) {
+    if (!canManageSetup) {
       toast.error('You do not have permission to manage categories')
       return
     }
@@ -431,7 +434,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   }
 
   const handleCreateSubCategory = async (data: { name: string; description?: string; categoryId: string }) => {
-    if (!canManageCategories) {
+    if (!canManageSetup) {
       toast.error('You do not have permission to manage categories')
       return
     }
@@ -1125,7 +1128,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                       <FieldLabel htmlFor="category">
                         Category <span className="text-destructive">*</span>
                       </FieldLabel>
-                      {canManageCategories && (
+                      {canManageSetup && (
                         <>
                           <Button
                             type="button"
@@ -1193,7 +1196,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                       <FieldLabel htmlFor="subCategory">
                         Sub Category <span className="text-destructive">*</span>
                       </FieldLabel>
-                      {canManageCategories && (
+                      {canManageSetup && (
                         <>
                           <Button
                             type="button"
@@ -1874,38 +1877,32 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                   </FieldContent>
                 </Field>
 
-                <Field>
-                  <FieldLabel htmlFor="department">Department</FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="department"
-                      {...form.register("department")}
-                      placeholder="Department name"
-                    />
-                  </FieldContent>
-                </Field>
+                <DepartmentSelectField
+                  name="department"
+                  control={form.control}
+                  error={form.formState.errors.department}
+                  label="Department"
+                  placeholder="Select or search department"
+                  canCreate={canManageSetup}
+                />
 
-                <Field>
-                  <FieldLabel htmlFor="site">Site</FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="site"
-                      {...form.register("site")}
-                      placeholder="Site location"
-                    />
-                  </FieldContent>
-                </Field>
+                <SiteSelectField
+                  name="site"
+                  control={form.control}
+                  error={form.formState.errors.site}
+                  label="Site"
+                  placeholder="Select or search site"
+                  canCreate={canManageSetup}
+                />
 
-                <Field>
-                  <FieldLabel htmlFor="location">Location</FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="location"
-                      {...form.register("location")}
-                      placeholder="Specific location"
-                    />
-                  </FieldContent>
-                </Field>
+                <LocationSelectField
+                  name="location"
+                  control={form.control}
+                  error={form.formState.errors.location}
+                  label="Location"
+                  placeholder="Select or search location"
+                  canCreate={canManageSetup}
+                />
 
                 <Field>
                   <FieldLabel htmlFor="owner">Owner</FieldLabel>

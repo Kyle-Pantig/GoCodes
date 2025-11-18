@@ -10,7 +10,7 @@ export async function PUT(
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
-  const permissionCheck = await requirePermission('canManageCategories')
+  const permissionCheck = await requirePermission('canManageSetup')
   if (!permissionCheck.allowed) return permissionCheck.error
 
   try {
@@ -45,7 +45,7 @@ export async function DELETE(
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
-  const permissionCheck = await requirePermission('canManageCategories')
+  const permissionCheck = await requirePermission('canManageSetup')
   if (!permissionCheck.allowed) return permissionCheck.error
 
   try {

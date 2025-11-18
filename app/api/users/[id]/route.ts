@@ -127,7 +127,7 @@ export async function PUT(
       updateData.canEditAssets = permissions.canEditAssets !== undefined ? permissions.canEditAssets : true
       updateData.canViewAssets = permissions.canViewAssets !== undefined ? permissions.canViewAssets : true
       updateData.canManageEmployees = permissions.canManageEmployees !== undefined ? permissions.canManageEmployees : false
-      updateData.canManageCategories = permissions.canManageCategories !== undefined ? permissions.canManageCategories : false
+      updateData.canManageSetup = permissions.canManageSetup !== undefined ? permissions.canManageSetup : false
       updateData.canCheckout = permissions.canCheckout !== undefined ? permissions.canCheckout : true
       updateData.canCheckin = permissions.canCheckin !== undefined ? permissions.canCheckin : true
       updateData.canReserve = permissions.canReserve !== undefined ? permissions.canReserve : true

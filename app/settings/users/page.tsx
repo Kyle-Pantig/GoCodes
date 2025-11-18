@@ -73,7 +73,7 @@ interface AssetUser {
   canEditAssets: boolean
   canViewAssets: boolean
   canManageEmployees: boolean
-  canManageCategories: boolean
+  canManageSetup: boolean
   canCheckout: boolean
   canCheckin: boolean
   canReserve: boolean
@@ -113,7 +113,7 @@ interface UserPermissions {
   canEditAssets: boolean
   canViewAssets: boolean
   canManageEmployees: boolean
-  canManageCategories: boolean
+  canManageSetup: boolean
   canCheckout: boolean
   canCheckin: boolean
   canReserve: boolean
@@ -445,7 +445,7 @@ export default function UsersPage() {
         canEditAssets: true,
         canViewAssets: true,
         canManageEmployees: false,
-        canManageCategories: false,
+        canManageSetup: false,
         canCheckout: true,
         canCheckin: true,
         canReserve: true,
@@ -488,7 +488,7 @@ export default function UsersPage() {
       canEditAssets: true,
       canViewAssets: true,
       canManageEmployees: false,
-      canManageCategories: false,
+      canManageSetup: false,
       canCheckout: true,
       canCheckin: true,
       canReserve: true,
@@ -687,7 +687,7 @@ export default function UsersPage() {
           canEditAssets: true,
           canViewAssets: true,
           canManageEmployees: false,
-          canManageCategories: false,
+          canManageSetup: false,
           canCheckout: true,
           canCheckin: true,
           canReserve: true,
@@ -782,7 +782,7 @@ export default function UsersPage() {
         canEditAssets: user.canEditAssets,
         canViewAssets: user.canViewAssets,
         canManageEmployees: user.canManageEmployees,
-        canManageCategories: user.canManageCategories,
+        canManageSetup: user.canManageSetup,
         canCheckout: user.canCheckout,
         canCheckin: user.canCheckin,
         canReserve: user.canReserve,
@@ -862,7 +862,7 @@ export default function UsersPage() {
       canEditAssets: true,
       canViewAssets: true,
       canManageEmployees: false,
-      canManageCategories: false,
+      canManageSetup: false,
       canCheckout: true,
       canCheckin: true,
       canReserve: true,
@@ -912,7 +912,7 @@ export default function UsersPage() {
       formData.permissions.canEditAssets &&
       formData.permissions.canViewAssets &&
       formData.permissions.canManageEmployees &&
-      formData.permissions.canManageCategories &&
+      formData.permissions.canManageSetup &&
       formData.permissions.canCheckout &&
       formData.permissions.canCheckin &&
       formData.permissions.canReserve &&
@@ -939,7 +939,7 @@ export default function UsersPage() {
         canEditAssets: !allSelected,
         canViewAssets: !allSelected,
         canManageEmployees: !allSelected,
-        canManageCategories: !allSelected,
+        canManageSetup: !allSelected,
         canCheckout: !allSelected,
         canCheckin: !allSelected,
         canReserve: !allSelected,
@@ -1432,7 +1432,7 @@ export default function UsersPage() {
                           { key: 'canLease', label: 'Lease Assets' },
                           { key: 'canDispose', label: 'Dispose Assets' },
                           { key: 'canManageEmployees', label: 'Manage Employees' },
-                          { key: 'canManageCategories', label: 'Manage Categories' },
+                          { key: 'canManageSetup', label: 'Manage Setup' },
                           { key: 'canManageMaintenance', label: 'Manage Maintenance' },
                           { key: 'canAudit', label: 'Perform Audits' },
                           { key: 'canManageMedia', label: 'Manage Media' },
@@ -1656,7 +1656,7 @@ export default function UsersPage() {
                     formData.permissions.canEditAssets &&
                     formData.permissions.canViewAssets &&
                     formData.permissions.canManageEmployees &&
-                    formData.permissions.canManageCategories &&
+                    formData.permissions.canManageSetup &&
                     formData.permissions.canCheckout &&
                     formData.permissions.canCheckin &&
                     formData.permissions.canReserve &&
@@ -1844,16 +1844,16 @@ export default function UsersPage() {
                   </div>
                   <div className="flex items-center space-x-2">
                     <Checkbox
-                      id="edit-canManageCategories"
-                      checked={formData.permissions.canManageCategories}
+                      id="edit-canManageSetup"
+                      checked={formData.permissions.canManageSetup}
                       onCheckedChange={(checked) =>
                         setFormData({
                           ...formData,
-                          permissions: { ...formData.permissions, canManageCategories: checked as boolean },
+                          permissions: { ...formData.permissions, canManageSetup: checked as boolean },
                         })
                       }
                     />
-                    <Label htmlFor="edit-canManageCategories" className="cursor-pointer">Manage Categories</Label>
+                    <Label htmlFor="edit-canManageSetup" className="cursor-pointer">Manage Setup</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Checkbox

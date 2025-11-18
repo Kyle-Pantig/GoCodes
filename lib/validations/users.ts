@@ -12,7 +12,7 @@ export const userPermissionsSchema = z.object({
   canEditAssets: z.boolean(),
   canViewAssets: z.boolean(),
   canManageEmployees: z.boolean(),
-  canManageCategories: z.boolean(),
+  canManageSetup: z.boolean(),
   canCheckout: z.boolean(),
   canCheckin: z.boolean(),
   canReserve: z.boolean(),

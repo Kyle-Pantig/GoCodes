@@ -76,7 +76,6 @@ interface Employee {
       assetTagId: string
       description: string
       status: string | null
-      purchaseDate: string | null
       category: {
         name: string
       } | null
@@ -356,7 +355,6 @@ export default function EmployeesPage() {
   const [isCheckoutsDialogOpen, setIsCheckoutsDialogOpen] = useState(false)
   const [isQRDialogOpen, setIsQRDialogOpen] = useState(false)
   const [selectedAssetTagId, setSelectedAssetTagId] = useState<string>('')
-  const [selectedPurchaseDate, setSelectedPurchaseDate] = useState<string | null>(null)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [isManualRefresh, setIsManualRefresh] = useState(false)
   const queryClient = useQueryClient()
@@ -1164,7 +1162,6 @@ export default function EmployeesPage() {
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   setSelectedAssetTagId(checkout.asset.assetTagId)
-                                  setSelectedPurchaseDate(checkout.asset.purchaseDate)
                                   setIsQRDialogOpen(true)
                                 }}
                               >
@@ -1268,7 +1265,6 @@ export default function EmployeesPage() {
         open={isQRDialogOpen}
         onOpenChange={setIsQRDialogOpen}
         assetTagId={selectedAssetTagId}
-        purchaseDate={selectedPurchaseDate}
       />
     </div>
   )

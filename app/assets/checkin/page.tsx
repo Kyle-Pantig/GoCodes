@@ -39,6 +39,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
+import { LocationSelectField } from "@/components/location-select-field"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
@@ -105,6 +106,7 @@ export default function CheckinPage() {
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const canViewAssets = hasPermission('canViewAssets')
   const canCheckin = hasPermission('canCheckin')
+  const canManageSetup = hasPermission('canManageSetup')
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionRef = useRef<HTMLDivElement>(null)
   const [assetIdInput, setAssetIdInput] = useState("")
@@ -995,41 +997,33 @@ export default function CheckinPage() {
                         </FieldContent>
                       </Field>
 
-                      <Field>
-                        <FieldLabel htmlFor={`returnLocation-${asset.id}`}>
-                          Return Location
-                          {asset.location && (
-                            <span className="text-xs text-muted-foreground font-normal ml-2">
-                              (Current: {asset.location})
-                            </span>
-                          )}
-                        </FieldLabel>
-                        <FieldContent>
-                          <Controller
-                            name={`assetUpdates.${selectedAssets.findIndex(a => a.id === asset.id)}.returnLocation` as const}
-                            control={form.control}
-                            render={({ field, fieldState }) => (
+                      <Controller
+                        name={`assetUpdates.${selectedAssets.findIndex(a => a.id === asset.id)}.returnLocation` as const}
+                        control={form.control}
+                        render={({ field, fieldState }) => (
+                          <LocationSelectField
+                            value={asset.returnLocation || field.value || ""}
+                            onValueChange={(value) => {
+                              handleUpdateAssetInfo(asset.id, "returnLocation", value)
+                              field.onChange(value)
+                            }}
+                            error={fieldState.error}
+                            label={
                               <>
-                                <Input
-                                  id={`returnLocation-${asset.id}`}
-                                  placeholder={asset.location || "Enter return location"}
-                                  value={asset.returnLocation || field.value || ""}
-                                  onChange={(e) => {
-                                    handleUpdateAssetInfo(asset.id, "returnLocation", e.target.value)
-                                    field.onChange(e.target.value)
-                                  }}
-                                  disabled={!canViewAssets || !canCheckin}
-                                  aria-invalid={fieldState.error ? 'true' : 'false'}
-                                />
-                                {fieldState.error && (
-                                  <FieldError>{fieldState.error.message}</FieldError>
+                                Return Location
+                                {asset.location && (
+                                  <span className="text-xs text-muted-foreground font-normal ml-2">
+                                    (Current: {asset.location})
+                                  </span>
                                 )}
-                                
                               </>
-                            )}
+                            }
+                            placeholder={asset.location || "Select or search return location"}
+                            disabled={!canViewAssets || !canCheckin}
+                            canCreate={canManageSetup}
                           />
-                        </FieldContent>
-                      </Field>
+                        )}
+                      />
 
                       <Field>
                         <FieldLabel htmlFor={`notes-${asset.id}`}>

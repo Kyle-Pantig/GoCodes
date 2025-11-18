@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
 import { EmployeeSelectField } from "@/components/employee-select-field"
+import { DepartmentSelectField } from "@/components/department-select-field"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
@@ -788,6 +789,11 @@ export default function ReserveAssetPage() {
                       value={field.value || ""}
                       onValueChange={(value) => {
                         field.onChange(value)
+                        // Trigger validation after value change to clear error
+                        // Since the refine validation checks the entire form, trigger both fields
+                        setTimeout(() => {
+                          form.trigger(['reservationType', 'employeeUserId'])
+                        }, 0)
                       }}
                       label="Employee"
                       required
@@ -803,33 +809,37 @@ export default function ReserveAssetPage() {
             )}
 
             {reservationType === 'Department' && (
-              <Field>
-                <FieldLabel htmlFor="department">
-                  Department <span className="text-destructive">*</span>
-                </FieldLabel>
-                <FieldContent>
-                  <Controller
-                    name="department"
-                    control={form.control}
-                    render={({ field, fieldState }) => (
-                      <>
-                        <Input
-                          id="department"
-                          placeholder="Enter department name"
-                          {...field}
-                          className="w-full"
-                          disabled={!canViewAssets || !canReserve || !selectedAsset}
-                          aria-invalid={fieldState.error ? 'true' : 'false'}
-                          aria-required="true"
-                        />
-                        {fieldState.error && (
-                          <FieldError>{fieldState.error.message}</FieldError>
-                        )}
-                      </>
+              <Controller
+                name="department"
+                control={form.control}
+                render={({ field, fieldState }) => (
+                  <>
+                    <DepartmentSelectField
+                      value={field.value || ""}
+                      onValueChange={(value) => {
+                        field.onChange(value)
+                        // Trigger validation after value change to clear error
+                        // Since the refine validation checks the entire form, trigger both fields
+                        setTimeout(() => {
+                          form.trigger(['reservationType', 'department'])
+                        }, 0)
+                      }}
+                      label={
+                        <>
+                          Department <span className="text-destructive">*</span>
+                        </>
+                      }
+                      required
+                      disabled={!canViewAssets || !canReserve || !selectedAsset}
+                      placeholder="Select or search department"
+                      canCreate={canManageSetup}
+                    />
+                    {fieldState.error && (
+                      <FieldError>{fieldState.error.message}</FieldError>
                     )}
-                  />
-                </FieldContent>
-              </Field>
+                  </>
+                )}
+              />
             )}
 
             <Field>

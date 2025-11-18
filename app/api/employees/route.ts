@@ -102,7 +102,6 @@ export async function GET(request: NextRequest) {
                 assetTagId: true,
                 description: true,
                 status: true,
-                purchaseDate: true,
                 category: {
                   select: {
                     name: true

@@ -41,7 +41,7 @@ export async function GET() {
           canEditAssets: true,
           canViewAssets: true,
           canManageEmployees: true,
-          canManageCategories: true,
+          canManageSetup: true,
           canCheckout: true,
           canCheckin: true,
           canReserve: true,

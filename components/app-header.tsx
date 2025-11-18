@@ -79,9 +79,14 @@ const routeLabels: Record<string, string> = {
   '/tools/trash': 'Trash',
   '/tools/import': 'Import',
   '/tools/export': 'Export',
+  '/setup': 'Setup',
+  '/setup/categories': 'Categories',
+  '/setup/locations': 'Locations',
+  '/setup/sites': 'Sites',
+  '/setup/departments': 'Departments',
+  '/setup/company-info': 'Company Info',
   '/settings': 'Settings',
   '/settings/users': 'Users',
-  '/settings/categories': 'Categories',
   '/settings/password': 'Password',
   '/employees': 'Employees',
   '/reports': 'Reports',
@@ -1117,65 +1122,65 @@ export function AppHeader() {
                 <div className="min-h-[300px]">
                   {activeTab === 'details' && (
                     <ScrollArea className="h-[300px]">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Category</p>
-                          <p className="text-sm">
-                            {scannedAsset.category?.name || 'N/A'}
-                            {scannedAsset.subCategory?.name && ` - ${scannedAsset.subCategory.name}`}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Status</p>
-                          <div className="flex items-center">
-                            {getStatusBadge(scannedAsset.status) || <span className="text-sm">N/A</span>}
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Location</p>
-                          <p className="text-sm">{scannedAsset.location || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Department</p>
-                          <p className="text-sm">{scannedAsset.department || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Site</p>
-                          <p className="text-sm">{scannedAsset.site || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Cost</p>
-                          <p className="text-sm">{formatCurrency(scannedAsset.cost)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Brand</p>
-                          <p className="text-sm">{scannedAsset.brand || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Model</p>
-                          <p className="text-sm">{scannedAsset.model || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Serial No</p>
-                          <p className="text-sm">{scannedAsset.serialNo || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Purchased From</p>
-                          <p className="text-sm">{scannedAsset.purchasedFrom || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Purchase Date</p>
-                          <p className="text-sm">{formatDate(scannedAsset.purchaseDate || null)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Owner</p>
-                          <p className="text-sm">{scannedAsset.owner || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Issued To</p>
-                          <p className="text-sm">{scannedAsset.issuedTo || 'N/A'}</p>
-                        </div>
-                      </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Category</p>
+                    <p className="text-sm">
+                      {scannedAsset.category?.name || 'N/A'}
+                      {scannedAsset.subCategory?.name && ` - ${scannedAsset.subCategory.name}`}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Status</p>
+                    <div className="flex items-center">
+                      {getStatusBadge(scannedAsset.status) || <span className="text-sm">N/A</span>}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Location</p>
+                    <p className="text-sm">{scannedAsset.location || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Department</p>
+                    <p className="text-sm">{scannedAsset.department || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Site</p>
+                    <p className="text-sm">{scannedAsset.site || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Cost</p>
+                    <p className="text-sm">{formatCurrency(scannedAsset.cost)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Brand</p>
+                    <p className="text-sm">{scannedAsset.brand || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Model</p>
+                    <p className="text-sm">{scannedAsset.model || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Serial No</p>
+                    <p className="text-sm">{scannedAsset.serialNo || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Purchased From</p>
+                    <p className="text-sm">{scannedAsset.purchasedFrom || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Purchase Date</p>
+                    <p className="text-sm">{formatDate(scannedAsset.purchaseDate || null)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Owner</p>
+                    <p className="text-sm">{scannedAsset.owner || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Issued To</p>
+                    <p className="text-sm">{scannedAsset.issuedTo || 'N/A'}</p>
+                  </div>
+                </div>
                       <ScrollArea/>
                     </ScrollArea>
                   )}

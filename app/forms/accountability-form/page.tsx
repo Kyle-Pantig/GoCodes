@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
 import { EmployeeSelectField } from "@/components/employee-select-field"
+import { DepartmentSelectField } from "@/components/department-select-field"
 import { cn } from "@/lib/utils"
 
 interface Asset {
@@ -102,6 +103,7 @@ export default function AccountabilityFormPage() {
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const canViewAccountabilityForms = hasPermission('canViewAccountabilityForms')
   const canManageAccountabilityForms = hasPermission('canManageAccountabilityForms')
+  const canManageSetup = hasPermission('canManageSetup')
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionRef = useRef<HTMLDivElement>(null)
   const [assetIdInput, setAssetIdInput] = useState("")
@@ -862,18 +864,27 @@ export default function AccountabilityFormPage() {
                   </FieldContent>
                 </Field>
 
-                <Field>
-                  <FieldLabel htmlFor="clientDepartment">CLIENT/DEPARTMENT:</FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="clientDepartment"
-                      value={clientDepartment}
-                      onChange={(e) => setClientDepartment(e.target.value)}
-                      disabled={!!selectedEmployee}
-                      className={selectedEmployee ? "bg-muted cursor-not-allowed" : ""}
-                    />
-                  </FieldContent>
-                </Field>
+                {selectedEmployee ? (
+                  <Field>
+                    <FieldLabel htmlFor="clientDepartment">CLIENT/DEPARTMENT:</FieldLabel>
+                    <FieldContent>
+                      <Input
+                        id="clientDepartment"
+                        value={clientDepartment}
+                        disabled
+                        className="bg-muted cursor-not-allowed"
+                      />
+                    </FieldContent>
+                  </Field>
+                ) : (
+                  <DepartmentSelectField
+                    value={clientDepartment}
+                    onValueChange={(value) => setClientDepartment(value)}
+                    label="CLIENT/DEPARTMENT:"
+                    placeholder="Select or search department"
+                    canCreate={canManageSetup}
+                  />
+                )}
 
                 <Field>
                   <FieldLabel htmlFor="dateIssued">

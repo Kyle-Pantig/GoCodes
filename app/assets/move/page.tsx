@@ -32,6 +32,8 @@ import {
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
 import { EmployeeSelectField } from "@/components/employee-select-field"
+import { LocationSelectField } from "@/components/location-select-field"
+import { DepartmentSelectField } from "@/components/department-select-field"
 import {
   Select,
   SelectContent,
@@ -113,6 +115,7 @@ export default function MoveAssetPage() {
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const canViewAssets = hasPermission('canViewAssets')
   const canMove = hasPermission('canMove')
+  const canManageSetup = hasPermission('canManageSetup')
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionRef = useRef<HTMLDivElement>(null)
   const [assetIdInput, setAssetIdInput] = useState("")
@@ -408,7 +411,7 @@ export default function MoveAssetPage() {
             
             // Check if asset is eligible for move (not leased)
             const hasActiveLease = asset.leases?.some(
-              (lease: { endDate: string | null }) => !lease.endDate
+              (lease) => !lease.leaseEndDate
             )
             
             if (hasActiveLease) {
@@ -821,37 +824,25 @@ export default function MoveAssetPage() {
 
                 {/* Conditional fields based on move type */}
                 {moveType === 'Location Transfer' && (
-                  <Field>
-                    <FieldLabel htmlFor="location">
-                      Location <span className="text-destructive">*</span>
-                      {selectedAsset?.location && (
-                        <span className="text-xs text-muted-foreground font-normal ml-2">
-                          (Current: {selectedAsset.location})
-                        </span>
-                      )}
-                    </FieldLabel>
-                    <FieldContent>
-                      <Controller
-                        name="location"
-                        control={form.control}
-                        render={({ field, fieldState }) => (
-                          <>
-                            <Input
-                              id="location"
-                              placeholder={selectedAsset?.location || "Enter location"}
-                              {...field}
-                              disabled={!canViewAssets || !canMove || !selectedAsset}
-                              aria-invalid={fieldState.error ? 'true' : 'false'}
-                              aria-required="true"
-                            />
-                            {fieldState.error && (
-                              <FieldError>{fieldState.error.message}</FieldError>
-                            )}
-                          </>
+                  <LocationSelectField
+                    name="location"
+                    control={form.control}
+                    error={form.formState.errors.location}
+                    label={
+                      <>
+                        Location <span className="text-destructive">*</span>
+                        {selectedAsset?.location && (
+                          <span className="text-xs text-muted-foreground font-normal ml-2">
+                            (Current: {selectedAsset.location})
+                          </span>
                         )}
-                      />
-                    </FieldContent>
-                  </Field>
+                      </>
+                    }
+                    placeholder={selectedAsset?.location || "Select or search location"}
+                    disabled={!canViewAssets || !canMove || !selectedAsset}
+                    required
+                    canCreate={canManageSetup}
+                  />
                 )}
 
                 {moveType === 'Employee Assignment' && (
@@ -877,37 +868,35 @@ export default function MoveAssetPage() {
                 )}
 
                 {moveType === 'Department Transfer' && (
-                  <Field>
-                    <FieldLabel htmlFor="department">
-                      Department <span className="text-destructive">*</span>
-                      {selectedAsset?.department && (
-                        <span className="text-xs text-muted-foreground font-normal ml-2">
-                          (Current: {selectedAsset.department})
-                        </span>
-                      )}
-                    </FieldLabel>
-                    <FieldContent>
-                      <Controller
-                        name="department"
-                        control={form.control}
-                        render={({ field, fieldState }) => (
-                          <>
-                            <Input
-                              id="department"
-                              placeholder={selectedAsset?.department || "Enter department"}
-                              {...field}
-                              disabled={!canViewAssets || !canMove || !selectedAsset}
-                              aria-invalid={fieldState.error ? 'true' : 'false'}
-                              aria-required="true"
-                            />
-                            {fieldState.error && (
-                              <FieldError>{fieldState.error.message}</FieldError>
-                            )}
-                          </>
+                  <Controller
+                    name="department"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <>
+                        <DepartmentSelectField
+                          value={field.value || ""}
+                          onValueChange={(value) => field.onChange(value)}
+                          label={
+                            <>
+                              Department <span className="text-destructive">*</span>
+                              {selectedAsset?.department && (
+                                <span className="text-xs text-muted-foreground font-normal ml-2">
+                                  (Current: {selectedAsset.department})
+                                </span>
+                              )}
+                            </>
+                          }
+                          required
+                          placeholder={selectedAsset?.department || "Select or search department"}
+                          disabled={!canViewAssets || !canMove || !selectedAsset}
+                          canCreate={canManageSetup}
+                        />
+                        {fieldState.error && (
+                          <FieldError>{fieldState.error.message}</FieldError>
                         )}
-                      />
-                    </FieldContent>
-                  </Field>
+                      </>
+                    )}
+                  />
                 )}
 
                 <Field>

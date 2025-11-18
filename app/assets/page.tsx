@@ -1411,7 +1411,6 @@ function AssetActions({ asset }: { asset: Asset }) {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
   const [isAuditOpen, setIsAuditOpen] = useState(false)
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false)
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false)
 
   const deleteMutation = useMutation({
@@ -1502,10 +1501,7 @@ function AssetActions({ asset }: { asset: Asset }) {
       <ImagePreviewDialog
         open={isPreviewDialogOpen}
         onOpenChange={setIsPreviewDialogOpen}
-        image={previewImageUrl ? {
-          imageUrl: previewImageUrl,
-          alt: 'Image Preview',
-        } : null}
+        image={null}
         maxHeight="h-[70vh] max-h-[600px]"
       />
 
@@ -2871,17 +2867,9 @@ export default function AssetsPage() {
               </ScrollArea>
               {/* Pagination */}
               {table.getPageCount() > 1 && (
-                <div className="flex items-center justify-between px-6 py-4 border-t">
-                  <div className="text-sm text-muted-foreground">
-                    {(() => {
-                      const pageIndex = table.getState().pagination.pageIndex
-                      const pageSize = table.getState().pagination.pageSize
-                      const start = pageIndex * pageSize + 1
-                      const end = Math.min((pageIndex + 1) * pageSize, totalCount)
-                      return `Showing ${start} to ${end} of ${totalCount} assets`
-                    })()}
-                  </div>
-                  <Pagination>
+                <div className="flex flex-col gap-2 px-6 py-4 border-t">
+                  <div className="flex items-center justify-center">
+                    <Pagination>
                     <PaginationContent>
                       <PaginationItem>
                         <PaginationPrevious 
@@ -2942,6 +2930,18 @@ export default function AssetsPage() {
                       </PaginationItem>
                     </PaginationContent>
                   </Pagination>
+                  </div>
+                  <div className="flex items-center justify-center">
+                    <div className="text-sm text-muted-foreground">
+                      {(() => {
+                        const pageIndex = table.getState().pagination.pageIndex
+                        const pageSize = table.getState().pagination.pageSize
+                        const start = pageIndex * pageSize + 1
+                        const end = Math.min((pageIndex + 1) * pageSize, totalCount)
+                        return `Showing ${start} to ${end} of ${totalCount} assets`
+                      })()}
+                    </div>
+                  </div>
                 </div>
               )}
             </>

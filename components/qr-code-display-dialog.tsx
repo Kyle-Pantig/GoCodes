@@ -5,6 +5,7 @@ import Image from 'next/image'
 import QRCode from 'react-qr-code'
 import { Download, Printer } from 'lucide-react'
 import { toast } from 'sonner'
+import { useQuery } from '@tanstack/react-query'
 import {
   Dialog,
   DialogContent,
@@ -16,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { Spinner } from '@/components/ui/shadcn-io/spinner'
 
 interface QRCodeDisplayDialogProps {
   open: boolean
@@ -32,12 +34,40 @@ export function QRCodeDisplayDialog({
   assetTagId,
   status,
   statusBadge,
-  purchaseDate,
+  purchaseDate: providedPurchaseDate,
 }: QRCodeDisplayDialogProps) {
   const qrCodeRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
   const [titleTooltipOpen, setTitleTooltipOpen] = useState<boolean | undefined>(undefined)
   const [textTooltipOpen, setTextTooltipOpen] = useState<boolean | undefined>(undefined)
+
+  // Automatically fetch purchase date if not provided
+  const { data: assetData, isLoading: isLoadingPurchaseDate } = useQuery({
+    queryKey: ['asset-by-tag', assetTagId],
+    queryFn: async () => {
+      if (!assetTagId) return null
+      try {
+        const response = await fetch(`/api/assets?search=${encodeURIComponent(assetTagId)}&pageSize=1`)
+        if (!response.ok) return null
+        const data = await response.json()
+        const assets = data.assets || []
+        // Find exact match by assetTagId (case-insensitive)
+        const asset = assets.find(
+          (a: { assetTagId: string }) => a.assetTagId.toLowerCase() === assetTagId.toLowerCase()
+        )
+        return asset || null
+      } catch (error) {
+        console.error('Error fetching asset for QR code:', error)
+        return null
+      }
+    },
+    enabled: open && !providedPurchaseDate && !!assetTagId,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    retry: 1,
+  })
+
+  // Use provided purchase date or fetch from asset data
+  const purchaseDate = providedPurchaseDate ?? assetData?.purchaseDate ?? null
 
   // Helper function to generate the QR code canvas
   const generateQRCanvas = (callback: (canvas: HTMLCanvasElement) => void) => {
@@ -549,14 +579,21 @@ export function QRCodeDisplayDialog({
                 {copied ? 'Copied' : 'Copy'}
               </TooltipContent>
             </Tooltip>
-            <p className="font-medium mt-1">
-              PD: {purchaseDate ? (() => {
-                const date = new Date(purchaseDate)
-                const month = date.getMonth() + 1
-                const day = date.getDate()
-                const year = date.getFullYear()
-                return `${month}/${day}/${year}`
-              })() : 'N/A'}
+            <p className="font-medium mt-1 flex items-center justify-center gap-2">
+              PD:{' '}
+              {isLoadingPurchaseDate ? (
+                <Spinner className="h-4 w-4" />
+              ) : purchaseDate ? (
+                (() => {
+                  const date = new Date(purchaseDate)
+                  const month = date.getMonth() + 1
+                  const day = date.getDate()
+                  const year = date.getFullYear()
+                  return `${month}/${day}/${year}`
+                })()
+              ) : (
+                'N/A'
+              )}
             </p>
           </div>
         </div>

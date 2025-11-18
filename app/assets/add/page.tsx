@@ -16,6 +16,9 @@ import { MediaBrowserDialog } from "@/components/media-browser-dialog"
 import { DocumentBrowserDialog } from "@/components/document-browser-dialog"
 import { SelectedImagesListDialog } from "@/components/selected-images-list-dialog"
 import { SelectedDocumentsListDialog } from "@/components/selected-documents-list-dialog"
+import { LocationSelectField } from "@/components/location-select-field"
+import { SiteSelectField } from "@/components/site-select-field"
+import { DepartmentSelectField } from "@/components/department-select-field"
 import { assetSchema, type AssetFormData } from "@/lib/validations/assets"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -49,7 +52,7 @@ export default function AddAssetPage() {
   const { hasPermission, isLoading } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const canCreateAssets = hasPermission('canCreateAssets')
-  const canManageCategories = hasPermission('canManageCategories')
+  const canManageSetup = hasPermission('canManageSetup')
   
   // React Query hooks - will be set up after form initialization
   const { data: categories = [] } = useCategories()
@@ -132,7 +135,7 @@ export default function AddAssetPage() {
   }
 
   const handleCreateCategory = async (data: { name: string; description?: string }) => {
-    if (!canManageCategories) {
+    if (!canManageSetup) {
       toast.error('You do not have permission to manage categories')
       return
     }
@@ -147,7 +150,7 @@ export default function AddAssetPage() {
   }
 
   const handleCreateSubCategory = async (data: { name: string; description?: string; categoryId: string }) => {
-    if (!canManageCategories) {
+    if (!canManageSetup) {
       toast.error('You do not have permission to manage categories')
       return
     }
@@ -680,7 +683,7 @@ export default function AddAssetPage() {
                       <FieldLabel htmlFor="category">
                         Category <span className="text-destructive">*</span>
                       </FieldLabel>
-                      {canManageCategories && (
+                      {canManageSetup && (
                         <>
                           <Button
                             type="button"
@@ -737,7 +740,7 @@ export default function AddAssetPage() {
                       <FieldLabel htmlFor="subCategory">
                         Sub Category <span className="text-destructive">*</span>
                       </FieldLabel>
-                      {canManageCategories && (
+                      {canManageSetup && (
                         <>
                           <Button
                             type="button"
@@ -1200,38 +1203,32 @@ export default function AddAssetPage() {
                   </FieldContent>
                 </Field>
 
-                <Field>
-                  <FieldLabel htmlFor="department">Department</FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="department"
-                      {...form.register("department")}
-                      placeholder="Department name"
-                    />
-                  </FieldContent>
-                </Field>
+                <DepartmentSelectField
+                  name="department"
+                  control={form.control}
+                  error={form.formState.errors.department}
+                  label="Department"
+                  placeholder="Select or search department"
+                  canCreate={canManageSetup}
+                />
 
-                <Field>
-                  <FieldLabel htmlFor="site">Site</FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="site"
-                      {...form.register("site")}
-                      placeholder="Site location"
-                    />
-                  </FieldContent>
-                </Field>
+                <SiteSelectField
+                  name="site"
+                  control={form.control}
+                  error={form.formState.errors.site}
+                  label="Site"
+                  placeholder="Select or search site"
+                  canCreate={canManageSetup}
+                />
 
-                <Field>
-                  <FieldLabel htmlFor="location">Location</FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="location"
-                      {...form.register("location")}
-                      placeholder="Specific location"
-                    />
-                  </FieldContent>
-                </Field>
+                <LocationSelectField
+                  name="location"
+                  control={form.control}
+                  error={form.formState.errors.location}
+                  label="Location"
+                  placeholder="Select or search location"
+                  canCreate={canManageSetup}
+                />
 
                 <Field>
                   <FieldLabel htmlFor="owner">Owner</FieldLabel>

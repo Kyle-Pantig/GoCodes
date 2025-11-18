@@ -10,7 +10,7 @@ interface UserPermissions {
   canEditAssets: boolean
   canViewAssets: boolean
   canManageEmployees: boolean
-  canManageCategories: boolean
+  canManageSetup: boolean
   canCheckout: boolean
   canCheckin: boolean
   canReserve: boolean

@@ -18,7 +18,6 @@ export async function GET() {
               id: true,
               assetTagId: true,
               description: true,
-              purchaseDate: true,
             },
           },
           employeeUser: {

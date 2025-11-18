@@ -11,6 +11,7 @@ import {
   Wrench,
   FileText,
   ClipboardList,
+  Cog,
 } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 
@@ -186,17 +187,44 @@ const data = {
       ],
     },
     {
+      title: "Setup",
+      url: "/setup",
+      icon: Cog,
+      items: [
+        {
+          title: "Categories",
+          url: "/setup/categories",
+        },
+        {
+          title: "Locations",
+          url: "/setup/locations",
+        },
+        {
+          title: "Sites",
+          url: "/setup/sites",
+        },
+        {
+          title: "Departments",
+          url: "/setup/departments",
+        },
+        {
+          title: "Company Info",
+          url: "/setup/company-info",
+        },
+      ],
+    },
+    {
       title: "Advanced Settings",
       url: "/settings",
       icon: Settings,
       items: [
         {
-          title: "Users",
-          url: "/settings/users",
+          title: "Account",
+          url: "/account",
         },
         {
-          title: "Categories",
-          url: "/settings/categories",
+          title: "Users",
+          url: "/settings/users",
         },
       ],
     },

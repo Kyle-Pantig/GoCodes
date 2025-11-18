@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef, useTransition } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
+import { useIsMobile } from '@/hooks/use-mobile'
 import Image from 'next/image'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -33,6 +34,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
@@ -81,6 +86,7 @@ export default function MediaPage() {
   const queryClient = useQueryClient()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canManageMedia = hasPermission('canManageMedia')
+  const isMobile = useIsMobile()
 
   // Initialize activeTab from URL params, default to 'media'
   const tabFromUrl = searchParams.get('tab') as 'media' | 'documents' | null
@@ -109,6 +115,7 @@ export default function MediaPage() {
   const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false)
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set())
   const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set())
+  const [isSelectionMode, setIsSelectionMode] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -682,6 +689,11 @@ export default function MediaPage() {
   // Handle checkbox selection
   const handleImageSelect = (e: React.MouseEvent, imageId: string) => {
     e.stopPropagation()
+    toggleImageSelection(imageId)
+  }
+
+  // Toggle image selection
+  const toggleImageSelection = (imageId: string) => {
     setSelectedImages(prev => {
       const newSet = new Set(prev)
       if (newSet.has(imageId)) {
@@ -693,12 +705,31 @@ export default function MediaPage() {
     })
   }
 
+  // Handle card click in selection mode
+  const handleImageCardClick = (image: MediaImage) => {
+    if (isSelectionMode) {
+      toggleImageSelection(image.id)
+    } else {
+      handleImageClick(image)
+    }
+  }
+
   // Handle select/deselect all
   const handleToggleSelectAll = () => {
     if (selectedImages.size === images.length) {
       setSelectedImages(new Set())
     } else {
       setSelectedImages(new Set(images.map(img => img.id)))
+    }
+  }
+
+  // Toggle selection mode
+  const handleToggleSelectionMode = () => {
+    setIsSelectionMode(prev => !prev)
+    if (isSelectionMode) {
+      // Clear selections when exiting selection mode
+      setSelectedImages(new Set())
+      setSelectedDocuments(new Set())
     }
   }
 
@@ -848,6 +879,11 @@ export default function MediaPage() {
 
   const handleDocumentSelect = (e: React.MouseEvent, documentId: string) => {
     e.stopPropagation()
+    toggleDocumentSelection(documentId)
+  }
+
+  // Toggle document selection
+  const toggleDocumentSelection = (documentId: string) => {
     setSelectedDocuments(prev => {
       const newSet = new Set(prev)
       if (newSet.has(documentId)) {
@@ -857,6 +893,50 @@ export default function MediaPage() {
       }
       return newSet
     })
+  }
+
+  // Handle document card click in selection mode
+  const handleDocumentCardClick = (document: MediaDocument) => {
+    if (isSelectionMode) {
+      toggleDocumentSelection(document.id)
+    } else {
+      // Original document click behavior
+      const isImage = document.mimeType?.startsWith('image/') || 
+        /\.(jpg|jpeg|png|gif|webp)$/i.test(document.fileName || '')
+      
+      if (isImage) {
+        // For images, open in preview dialog (similar to media tab)
+        const imageDocs = documents.filter(doc => {
+          const docIsImage = doc.mimeType?.startsWith('image/') || 
+            /\.(jpg|jpeg|png|gif|webp)$/i.test(doc.fileName || '')
+          return docIsImage
+        })
+        const index = imageDocs.findIndex(doc => doc.id === document.id)
+        setPreviewImageIndex(index >= 0 ? index : 0)
+        setIsPreviewOpen(true)
+      } else {
+        // Check file type
+        const isPdf = document.mimeType === 'application/pdf' || 
+          /\.pdf$/i.test(document.fileName || '')
+        const isDownloadable = document.mimeType?.includes('excel') || 
+          document.mimeType?.includes('spreadsheet') ||
+          document.mimeType?.includes('word') ||
+          document.mimeType?.includes('document') ||
+          /\.(xls|xlsx|doc|docx)$/i.test(document.fileName || '')
+        
+        if (isPdf) {
+          // PDF: open in new tab
+          window.open(document.documentUrl, '_blank')
+        } else if (isDownloadable) {
+          // Excel, Word, etc.: show download confirmation dialog
+          setDocumentToDownload(document)
+          setIsDownloadDialogOpen(true)
+        } else {
+          // Other files: try to open in new tab
+          window.open(document.documentUrl, '_blank')
+        }
+      }
+    }
   }
 
   const handleToggleSelectAllDocuments = () => {
@@ -960,189 +1040,411 @@ export default function MediaPage() {
         </div>
 
         {/* Header Section */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              {activeTab === 'media' ? 'Media' : 'Documents'}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {activeTab === 'media' 
-                ? (pagination ? `Total: ${pagination.total} images` : 'Loading...')
-                : 'Manage asset documents (receipts, purchase orders, manuals)'
-              }
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-          {activeTab === 'media' && selectedImages.size > 0 && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                if (!canManageMedia) {
-                  toast.error('You do not have permission to delete images')
-                  return
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">
+                {activeTab === 'media' ? 'Media' : 'Documents'}
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                {activeTab === 'media' 
+                  ? (pagination ? `${pagination.total} Images` : 'Loading...')
+                  : (pagination ? `${pagination.total} documents` : 'Loading...')
                 }
-                setIsBulkDeleteDialogOpen(true)
-              }}
-              title={`Delete ${selectedImages.size} image(s)`}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          )}
-          {activeTab === 'documents' && selectedDocuments.size > 0 && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                if (!canManageMedia) {
-                  toast.error('You do not have permission to delete documents')
-                  return
-                }
-                setIsBulkDeleteDialogOpen(true)
-              }}
-              title={`Delete ${selectedDocuments.size} document(s)`}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          )}
-          {activeTab === 'media' && images.length > 0 && selectedImages.size > 0 && (
-            <div className="flex items-center gap-2 px-2">
-              <Checkbox
-                id="select-all-media"
-                checked={selectedImages.size === images.length && images.length > 0}
-                onCheckedChange={handleToggleSelectAll}
-                disabled={images.length === 0}
-                title={selectedImages.size === images.length && images.length > 0
-                  ? 'Deselect All'
-                  : 'Select All'}
-                className='cursor-pointer'
-              />
-              <span className="text-sm text-muted-foreground">
-                {selectedImages.size}
-              </span>
+              </p>
             </div>
-          )}
-          {activeTab === 'documents' && documents.length > 0 && selectedDocuments.size > 0 && (
-            <div className="flex items-center gap-2 px-2">
-              <Checkbox
-                id="select-all-documents"
-                checked={selectedDocuments.size === documents.length && documents.length > 0}
-                onCheckedChange={handleToggleSelectAllDocuments}
-                disabled={documents.length === 0}
-                title={selectedDocuments.size === documents.length && documents.length > 0
-                  ? 'Deselect All'
-                  : 'Select All'}
-                className='cursor-pointer'
-              />
-              <span className="text-sm text-muted-foreground">
-                {selectedDocuments.size}
-              </span>
-            </div>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
-            multiple
-            className="hidden"
-            onChange={handleFileSelect}
-            disabled={isUploading}
-          />
-          <input
-            ref={documentInputRef}
-            type="file"
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.rtf,.jpg,.jpeg,.png,.gif,.webp,image/jpeg,image/jpg,image/png,image/gif,image/webp"
-            multiple
-            className="hidden"
-            onChange={handleDocumentFileSelect}
-            disabled={isUploading}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={isLoadingData}
-          >
-            <RotateCw className={`h-4 w-4 mr-2 ${isLoadingData ? 'animate-spin' : ''}`} />
-            Reload
-          </Button>
-            <Select
-              value={gridColumns.toString()}
-              onValueChange={(value) => setGridColumns(parseInt(value, 10))}
-            >
-              <SelectTrigger className="w-[120px]" size="sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="4">4 Columns</SelectItem>
-                <SelectItem value="5">5 Columns</SelectItem>
-                <SelectItem value="6">6 Columns</SelectItem>
-                <SelectItem value="7">7 Columns</SelectItem>
-                <SelectItem value="8">8 Columns</SelectItem>
-                <SelectItem value="9">9 Columns</SelectItem>
-                <SelectItem value="10">10 Columns</SelectItem>
-              </SelectContent>
-            </Select>
-            {isMounted && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {activeTab === 'media' && (
-                <DropdownMenuItem
-                  onClick={() => {
-                    if (!canManageMedia) {
-                      toast.error('You do not have permission to upload images')
-                      return
-                    }
-                    if (isUploading) {
-                      return
-                    }
-                    fileInputRef.current?.click()
-                  }}
-                  disabled={isUploading}
+            {/* Desktop: All controls on right */}
+            {!isMobile && (
+              <div className="flex items-center gap-2">
+                {isSelectionMode && (
+                  <>
+                    {activeTab === 'media' && (
+                      <div className="flex items-center gap-2 px-2">
+                        <Checkbox
+                          id="select-all-media"
+                          checked={selectedImages.size === images.length && images.length > 0}
+                          onCheckedChange={handleToggleSelectAll}
+                          disabled={images.length === 0}
+                          title={selectedImages.size === images.length && images.length > 0
+                            ? 'Deselect All'
+                            : 'Select All'}
+                          className='cursor-pointer'
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          {selectedImages.size} selected
+                        </span>
+                      </div>
+                    )}
+                    {activeTab === 'documents' && (
+                      <div className="flex items-center gap-2 px-2">
+                        <Checkbox
+                          id="select-all-documents"
+                          checked={selectedDocuments.size === documents.length && documents.length > 0}
+                          onCheckedChange={handleToggleSelectAllDocuments}
+                          disabled={documents.length === 0}
+                          title={selectedDocuments.size === documents.length && documents.length > 0
+                            ? 'Deselect All'
+                            : 'Select All'}
+                          className='cursor-pointer'
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          {selectedDocuments.size} selected
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+                <Button
+                  variant={isSelectionMode ? "default" : "outline"}
+                  size="sm"
+                  onClick={handleToggleSelectionMode}
                 >
-                  {isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Upload Images'}
-                </DropdownMenuItem>
+                  {isSelectionMode ? "Cancel" : "Select"}
+                </Button>
+                {isSelectionMode && (
+                  <>
+                    {activeTab === 'media' && selectedImages.size > 0 && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          if (!canManageMedia) {
+                            toast.error('You do not have permission to delete images')
+                            return
+                          }
+                          setIsBulkDeleteDialogOpen(true)
+                        }}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete ({selectedImages.size})
+                      </Button>
+                    )}
+                    {activeTab === 'documents' && selectedDocuments.size > 0 && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          if (!canManageMedia) {
+                            toast.error('You do not have permission to delete documents')
+                            return
+                          }
+                          setIsBulkDeleteDialogOpen(true)
+                        }}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete ({selectedDocuments.size})
+                      </Button>
+                    )}
+                  </>
                 )}
-                {activeTab === 'documents' && (
-                  <DropdownMenuItem
-                    onClick={() => {
-                      if (!canManageMedia) {
-                        toast.error('You do not have permission to upload documents')
-                        return
-                      }
-                      if (isUploading) {
-                        return
-                      }
-                      documentInputRef.current?.click()
-                    }}
-                    disabled={isUploading}
-                  >
-                    {isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Upload Documents'}
-                  </DropdownMenuItem>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileSelect}
+                  disabled={isUploading}
+                />
+                <input
+                  ref={documentInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.rtf,.jpg,.jpeg,.png,.gif,.webp,image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                  multiple
+                  className="hidden"
+                  onChange={handleDocumentFileSelect}
+                  disabled={isUploading}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefresh}
+                  disabled={isLoadingData}
+                >
+                  <RotateCw className={`h-4 w-4 mr-2 ${isLoadingData ? 'animate-spin' : ''}`} />
+                  Reload
+                </Button>
+                <Select
+                  value={gridColumns.toString()}
+                  onValueChange={(value) => setGridColumns(parseInt(value, 10))}
+                >
+                  <SelectTrigger className="w-[120px]" size="sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="4">4 Columns</SelectItem>
+                    <SelectItem value="5">5 Columns</SelectItem>
+                    <SelectItem value="6">6 Columns</SelectItem>
+                    <SelectItem value="7">7 Columns</SelectItem>
+                    <SelectItem value="8">8 Columns</SelectItem>
+                    <SelectItem value="9">9 Columns</SelectItem>
+                    <SelectItem value="10">10 Columns</SelectItem>
+                  </SelectContent>
+                </Select>
+                {isMounted && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {activeTab === 'media' && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (!canManageMedia) {
+                          toast.error('You do not have permission to upload images')
+                          return
+                        }
+                        if (isUploading) {
+                          return
+                        }
+                        fileInputRef.current?.click()
+                      }}
+                      disabled={isUploading}
+                    >
+                      {isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Upload Images'}
+                    </DropdownMenuItem>
+                    )}
+                    {activeTab === 'documents' && (
+                      <DropdownMenuItem
+                        onClick={() => {
+                          if (!canManageMedia) {
+                            toast.error('You do not have permission to upload documents')
+                            return
+                          }
+                          if (isUploading) {
+                            return
+                          }
+                          documentInputRef.current?.click()
+                        }}
+                        disabled={isUploading}
+                      >
+                        {isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Upload Documents'}
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 )}
-                {activeTab === 'media' && images.length > 0 && (
-                  <DropdownMenuItem onClick={handleToggleSelectAll}>
-                    {selectedImages.size === images.length && images.length > 0
-                      ? 'Deselect All'
-                      : 'Select All'}
-                  </DropdownMenuItem>
+              </div>
+            )}
+            {/* Mobile: Reload and 3-dots on right side of title (always visible) */}
+            {isMobile && (
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileSelect}
+                  disabled={isUploading}
+                />
+                <input
+                  ref={documentInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.rtf,.jpg,.jpeg,.png,.gif,.webp,image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                  multiple
+                  className="hidden"
+                  onChange={handleDocumentFileSelect}
+                  disabled={isUploading}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefresh}
+                  disabled={isLoadingData}
+                >
+                  <RotateCw className={`h-4 w-4 mr-2 ${isLoadingData ? 'animate-spin' : ''}`} />
+                  Reload
+                </Button>
+                {isMounted && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {/* Column selection for mobile */}
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>Grid</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        <DropdownMenuItem
+                          onClick={() => setGridColumns(4)}
+                          className={gridColumns === 4 ? 'bg-accent' : ''}
+                        >
+                          4 Columns
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setGridColumns(5)}
+                          className={gridColumns === 5 ? 'bg-accent' : ''}
+                        >
+                          5 Columns
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setGridColumns(6)}
+                          className={gridColumns === 6 ? 'bg-accent' : ''}
+                        >
+                          6 Columns
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setGridColumns(7)}
+                          className={gridColumns === 7 ? 'bg-accent' : ''}
+                        >
+                          7 Columns
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setGridColumns(8)}
+                          className={gridColumns === 8 ? 'bg-accent' : ''}
+                        >
+                          8 Columns
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setGridColumns(9)}
+                          className={gridColumns === 9 ? 'bg-accent' : ''}
+                        >
+                          9 Columns
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setGridColumns(10)}
+                          className={gridColumns === 10 ? 'bg-accent' : ''}
+                        >
+                          10 Columns
+                        </DropdownMenuItem>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                    <DropdownMenuSeparator />
+                    {activeTab === 'media' && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (!canManageMedia) {
+                          toast.error('You do not have permission to upload images')
+                          return
+                        }
+                        if (isUploading) {
+                          return
+                        }
+                        fileInputRef.current?.click()
+                      }}
+                      disabled={isUploading}
+                    >
+                      {isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Upload Images'}
+                    </DropdownMenuItem>
+                    )}
+                    {activeTab === 'documents' && (
+                      <DropdownMenuItem
+                        onClick={() => {
+                          if (!canManageMedia) {
+                            toast.error('You do not have permission to upload documents')
+                            return
+                          }
+                          if (isUploading) {
+                            return
+                          }
+                          documentInputRef.current?.click()
+                        }}
+                        disabled={isUploading}
+                      >
+                        {isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Upload Documents'}
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 )}
-                {activeTab === 'documents' && documents.length > 0 && (
-                  <DropdownMenuItem onClick={handleToggleSelectAllDocuments}>
-                    {selectedDocuments.size === documents.length && documents.length > 0
-                      ? 'Deselect All'
-                      : 'Select All'}
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </div>
             )}
           </div>
+          {/* Mobile: Selection controls when selection mode is active */}
+          {isMobile && isSelectionMode && (
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {activeTab === 'media' && (
+                <div className="flex items-center gap-2 px-2">
+                  <Checkbox
+                    id="select-all-media-mobile"
+                    checked={selectedImages.size === images.length && images.length > 0}
+                    onCheckedChange={handleToggleSelectAll}
+                    disabled={images.length === 0}
+                    title={selectedImages.size === images.length && images.length > 0
+                      ? 'Deselect All'
+                      : 'Select All'}
+                    className='cursor-pointer'
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {selectedImages.size} selected
+                  </span>
+                </div>
+              )}
+              {activeTab === 'documents' && (
+                <div className="flex items-center gap-2 px-2">
+                  <Checkbox
+                    id="select-all-documents-mobile"
+                    checked={selectedDocuments.size === documents.length && documents.length > 0}
+                    onCheckedChange={handleToggleSelectAllDocuments}
+                    disabled={documents.length === 0}
+                    title={selectedDocuments.size === documents.length && documents.length > 0
+                      ? 'Deselect All'
+                      : 'Select All'}
+                    className='cursor-pointer'
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {selectedDocuments.size} selected
+                  </span>
+                </div>
+              )}
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleToggleSelectionMode}
+              >
+                Cancel
+              </Button>
+              {activeTab === 'media' && selectedImages.size > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    if (!canManageMedia) {
+                      toast.error('You do not have permission to delete images')
+                      return
+                    }
+                    setIsBulkDeleteDialogOpen(true)
+                  }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete ({selectedImages.size})
+                </Button>
+              )}
+              {activeTab === 'documents' && selectedDocuments.size > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    if (!canManageMedia) {
+                      toast.error('You do not have permission to delete documents')
+                      return
+                    }
+                    setIsBulkDeleteDialogOpen(true)
+                  }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete ({selectedDocuments.size})
+                </Button>
+              )}
+            </div>
+          )}
+          {/* Mobile: Select button when selection mode is NOT active */}
+          {isMobile && !isSelectionMode && (
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleToggleSelectionMode}
+              >
+                Select
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Upload Progress */}
@@ -1294,42 +1596,32 @@ export default function MediaPage() {
             {images.map((image) => (
               <div
                 key={image.id}
-                className={`relative group aspect-square rounded-lg overflow-hidden border cursor-pointer hover:opacity-90 ${
+                className={`relative group aspect-square rounded-lg overflow-hidden border ${
+                  isSelectionMode ? 'cursor-pointer' : 'cursor-pointer hover:opacity-90'
+                } ${
                   selectedImages.has(image.id)
                     ? 'border-primary'
                     : ''
                 }`}
                 style={{ transition: 'opacity 0.2s, border-color 0.2s' }}
-                onClick={() => handleImageClick(image)}
+                onClick={() => handleImageCardClick(image)}
               >
-                {/* Checkbox */}
-                <div 
-                  className={`absolute top-2 left-2 z-20 transition-opacity ${
-                    selectedImages.has(image.id)
-                      ? 'opacity-100'
-                      : 'opacity-0 group-hover:opacity-100'
-                  }`}
-                  onClick={(e) => handleImageSelect(e, image.id)}
-                >
-                  <div>
-                    <Checkbox
-                      checked={selectedImages.has(image.id)}
-                      onCheckedChange={() => {
-                        setSelectedImages(prev => {
-                          const newSet = new Set(prev)
-                          if (newSet.has(image.id)) {
-                            newSet.delete(image.id)
-                          } else {
-                            newSet.add(image.id)
-                          }
-                          return newSet
-                        })
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="border-white data-[state=checked]:bg-white data-[state=checked]:text-black cursor-pointer"
-                    />
+                {/* Checkbox - visible when in selection mode */}
+                {isSelectionMode && (
+                  <div 
+                    className="absolute top-2 left-2 z-20"
+                    onClick={(e) => handleImageSelect(e, image.id)}
+                  >
+                    <div>
+                      <Checkbox
+                        checked={selectedImages.has(image.id)}
+                        onCheckedChange={() => toggleImageSelection(image.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="border-white data-[state=checked]:bg-white data-[state=checked]:text-black cursor-pointer"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
                 {/* Selection overlay */}
                 {selectedImages.has(image.id) && (
                   <div className="absolute inset-0 bg-primary/20 border-2 border-primary rounded-lg pointer-events-none z-10" />
@@ -1446,41 +1738,43 @@ export default function MediaPage() {
                   </p>
                 </div>
                 {/* 3-dot menu - show Details for all users, Delete for all but with permission check */}
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                  {isMounted && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 hover:bg-transparent!"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical className="h-4 w-4 text-white" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenuItem onClick={(e) => handleDetailsClick(e, image)}>
-                        <Eye className="mr-2 h-4 w-4" />
-                        Details
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onClick={(e) => {
-                          if (!canManageMedia) {
-                            toast.error('You do not have permission to delete images')
-                            return
-                          }
-                          handleDeleteClick(e, image)
-                        }}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  )}
-                </div>
+                {!isSelectionMode && (
+                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    {isMounted && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 hover:bg-transparent!"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVertical className="h-4 w-4 text-white" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenuItem onClick={(e) => handleDetailsClick(e, image)}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          Details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={(e) => {
+                            if (!canManageMedia) {
+                              toast.error('You do not have permission to delete images')
+                              return
+                            }
+                            handleDeleteClick(e, image)
+                          }}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1564,75 +1858,31 @@ export default function MediaPage() {
               return (
                 <div
                   key={document.id}
-                className={`relative group aspect-square rounded-lg overflow-hidden border cursor-pointer hover:opacity-90 transition-all bg-muted flex flex-col ${
+                className={`relative group aspect-square rounded-lg overflow-hidden border transition-all bg-muted flex flex-col ${
+                  isSelectionMode ? 'cursor-pointer' : 'cursor-pointer hover:opacity-90'
+                } ${
                   selectedDocuments.has(document.id)
                     ? 'border-primary'
                     : ''
                 }`}
-                onClick={() => {
-                  if (isImage) {
-                    // For images, open in preview dialog (similar to media tab)
-                    const index = documents
-                      .filter(doc => {
-                        const docIsImage = doc.mimeType?.startsWith('image/') || 
-                          /\.(jpg|jpeg|png|gif|webp)$/i.test(doc.fileName || '')
-                        return docIsImage
-                      })
-                      .findIndex(doc => doc.id === document.id)
-                    setPreviewImageIndex(index >= 0 ? index : 0)
-                    setIsPreviewOpen(true)
-                  } else {
-                    // Check file type
-                    const isPdf = document.mimeType === 'application/pdf' || 
-                      /\.pdf$/i.test(document.fileName || '')
-                    const isDownloadable = document.mimeType?.includes('excel') || 
-                      document.mimeType?.includes('spreadsheet') ||
-                      document.mimeType?.includes('word') ||
-                      document.mimeType?.includes('document') ||
-                      /\.(xls|xlsx|doc|docx)$/i.test(document.fileName || '')
-                    
-                    if (isPdf) {
-                      // PDF: open in new tab
-                      window.open(document.documentUrl, '_blank')
-                    } else if (isDownloadable) {
-                      // Excel, Word, etc.: show download confirmation dialog
-                      setDocumentToDownload(document)
-                      setIsDownloadDialogOpen(true)
-                    } else {
-                      // Other files: try to open in new tab
-                      window.open(document.documentUrl, '_blank')
-                    }
-                  }
-                }}
+                onClick={() => handleDocumentCardClick(document)}
               >
-                {/* Checkbox */}
-                <div 
-                  className={`absolute top-2 left-2 z-20 transition-opacity ${
-                    selectedDocuments.has(document.id)
-                      ? 'opacity-100'
-                      : 'opacity-0 group-hover:opacity-100'
-                  }`}
-                  onClick={(e) => handleDocumentSelect(e, document.id)}
-                >
-                  <div>
-                    <Checkbox
-                      checked={selectedDocuments.has(document.id)}
-                      onCheckedChange={() => {
-                        setSelectedDocuments(prev => {
-                          const newSet = new Set(prev)
-                          if (newSet.has(document.id)) {
-                            newSet.delete(document.id)
-                          } else {
-                            newSet.add(document.id)
-                          }
-                          return newSet
-                        })
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="border-white data-[state=checked]:bg-white data-[state=checked]:text-black cursor-pointer"
-                    />
+                {/* Checkbox - visible when in selection mode */}
+                {isSelectionMode && (
+                  <div 
+                    className="absolute top-2 left-2 z-20"
+                    onClick={(e) => handleDocumentSelect(e, document.id)}
+                  >
+                    <div>
+                      <Checkbox
+                        checked={selectedDocuments.has(document.id)}
+                        onCheckedChange={() => toggleDocumentSelection(document.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="border-white data-[state=checked]:bg-white data-[state=checked]:text-black cursor-pointer"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
                 {/* Selection overlay */}
                 {selectedDocuments.has(document.id) && (
                   <div className="absolute inset-0 bg-primary/20 border-2 border-primary rounded-lg pointer-events-none z-10" />
@@ -1796,41 +2046,43 @@ export default function MediaPage() {
                   )
                 })()}
                 {/* 3-dot menu - show Details for all users, Delete for all but with permission check */}
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                  {isMounted && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 hover:bg-transparent!"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical className="h-4 w-4 text-white" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenuItem onClick={(e) => handleDocumentDetailsClick(e, document)}>
-                        <Eye className="mr-2 h-4 w-4" />
-                        Details
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onClick={(e) => {
-                          if (!canManageMedia) {
-                            toast.error('You do not have permission to delete documents')
-                            return
-                          }
-                          handleDocumentDeleteClick(e, document)
-                        }}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  )}
-                </div>
+                {!isSelectionMode && (
+                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    {isMounted && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 hover:bg-transparent!"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVertical className="h-4 w-4 text-white" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenuItem onClick={(e) => handleDocumentDetailsClick(e, document)}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          Details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={(e) => {
+                            if (!canManageMedia) {
+                              toast.error('You do not have permission to delete documents')
+                              return
+                            }
+                            handleDocumentDeleteClick(e, document)
+                          }}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    )}
+                  </div>
+                )}
                 </div>
               )
             })}

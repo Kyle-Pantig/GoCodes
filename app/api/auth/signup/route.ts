@@ -76,7 +76,7 @@ export async function POST(request: Request) {
         canEditAssets: false,
         canViewAssets: false,
         canManageEmployees: false,
-        canManageCategories: false,
+        canManageSetup: false,
         canCheckout: false,
         canCheckin: false,
         canReserve: false,

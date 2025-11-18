@@ -251,7 +251,7 @@ export async function POST(request: NextRequest) {
       canEditAssets: permissions?.canEditAssets ?? true,
       canViewAssets: permissions?.canViewAssets ?? true,
       canManageEmployees: permissions?.canManageEmployees ?? false,
-      canManageCategories: permissions?.canManageCategories ?? false,
+      canManageSetup: permissions?.canManageSetup ?? false,
       canCheckout: permissions?.canCheckout ?? true,
       canCheckin: permissions?.canCheckin ?? true,
       canReserve: permissions?.canReserve ?? true,

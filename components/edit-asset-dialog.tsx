@@ -46,6 +46,8 @@ import { useCategories, useSubCategories, useCreateCategory, useCreateSubCategor
 import { CategoryDialog } from '@/components/category-dialog'
 import { SubCategoryDialog } from '@/components/subcategory-dialog'
 import { usePermissions } from '@/hooks/use-permissions'
+import { SiteSelectField } from '@/components/site-select-field'
+import { DepartmentSelectField } from '@/components/department-select-field'
 
 async function updateAsset(id: string, data: Partial<Asset>) {
   const response = await fetch(`/api/assets/${id}`, {
@@ -100,7 +102,7 @@ export function EditAssetDialog({
 }: EditAssetDialogProps) {
   const queryClient = useQueryClient()
   const { hasPermission } = usePermissions()
-  const canManageCategories = hasPermission('canManageCategories')
+  const canManageSetup = hasPermission('canManageSetup')
   const [isCheckingAssetTag, setIsCheckingAssetTag] = useState(false)
   const [selectedImages, setSelectedImages] = useState<File[]>([])
   const [selectedExistingImages, setSelectedExistingImages] = useState<Array<{ id: string; imageUrl: string; fileName: string }>>([])
@@ -176,7 +178,7 @@ export function EditAssetDialog({
   }
 
   const handleCreateCategory = async (data: { name: string; description?: string }) => {
-    if (!canManageCategories) {
+    if (!canManageSetup) {
       toast.error('You do not have permission to manage categories')
       return
     }
@@ -191,7 +193,7 @@ export function EditAssetDialog({
   }
 
   const handleCreateSubCategory = async (data: { name: string; description?: string; categoryId: string }) => {
-    if (!canManageCategories) {
+    if (!canManageSetup) {
       toast.error('You do not have permission to manage categories')
       return
     }
@@ -840,7 +842,7 @@ export function EditAssetDialog({
                       <FieldLabel htmlFor="category">
                         Category <span className="text-destructive">*</span>
                       </FieldLabel>
-                      {canManageCategories && (
+                      {canManageSetup && (
                         <>
                           <Button
                             type="button"
@@ -897,7 +899,7 @@ export function EditAssetDialog({
                       <FieldLabel htmlFor="subCategory">
                         Sub Category <span className="text-destructive">*</span>
                       </FieldLabel>
-                      {canManageCategories && (
+                      {canManageSetup && (
                         <>
                           <Button
                             type="button"
@@ -1050,32 +1052,22 @@ export function EditAssetDialog({
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <Field>
-                      <FieldLabel htmlFor="department">Department</FieldLabel>
-                      <FieldContent>
-                        <Input
-                          id="department"
-                          {...form.register("department")}
-                          aria-invalid={form.formState.errors.department ? "true" : "false"}
-                        />
-                        {form.formState.errors.department && (
-                          <FieldError>{form.formState.errors.department.message}</FieldError>
-                        )}
-                      </FieldContent>
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="site">Site</FieldLabel>
-                      <FieldContent>
-                        <Input
-                          id="site"
-                          {...form.register("site")}
-                          aria-invalid={form.formState.errors.site ? "true" : "false"}
-                        />
-                        {form.formState.errors.site && (
-                          <FieldError>{form.formState.errors.site.message}</FieldError>
-                        )}
-                      </FieldContent>
-                    </Field>
+                    <DepartmentSelectField
+                      name="department"
+                      control={form.control}
+                      error={form.formState.errors.department}
+                      label="Department"
+                      placeholder="Select or search department"
+                      canCreate={canManageSetup}
+                    />
+                    <SiteSelectField
+                      name="site"
+                      control={form.control}
+                      error={form.formState.errors.site}
+                      label="Site"
+                      placeholder="Select or search site"
+                      canCreate={canManageSetup}
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">

@@ -15,7 +15,7 @@ interface UserPermissions {
   canEditAssets: boolean
   canViewAssets: boolean
   canManageEmployees: boolean
-  canManageCategories: boolean
+  canManageSetup: boolean
   canCheckout: boolean
   canCheckin: boolean
   canReserve: boolean
@@ -51,7 +51,7 @@ const permissionLabels: Record<keyof Omit<UserPermissions, 'role'>, string> = {
   canEditAssets: 'Edit Assets',
   canViewAssets: 'View Assets',
   canManageEmployees: 'Manage Employees',
-  canManageCategories: 'Manage Categories',
+  canManageSetup: 'Manage Setup',
   canCheckout: 'Checkout Assets',
   canCheckin: 'Checkin Assets',
   canReserve: 'Reserve Assets',

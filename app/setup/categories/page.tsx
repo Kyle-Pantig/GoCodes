@@ -38,7 +38,7 @@ import { SubCategoryDialog } from '@/components/subcategory-dialog'
 
 export default function CategoriesPage() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
-  const canManageCategories = hasPermission('canManageCategories')
+  const canManageSetup = hasPermission('canManageSetup')
   
   const { data: categories = [], isLoading: categoriesLoading, error: categoriesError } = useCategories()
   const createCategoryMutation = useCreateCategory()
@@ -61,7 +61,7 @@ export default function CategoriesPage() {
 
   // Category handlers
   const handleCreateCategory = async (data: { name: string; description?: string }) => {
-    if (!canManageCategories) {
+    if (!canManageSetup) {
       toast.error('You do not have permission to manage categories')
       return
     }
@@ -76,7 +76,7 @@ export default function CategoriesPage() {
   }
 
   const handleEditCategory = (category: Category) => {
-    if (!canManageCategories) {
+    if (!canManageSetup) {
       toast.error('You do not have permission to manage categories')
       return
     }
@@ -85,7 +85,7 @@ export default function CategoriesPage() {
   }
 
   const handleUpdateCategory = async (data: { name: string; description?: string }) => {
-    if (!selectedCategory || !canManageCategories) return
+    if (!selectedCategory || !canManageSetup) return
 
     try {
       await updateCategoryMutation.mutateAsync({
@@ -101,7 +101,7 @@ export default function CategoriesPage() {
   }
 
   const handleDeleteCategory = (category: Category) => {
-    if (!canManageCategories) {
+    if (!canManageSetup) {
       toast.error('You do not have permission to manage categories')
       return
     }
@@ -125,7 +125,7 @@ export default function CategoriesPage() {
 
   // Subcategory handlers
   const handleCreateSubCategory = (category: Category) => {
-    if (!canManageCategories) {
+    if (!canManageSetup) {
       toast.error('You do not have permission to manage categories')
       return
     }
@@ -134,7 +134,7 @@ export default function CategoriesPage() {
   }
 
   const handleCreateSubCategorySubmit = async (data: { name: string; description?: string; categoryId: string }) => {
-    if (!canManageCategories) return
+    if (!canManageSetup) return
 
     try {
       await createSubCategoryMutation.mutateAsync(data)
@@ -147,7 +147,7 @@ export default function CategoriesPage() {
   }
 
   const handleEditSubCategory = (subCategory: SubCategory, categoryId: string) => {
-    if (!canManageCategories) {
+    if (!canManageSetup) {
       toast.error('You do not have permission to manage categories')
       return
     }
@@ -156,7 +156,7 @@ export default function CategoriesPage() {
   }
 
   const handleUpdateSubCategory = async (data: { name: string; description?: string; categoryId: string }) => {
-    if (!selectedSubCategory || !canManageCategories) return
+    if (!selectedSubCategory || !canManageSetup) return
 
     try {
       await updateSubCategoryMutation.mutateAsync({
@@ -172,7 +172,7 @@ export default function CategoriesPage() {
   }
 
   const handleDeleteSubCategory = (subCategory: SubCategory) => {
-    if (!canManageCategories) {
+    if (!canManageSetup) {
       toast.error('You do not have permission to manage categories')
       return
     }
@@ -207,7 +207,7 @@ export default function CategoriesPage() {
       <div className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>Categories Management</CardTitle>
+            <CardTitle>Categories</CardTitle>
             <CardDescription>Manage asset categories and subcategories</CardDescription>
           </CardHeader>
           <CardContent>
@@ -230,12 +230,12 @@ export default function CategoriesPage() {
     )
   }
 
-  if (!canManageCategories) {
+  if (!canManageSetup) {
     return (
       <div className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>Categories Management</CardTitle>
+            <CardTitle>Categories</CardTitle>
             <CardDescription>Manage asset categories and subcategories</CardDescription>
           </CardHeader>
           <CardContent>
@@ -256,7 +256,7 @@ export default function CategoriesPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Categories Management</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Categories</h1>
           <p className="text-muted-foreground">
             Manage asset categories and their subcategories
           </p>
@@ -298,7 +298,7 @@ export default function CategoriesPage() {
                       )}
                     </div>
                   </div>
-                  {canManageCategories && (
+                  {canManageSetup && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" className="h-8 w-8 p-0 shrink-0">
@@ -329,7 +329,7 @@ export default function CategoriesPage() {
                   <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide truncate">
                     Subcategories ({category.subCategories?.length || 0})
                   </span>
-                  {canManageCategories && (
+                  {canManageSetup && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -357,7 +357,7 @@ export default function CategoriesPage() {
                               </div>
                             )}
                           </div>
-                          {canManageCategories && (
+                          {canManageSetup && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button 
@@ -395,7 +395,7 @@ export default function CategoriesPage() {
                   <div className="flex-1 flex items-center justify-center py-6">
                     <div className="text-center">
                       <p className="text-xs text-muted-foreground mb-2">No subcategories yet</p>
-                      {canManageCategories && (
+                      {canManageSetup && (
                         <Button
                           variant="ghost"
                           size="sm"
