@@ -49,17 +49,14 @@ export async function GET() {
       .sort((a, b) => b.value - a.value)
 
     // Get summary statistics
-    // Total Active Assets (not deleted, not disposed)
+    // Total Active Assets (not deleted) - matches assets/list pages count
     const totalActiveAssets = await prisma.assets.count({
       where: {
         isDeleted: false,
-        status: {
-          not: 'Disposed',
-        },
       },
     })
 
-    // Get count of checked out assets
+    // Get count of checked out assets (not deleted)
     const checkedOutCount = await prisma.assets.count({
       where: {
         isDeleted: false,
@@ -70,7 +67,7 @@ export async function GET() {
       },
     })
 
-    // Get count of available assets
+    // Get count of available assets (not deleted)
     const availableCount = await prisma.assets.count({
       where: {
         isDeleted: false,
