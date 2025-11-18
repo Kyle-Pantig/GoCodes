@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useMemo } from "react"
+import { useState, useRef, useEffect, useMemo, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { useForm, Controller, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -117,7 +117,7 @@ const getMaintenanceStatusBadgeClass = (status: string): string => {
   }
 }
 
-export default function MaintenancePage() {
+function MaintenancePageContent() {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
@@ -1332,5 +1332,28 @@ export default function MaintenancePage() {
         assetTagId={selectedAssetTagForQR}
       />
     </div>
+  )
+}
+
+export default function MaintenancePage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Maintenance</h1>
+          <p className="text-muted-foreground">
+            Schedule and manage asset maintenance
+          </p>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3">
+            <Spinner className="h-8 w-8" />
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      </div>
+    }>
+      <MaintenancePageContent />
+    </Suspense>
   )
 }

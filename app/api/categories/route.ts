@@ -10,7 +10,9 @@ export async function GET(request: NextRequest) {
 
   // Viewing categories requires view assets permission
   const permissionCheck = await requirePermission('canViewAssets')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const categories = await retryDbOperation(() => prisma.category.findMany({
@@ -49,7 +51,9 @@ export async function POST(request: NextRequest) {
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canManageSetup')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const body = await request.json()

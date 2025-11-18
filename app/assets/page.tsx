@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useEffect, useMemo, useRef, useTransition } from 'react'
+import { useState, useEffect, useMemo, useRef, useTransition, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -1542,7 +1542,7 @@ function AssetActions({ asset }: { asset: Asset }) {
 
 
 
-export default function AssetsPage() {
+function AssetsPageContent() {
   const queryClient = useQueryClient()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -2972,6 +2972,29 @@ export default function AssetsPage() {
         progress={isDeleting ? { current: deletingProgress.current, total: deletingProgress.total } : undefined}
       />
     </>
+  )
+}
+
+export default function AssetsPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Assets</h1>
+          <p className="text-muted-foreground">
+            View and manage all assets
+          </p>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3">
+            <Spinner className="h-8 w-8" />
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      </div>
+    }>
+      <AssetsPageContent />
+    </Suspense>
   )
 }
 

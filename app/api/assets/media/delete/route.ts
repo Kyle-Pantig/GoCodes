@@ -31,7 +31,9 @@ export async function DELETE(request: NextRequest) {
 
     // Check media permission
     const permissionCheck = await requirePermission('canManageMedia')
-    if (!permissionCheck.allowed) return permissionCheck.error
+    if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
     const { searchParams } = new URL(request.url)
     const imageUrl = searchParams.get('imageUrl')

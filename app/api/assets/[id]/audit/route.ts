@@ -7,12 +7,14 @@ import { requirePermission } from '@/lib/permission-utils'
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+): Promise<NextResponse> {
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canAudit')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { id } = await params
@@ -39,12 +41,14 @@ export async function GET(
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+): Promise<NextResponse> {
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canAudit')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { id } = await params

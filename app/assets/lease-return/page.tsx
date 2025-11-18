@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useMemo } from "react"
+import { useState, useRef, useEffect, useMemo, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -79,7 +79,7 @@ interface LeaseReturnAsset extends Asset {
   notes?: string
 }
 
-export default function LeaseReturnPage() {
+function LeaseReturnPageContent() {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
@@ -465,7 +465,7 @@ export default function LeaseReturnPage() {
             
             // Check if asset has an active lease
             const activeLease = asset.leases?.[0]
-            if (!activeLease || activeLease.endDate) {
+            if (!activeLease || activeLease.leaseEndDate) {
               toast.error(`Asset "${asset.assetTagId}" does not have an active lease`)
               return
             }
@@ -978,5 +978,28 @@ export default function LeaseReturnPage() {
         assetTagId={selectedAssetTagForQR}
       />
     </div>
+  )
+}
+
+export default function LeaseReturnPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Lease Return</h1>
+          <p className="text-muted-foreground">
+            Return a leased asset
+          </p>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3">
+            <Spinner className="h-8 w-8" />
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      </div>
+    }>
+      <LeaseReturnPageContent />
+    </Suspense>
   )
 }

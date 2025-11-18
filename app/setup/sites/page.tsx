@@ -492,7 +492,6 @@ export default function SitesPage() {
         onConfirm={handleBulkDelete}
         itemCount={selectedSites.size}
         itemName="Site"
-        isLoading={deleteSiteMutation.isPending}
         title={`Delete ${selectedSites.size} Site(s)?`}
         description={`Are you sure you want to permanently delete ${selectedSites.size} selected site(s)? This action cannot be undone.`}
         confirmLabel={`Delete ${selectedSites.size} Site(s)`}

@@ -31,7 +31,9 @@ export async function POST(request: NextRequest) {
 
     // Check media permission
     const permissionCheck = await requirePermission('canManageMedia')
-    if (!permissionCheck.allowed) return permissionCheck.error
+    if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
     // Get file from form data
     const formData = await request.formData()

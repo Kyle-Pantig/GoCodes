@@ -10,7 +10,9 @@ export async function GET(request: NextRequest) {
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canViewAssets')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
     const { searchParams } = new URL(request.url)
     const categoryId = searchParams.get('categoryId')
@@ -71,7 +73,9 @@ export async function POST(request: NextRequest) {
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canManageSetup')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const body = await request.json()

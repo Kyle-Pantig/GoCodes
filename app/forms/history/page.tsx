@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect, useRef, useTransition } from "react"
+import { useState, useCallback, useEffect, useRef, useTransition, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { FileText, ClipboardList, Search, X, RefreshCw, ArrowLeft, ArrowRight, Eye } from "lucide-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -104,7 +104,7 @@ async function fetchForms(
   return response.json()
 }
 
-export default function FormsHistoryPage() {
+function FormsHistoryPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
@@ -673,5 +673,28 @@ export default function FormsHistoryPage() {
         </div>
       </Card>
     </div>
+  )
+}
+
+export default function FormsHistoryPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Forms History</h1>
+          <p className="text-muted-foreground">
+            View history of return and accountability forms
+          </p>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3">
+            <Spinner className="h-8 w-8" />
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      </div>
+    }>
+      <FormsHistoryPageContent />
+    </Suspense>
   )
 }

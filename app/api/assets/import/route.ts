@@ -9,7 +9,9 @@ export async function POST(request: NextRequest) {
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canManageImport')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { assets } = await request.json()

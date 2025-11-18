@@ -12,7 +12,9 @@ export async function DELETE(
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canAudit')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { auditId } = await params

@@ -12,7 +12,9 @@ export async function PUT(
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canManageSetup')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const body = await request.json()
@@ -62,21 +64,19 @@ export async function DELETE(
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canManageSetup')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { id } = await params
 
-    // Check if location exists and has associated assets
-    const location = await retryDbOperation(() =>
-      prisma.assetsLocation.findUnique({
-        where: { id },
-        include: {
-          // Note: We need to check if any assets use this location
-          // Since location is a string field in Assets, we'll need to query differently
-        },
-      })
-    )
+      // Check if location exists and has associated assets
+      const location = await retryDbOperation(() =>
+        prisma.assetsLocation.findUnique({
+          where: { id },
+        })
+      )
 
     if (!location) {
       return NextResponse.json(

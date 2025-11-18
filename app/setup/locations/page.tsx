@@ -488,7 +488,6 @@ export default function LocationsPage() {
         onConfirm={handleBulkDelete}
         itemCount={selectedLocations.size}
         itemName="Location"
-        isLoading={deleteLocationMutation.isPending}
         title={`Delete ${selectedLocations.size} Location(s)?`}
         description={`Are you sure you want to permanently delete ${selectedLocations.size} selected location(s)? This action cannot be undone.`}
         confirmLabel={`Delete ${selectedLocations.size} Location(s)`}

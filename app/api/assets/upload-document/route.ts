@@ -17,7 +17,9 @@ export async function POST(request: NextRequest) {
 
     // Check create permission
     const permissionCheck = await requirePermission('canCreateAssets')
-    if (!permissionCheck.allowed) return permissionCheck.error
+    if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
     // Check if request is JSON (for linking existing documents) or FormData (for uploading new files)
     const contentType = request.headers.get('content-type') || ''

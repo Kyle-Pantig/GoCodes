@@ -16,7 +16,9 @@ export async function GET(request: NextRequest) {
 
     // Check view permission
     const permissionCheck = await requirePermission('canViewAssets')
-    if (!permissionCheck.allowed) return permissionCheck.error
+    if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
     const searchParams = request.nextUrl.searchParams
     const assetTagIdsParam = searchParams.get('assetTagIds')

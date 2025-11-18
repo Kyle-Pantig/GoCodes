@@ -13,7 +13,9 @@ export async function PATCH(
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canCheckout')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { checkoutId } = await params

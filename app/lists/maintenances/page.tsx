@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { useState, useMemo, useCallback, useEffect, useRef, useTransition } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef, useTransition, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
 import {
@@ -1670,7 +1670,7 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
   )
 }
 
-export default function ListOfMaintenancesPage() {
+function ListOfMaintenancesPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
@@ -2497,5 +2497,32 @@ export default function ListOfMaintenancesPage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+export default function ListOfMaintenancesPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">List of Maintenances</h1>
+          <p className="text-muted-foreground">
+            View and manage all assets with Maintenance status
+          </p>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-3">
+                <Spinner className="h-8 w-8" />
+                <p className="text-sm text-muted-foreground">Loading...</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    }>
+      <ListOfMaintenancesPageContent />
+    </Suspense>
   )
 }

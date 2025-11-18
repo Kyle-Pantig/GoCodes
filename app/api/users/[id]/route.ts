@@ -15,7 +15,9 @@ export async function GET(
 
   // Only users with canManageUsers permission can view users
   const permissionCheck = await requirePermission('canManageUsers')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { id } = await params
@@ -59,7 +61,9 @@ export async function PUT(
 
   // Only users with canManageUsers permission can update users
   const permissionCheck = await requirePermission('canManageUsers')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { id } = await params
@@ -223,7 +227,9 @@ export async function DELETE(
 
   // Only users with canManageUsers permission can delete users
   const permissionCheck = await requirePermission('canManageUsers')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { id } = await params

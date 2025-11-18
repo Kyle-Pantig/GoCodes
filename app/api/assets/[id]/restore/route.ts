@@ -6,13 +6,15 @@ import { requirePermission } from '@/lib/permission-utils'
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+): Promise<NextResponse> {
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
   // Check delete permission (same as restore permission)
   const permissionCheck = await requirePermission('canDeleteAssets')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { id } = await params

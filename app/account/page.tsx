@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useTransition, useMemo } from 'react'
+import { useState, useCallback, useTransition, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { User, Lock, Shield, PanelLeft, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -12,12 +12,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import PersonalDetails from './personal-details'
-import PasswordAndSecurity from './password-security'
-import Permissions from './permissions'
-import Preferences from './preferences'
+import PersonalDetails from '@/components/personal-details'
+import PasswordAndSecurity from '@/components/password-security'
+import Permissions from '@/components/permissions'
+import Preferences from '@/components/preferences'
 
-export default function AccountPage() {
+function AccountPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [, startTransition] = useTransition()
@@ -182,6 +182,26 @@ export default function AccountPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function AccountPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Account Settings</h1>
+          <p className="text-muted-foreground">
+            Manage your account settings and preferences
+          </p>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    }>
+      <AccountPageContent />
+    </Suspense>
   )
 }
 

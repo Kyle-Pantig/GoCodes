@@ -40,7 +40,9 @@ export async function GET(request: NextRequest) {
     } else {
       // For viewing regular assets, check canViewAssets permission
       const permissionCheck = await requirePermission('canViewAssets')
-      if (!permissionCheck.allowed) return permissionCheck.error
+      if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
     }
     const page = parseInt(searchParams.get('page') || '1', 10)
     const pageSize = parseInt(searchParams.get('pageSize') || '10', 10)
@@ -419,7 +421,9 @@ export async function POST(request: NextRequest) {
 
   // Check create permission
   const permissionCheck = await requirePermission('canCreateAssets')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const body = await request.json()

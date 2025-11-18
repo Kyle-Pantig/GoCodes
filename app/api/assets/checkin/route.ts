@@ -9,7 +9,9 @@ export async function POST(request: NextRequest) {
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canCheckin')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const body = await request.json()
@@ -66,6 +68,10 @@ export async function POST(request: NextRequest) {
 
           if (!activeCheckout) {
             throw new Error(`No active checkout found for asset ${asset.assetTagId}`)
+          }
+
+          if (!activeCheckout.employeeUserId) {
+            throw new Error(`Checkout record for asset ${asset.assetTagId} does not have an employee assigned`)
           }
 
           // Update asset status to Available and location if provided

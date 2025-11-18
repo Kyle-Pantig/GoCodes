@@ -13,7 +13,9 @@ export async function DELETE(
 
   // Check delete permission
   const permissionCheck = await requirePermission('canDeleteAssets')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { id } = await params
@@ -59,7 +61,9 @@ export async function GET(
 
   // Check view permission
   const permissionCheck = await requirePermission('canViewAssets')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { id } = await params
@@ -123,7 +127,9 @@ export async function PUT(
 
   // Check edit permission
   const permissionCheck = await requirePermission('canEditAssets')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { id } = await params

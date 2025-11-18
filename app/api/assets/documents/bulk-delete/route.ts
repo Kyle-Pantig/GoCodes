@@ -31,7 +31,9 @@ export async function DELETE(request: NextRequest) {
 
     // Check media permission
     const permissionCheck = await requirePermission('canManageMedia')
-    if (!permissionCheck.allowed) return permissionCheck.error
+    if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
     const body = await request.json()
     const documentUrls = body.documentUrls as string[]

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useMemo } from "react"
+import { useState, useRef, useEffect, useMemo, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { useForm, useWatch, type Control } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -95,7 +95,7 @@ const getStatusBadge = (status: string | null) => {
   return <Badge variant="outline">{status}</Badge>
 }
 
-export default function CheckoutPage() {
+function CheckoutPageContent() {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
@@ -1076,5 +1076,32 @@ export default function CheckoutPage() {
         assetTagId={selectedAssetTagForQR}
       />
     </div>
+  )
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Check Out Asset</h1>
+          <p className="text-muted-foreground">
+            Assign an asset to an employee
+          </p>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-3">
+                <Spinner className="h-8 w-8" />
+                <p className="text-sm text-muted-foreground">Loading...</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    }>
+      <CheckoutPageContent />
+    </Suspense>
   )
 }

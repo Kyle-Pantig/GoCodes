@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -116,7 +116,7 @@ async function fetchDeletedAssets(page: number = 1, pageSize: number = 100, sear
   }
 }
 
-export default function TrashPage() {
+function TrashPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   
@@ -1109,6 +1109,33 @@ export default function TrashPage() {
         loadingLabel="Emptying trash..."
       />
     </div>
+  )
+}
+
+export default function TrashPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Trash</h1>
+          <p className="text-muted-foreground">
+            View and manage deleted assets
+          </p>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-3">
+                <Spinner className="h-8 w-8" />
+                <p className="text-sm text-muted-foreground">Loading...</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    }>
+      <TrashPageContent />
+    </Suspense>
   )
 }
 

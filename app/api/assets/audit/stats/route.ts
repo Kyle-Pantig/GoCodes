@@ -9,7 +9,9 @@ export async function GET() {
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canAudit')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     // Get recent audit history (last 10 audits) with retry logic

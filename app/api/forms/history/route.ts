@@ -15,10 +15,14 @@ export async function GET(request: NextRequest) {
     // Check permissions based on form type
     if (formType === "return") {
       const permissionCheck = await requirePermission("canViewReturnForms")
-      if (!permissionCheck.allowed) return permissionCheck.error
+      if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
     } else {
       const permissionCheck = await requirePermission("canViewAccountabilityForms")
-      if (!permissionCheck.allowed) return permissionCheck.error
+      if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
     }
     const search = searchParams.get("search")
     const searchType = searchParams.get("searchType") || "unified" // "unified", "employee", "department", "formNo"

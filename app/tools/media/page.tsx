@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef, useTransition } from 'react'
+import { useState, useEffect, useMemo, useRef, useTransition, Suspense } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -80,7 +80,7 @@ interface MediaDocument {
   mimeType?: string | null
 }
 
-export default function MediaPage() {
+function MediaPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
@@ -1852,8 +1852,6 @@ export default function MediaPage() {
           {/* Documents Grid */}
           <div className={`grid ${gridClasses[gridColumns as keyof typeof gridClasses]} gap-3 mb-6`}>
             {documents.map((document) => {
-              const isImage = document.mimeType?.startsWith('image/') || 
-                /\.(jpg|jpeg|png|gif|webp)$/i.test(document.fileName || '')
               
               return (
                 <div
@@ -2452,6 +2450,33 @@ export default function MediaPage() {
         }}
       />
     </>
+  )
+}
+
+export default function MediaPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Media Management</h1>
+          <p className="text-muted-foreground">
+            Manage images and documents for assets
+          </p>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm text-muted-foreground">Loading...</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    }>
+      <MediaPageContent />
+    </Suspense>
   )
 }
 

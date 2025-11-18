@@ -11,7 +11,9 @@ export async function PUT(
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canManageSetup')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const body = await request.json()
@@ -47,7 +49,9 @@ export async function DELETE(
   if (auth.error) return auth.error
 
   const permissionCheck = await requirePermission('canManageSetup')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { id } = await params

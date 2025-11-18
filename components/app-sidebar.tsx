@@ -43,10 +43,6 @@ const data = {
           url: "/dashboard",
         },
         {
-          title: "Analytics",
-          url: "/dashboard/analytics",
-        },
-        {
           title: "Recent Activity",
           url: "/dashboard/activity",
         },

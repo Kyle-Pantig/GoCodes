@@ -17,7 +17,9 @@ export async function POST(
 
   // Only users with canManageUsers permission can send password reset emails
   const permissionCheck = await requirePermission('canManageUsers')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { id } = await params

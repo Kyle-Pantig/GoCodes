@@ -33,7 +33,9 @@ export async function DELETE(
 
     // Check edit permission
     const permissionCheck = await requirePermission('canEditAssets')
-    if (!permissionCheck.allowed) return permissionCheck.error
+    if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
     const { id } = await params
 

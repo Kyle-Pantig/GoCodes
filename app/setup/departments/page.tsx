@@ -492,7 +492,6 @@ export default function DepartmentsPage() {
         onConfirm={handleBulkDelete}
         itemCount={selectedDepartments.size}
         itemName="Department"
-        isLoading={deleteDepartmentMutation.isPending}
         title={`Delete ${selectedDepartments.size} Department(s)?`}
         description={`Are you sure you want to permanently delete ${selectedDepartments.size} selected department(s)? This action cannot be undone.`}
         confirmLabel={`Delete ${selectedDepartments.size} Department(s)`}
