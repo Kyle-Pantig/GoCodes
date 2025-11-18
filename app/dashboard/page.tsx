@@ -1,12 +1,10 @@
-export default function Page() {
+export default function DashboardPage() {
   return (
-    <>
-      <div className="grid auto-rows-min gap-4 md:grid-cols-3">
-        <div className="bg-muted/50 aspect-video rounded-xl" />
-        <div className="bg-muted/50 aspect-video rounded-xl" />
-        <div className="bg-muted/50 aspect-video rounded-xl" />
+    <div className="flex items-center justify-center min-h-[400px]">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold mb-2">Coming Soon</h1>
+        <p className="text-muted-foreground">Dashboard feature is under development</p>
       </div>
-      <div className="bg-muted/50 min-h-screen flex-1 rounded-xl md:min-h-min" />
-    </>
+    </div>
   )
 }

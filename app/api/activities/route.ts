@@ -4,13 +4,15 @@ import { verifyAuth } from '@/lib/auth-utils'
 import { retryDbOperation } from '@/lib/db-utils'
 import { requirePermission } from '@/lib/permission-utils'
 
-export async function GET(request: NextRequest) {
+export async function GET(request: NextRequest): Promise<NextResponse> {
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
   // Check view permission
   const permissionCheck = await requirePermission('canViewAssets')
-  if (!permissionCheck.allowed) return permissionCheck.error
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
 
   try {
     const { searchParams } = new URL(request.url)
