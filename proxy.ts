@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -54,7 +54,7 @@ export async function middleware(request: NextRequest) {
 
   // Redirect authenticated users away from login page
   // Note: Inactive user check is handled client-side via use-permissions hook
-  // and API routes, as middleware runs on Edge Runtime which doesn't support Prisma
+  // and API routes, as proxy runs on Edge Runtime which doesn't support Prisma
   if (request.nextUrl.pathname.startsWith('/login')) {
     if (user) {
       const url = request.nextUrl.clone()
