@@ -3,6 +3,10 @@ import { DashboardClient } from './dashboard-client'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { getDashboardStats } from '@/lib/data/dashboard-stats'
 
+// Force dynamic rendering - don't pre-render at build time
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 // Loading fallback component
 function DashboardLoading() {
   return (
