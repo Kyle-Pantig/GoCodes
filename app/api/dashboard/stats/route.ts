@@ -14,6 +14,7 @@ export async function GET() {
   }
 
   try {
+    const startTime = Date.now()
     const now = new Date()
     const fiscalYearStart = new Date(now.getFullYear(), 0, 1) // January 1st of current year
     const fiscalYearEnd = new Date(now.getFullYear() + 1, 0, 1) // January 1st of next year
@@ -214,6 +215,11 @@ export async function GET() {
         }),
     ])
     )
+
+    const queryTime = Date.now() - startTime
+    if (queryTime > 5000) {
+      console.warn(`[DB] Dashboard stats query took ${queryTime}ms (slow query threshold: 5s)`)
+    }
 
     // Process asset value by category - map category IDs to names
     const categoryMap = new Map(categories.map((cat) => [cat.id, cat.name]))

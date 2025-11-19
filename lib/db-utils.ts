@@ -56,12 +56,22 @@ export async function retryDbOperation<T>(
         const errorCode = error instanceof PrismaClientKnownRequestError ? error.code : 
                          error instanceof PrismaClientInitializationError ? 'INIT_ERROR' : 'CONN_ERROR'
         
-        // Log with minimal detail to avoid noise (Prisma already logs the full error)
-        console.warn(`[DB] Connection error (attempt ${attemptNum}/${maxRetries}, code: ${errorCode})`)
+        // Extract error details for better debugging
+        const errorDetails = error instanceof Error ? error.message : String(error)
+        const errorStack = error instanceof Error ? error.stack : undefined
         
-        // Exponential backoff with jitter: 1000ms, 2000ms, 4000ms
+        // Log with error details to help diagnose connection issues
+        // Log first 200 chars of message, and full stack if available
+        console.warn(`[DB] Connection error (attempt ${attemptNum}/${maxRetries}, code: ${errorCode})`)
+        console.warn(`[DB] Error message: ${errorDetails.substring(0, 200)}${errorDetails.length > 200 ? '...' : ''}`)
+        if (errorStack && attemptNum === maxRetries) {
+          // Only log full stack on final attempt to avoid noise
+          console.warn(`[DB] Error stack: ${errorStack.substring(0, 500)}`)
+        }
+        
+        // Exponential backoff with jitter: 500ms, 1000ms, 2000ms (reduced for faster recovery)
         // Add small random jitter to prevent thundering herd
-        const baseDelay = delay * Math.pow(2, attempt)
+        const baseDelay = delay * Math.pow(2, attempt) * 0.5 // Reduced base delay
         const jitter = Math.random() * 200 // 0-200ms random jitter
         const backoffDelay = baseDelay + jitter
         
