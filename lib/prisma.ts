@@ -20,13 +20,12 @@ function makeConnectionUrl() {
     urlObj.searchParams.set('pgbouncer', 'true')
     
     // Add connection timeout settings if not already present
-    // Reduced timeout to fail faster and allow retry logic to kick in sooner
-    // Connection pool exhaustion should be handled by retries, not long waits
+    // Increased timeout to handle connection pool exhaustion and network issues better
     if (!urlObj.searchParams.has('connect_timeout')) {
-      urlObj.searchParams.set('connect_timeout', '10')
+      urlObj.searchParams.set('connect_timeout', '30')
     }
     if (!urlObj.searchParams.has('pool_timeout')) {
-      urlObj.searchParams.set('pool_timeout', '10')
+      urlObj.searchParams.set('pool_timeout', '30')
     }
     
     // Add statement cache size for better connection pool handling
