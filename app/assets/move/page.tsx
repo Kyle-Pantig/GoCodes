@@ -1034,7 +1034,9 @@ function MoveAssetPageContent() {
         open={qrDialogOpen}
         onOpenChange={setQrDialogOpen}
         onScan={handleQRScan}
-        description="Scan or upload a QR code to select an asset"
+        multiScan={true}
+        existingCodes={selectedAsset ? [selectedAsset.assetTagId] : []}
+        description="Scan or upload QR codes to select an asset. Continue scanning to change selection."
       />
           
       {/* QR Code Display Dialog */}

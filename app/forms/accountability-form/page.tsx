@@ -98,12 +98,35 @@ const CABLES_AND_EXTENSIONS = [
   'HDMI MALE TO DVI CABLE',
 ]
 
+async function fetchCompanyInfo(): Promise<{ companyInfo: { primaryLogoUrl: string | null; secondaryLogoUrl: string | null } | null }> {
+  try {
+    const response = await fetch('/api/setup/company-info')
+    if (!response.ok) {
+      return { companyInfo: null }
+    }
+    return response.json()
+  } catch {
+    return { companyInfo: null }
+  }
+}
+
 export default function AccountabilityFormPage() {
   const { hasPermission } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const canViewAccountabilityForms = hasPermission('canViewAccountabilityForms')
   const canManageAccountabilityForms = hasPermission('canManageAccountabilityForms')
   const canManageSetup = hasPermission('canManageSetup')
+
+  // Fetch company info for logos
+  const { data: companyData } = useQuery({
+    queryKey: ['company-info'],
+    queryFn: fetchCompanyInfo,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: false,
+  })
+
+  const primaryLogoUrl = companyData?.companyInfo?.primaryLogoUrl || '/ShoreAgents-Logo.png'
+  const secondaryLogoUrl = companyData?.companyInfo?.secondaryLogoUrl || '/ShoreAgents-Logo-only.png'
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionRef = useRef<HTMLDivElement>(null)
   const [assetIdInput, setAssetIdInput] = useState("")
@@ -377,8 +400,7 @@ export default function AccountabilityFormPage() {
         // Check if asset is already in the list
         if (selectedAssets.some(a => a.id === asset.id)) {
           toast.error('Asset is already in the accountability list')
-          setQrDialogContext('general')
-          setTargetRowItem(null)
+          // Keep context active in multi-scan mode
           return
         }
 
@@ -388,14 +410,24 @@ export default function AccountabilityFormPage() {
         }
         setSelectedAssets((prev) => [...prev, newAsset])
         toast.success(`Asset "${asset.assetTagId}" added to ${targetRowItem}`)
-        setQrDialogContext('general')
-        setTargetRowItem(null)
+        // Keep context active for multi-scan - user can continue scanning same item type
+        // Context will be reset when dialog closes
       } else {
         toast.error(`Asset subcategory "${subCategoryName}" does not match "${targetRowItem}". Please scan a ${targetRowItem} asset.`)
       }
     } else {
       // General scan - add to list normally
       await handleAddAsset(asset)
+    }
+  }
+
+  // Handle removing an asset from QR scanner
+  const handleQRRemove = async (assetTagId: string) => {
+    // Find and remove the asset from selectedAssets
+    const assetToRemove = selectedAssets.find(a => a.assetTagId === assetTagId)
+    if (assetToRemove) {
+      setSelectedAssets((prev) => prev.filter(a => a.id !== assetToRemove.id))
+      toast.success(`Asset "${assetTagId}" removed from accountability list`)
     }
   }
 
@@ -1245,9 +1277,9 @@ export default function AccountabilityFormPage() {
               <div className="bg-card text-card-foreground p-4 sm:p-6 md:p-8 print:p-8 print:bg-white print:text-black relative" id="accountability-form">
                 {/* Background Logo */}
                 <div 
-                  className="absolute inset-0 opacity-5 print:opacity-[0.02] pointer-events-none z-0"
+                  className="absolute inset-0 opacity-[0.03] pointer-events-none z-0"
                   style={{
-                    backgroundImage: 'url(/ShoreAgents-Logo-only.png)',
+                    backgroundImage: `url(${secondaryLogoUrl})`,
                     backgroundSize: 'cover',
                     backgroundPosition: 'center',
                     backgroundRepeat: 'no-repeat'
@@ -1260,7 +1292,7 @@ export default function AccountabilityFormPage() {
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 md:mb-6">
                     <div>
                       <Image 
-                        src="/ShoreAgents-Logo.png" 
+                        src={primaryLogoUrl} 
                         alt="ShoreAgents Logo" 
                         width={200}
                         height={80}
@@ -1630,9 +1662,9 @@ export default function AccountabilityFormPage() {
               <div className="bg-card text-card-foreground p-4 sm:p-6 md:p-8 print:p-8 print:bg-white print:text-black relative print:break-after-page print:break-before-page" id="accountability-form-rules">
                 {/* Background Logo */}
                 <div 
-                  className="absolute inset-0 opacity-5 print:opacity-[0.02] pointer-events-none z-0"
+                  className="absolute inset-0 opacity-[0.03] pointer-events-none z-0"
                   style={{
-                    backgroundImage: 'url(/ShoreAgents-Logo-only.png)',
+                    backgroundImage: `url(${secondaryLogoUrl})`,
                     backgroundSize: 'cover',
                     backgroundPosition: 'center',
                     backgroundRepeat: 'no-repeat'
@@ -1855,9 +1887,12 @@ export default function AccountabilityFormPage() {
           }
         }}
         onScan={handleQRScan}
+        onRemove={handleQRRemove}
+        multiScan={true}
+        existingCodes={selectedAssets.map(asset => asset.assetTagId)}
         description={qrDialogContext === 'table-row' && targetRowItem 
-          ? `Scan a ${targetRowItem} asset to add to this row`
-          : "Scan or upload a QR code to add an asset"}
+          ? `Scan a ${targetRowItem} asset to add to this row. Continue scanning to add more assets.`
+          : "Scan or upload QR codes to add assets. Continue scanning to add multiple assets."}
       />
 
       {/* Floating Download PDF Button */}

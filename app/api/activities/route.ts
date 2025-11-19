@@ -34,27 +34,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             prisma.$transaction([
               prisma.assetsCheckout.count(),
               prisma.assetsCheckout.findMany({
-                skip,
-                take: pageSize,
-                include: {
-                  asset: {
-                    select: {
-                      id: true,
-                      assetTagId: true,
-                      description: true,
-                    }
-                  },
-                  employeeUser: {
-                    select: {
-                      id: true,
-                      name: true,
-                      email: true,
-                    }
-                  }
-                },
-                orderBy: { createdAt: 'desc' },
+              skip,
+              take: pageSize,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
+            }
+          },
+          employeeUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
               })
-            ])
+          ])
           )
           totalActivities = count
 
@@ -90,27 +90,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             prisma.$transaction([
               prisma.assetsCheckin.count(),
               prisma.assetsCheckin.findMany({
-                skip,
-                take: pageSize,
-                include: {
-                  asset: {
-                    select: {
-                      id: true,
-                      assetTagId: true,
-                      description: true,
-                    }
-                  },
-                  employeeUser: {
-                    select: {
-                      id: true,
-                      name: true,
-                      email: true,
-                    }
-                  }
-                },
-                orderBy: { createdAt: 'desc' },
+              skip,
+              take: pageSize,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
+            }
+          },
+          employeeUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
               })
-            ])
+          ])
           )
           totalActivities = count
 
@@ -146,27 +146,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             prisma.$transaction([
               prisma.assetsMove.count(),
               prisma.assetsMove.findMany({
-                skip,
-                take: pageSize,
-                include: {
-                  asset: {
-                    select: {
-                      id: true,
-                      assetTagId: true,
-                      description: true,
-                    }
-                  },
-                  employeeUser: {
-                    select: {
-                      id: true,
-                      name: true,
-                      email: true,
-                    }
-                  }
-                },
-                orderBy: { createdAt: 'desc' },
+              skip,
+              take: pageSize,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
+            }
+          },
+          employeeUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
               })
-            ])
+          ])
           )
           totalActivities = count
 
@@ -202,27 +202,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             prisma.$transaction([
               prisma.assetsReserve.count(),
               prisma.assetsReserve.findMany({
-                skip,
-                take: pageSize,
-                include: {
-                  asset: {
-                    select: {
-                      id: true,
-                      assetTagId: true,
-                      description: true,
-                    }
-                  },
-                  employeeUser: {
-                    select: {
-                      id: true,
-                      name: true,
-                      email: true,
-                    }
-                  }
-                },
-                orderBy: { createdAt: 'desc' },
+              skip,
+              take: pageSize,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
+            }
+          },
+          employeeUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
               })
-            ])
+          ])
           )
           totalActivities = count
 
@@ -259,20 +259,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             prisma.$transaction([
               prisma.assetsLease.count(),
               prisma.assetsLease.findMany({
-                skip,
-                take: pageSize,
-                include: {
-                  asset: {
-                    select: {
-                      id: true,
-                      assetTagId: true,
-                      description: true,
-                    }
-                  }
-                },
-                orderBy: { createdAt: 'desc' },
+              skip,
+              take: pageSize,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
               })
-            ])
+          ])
           )
           totalActivities = count
 
@@ -307,25 +307,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             prisma.$transaction([
               prisma.assetsLeaseReturn.count(),
               prisma.assetsLeaseReturn.findMany({
-                skip,
-                take: pageSize,
-                include: {
-                  asset: {
-                    select: {
-                      id: true,
-                      assetTagId: true,
-                      description: true,
-                    }
-                  },
-                  lease: {
-                    select: {
-                      lessee: true,
-                    }
-                  }
-                },
-                orderBy: { createdAt: 'desc' },
+              skip,
+              take: pageSize,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
+            }
+          },
+          lease: {
+            select: {
+              lessee: true,
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
               })
-            ])
+          ])
           )
           totalActivities = count
 
@@ -360,20 +360,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             prisma.$transaction([
               prisma.assetsDispose.count(),
               prisma.assetsDispose.findMany({
-                skip,
-                take: pageSize,
-                include: {
-                  asset: {
-                    select: {
-                      id: true,
-                      assetTagId: true,
-                      description: true,
-                    }
-                  }
-                },
-                orderBy: { createdAt: 'desc' },
+              skip,
+              take: pageSize,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
               })
-            ])
+          ])
           )
           totalActivities = count
 
@@ -409,20 +409,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             prisma.$transaction([
               prisma.assetsMaintenance.count(),
               prisma.assetsMaintenance.findMany({
-                skip,
-                take: pageSize,
-                include: {
-                  asset: {
-                    select: {
-                      id: true,
-                      assetTagId: true,
-                      description: true,
-                    }
+              skip,
+              take: pageSize,
+              include: {
+                asset: {
+                  select: {
+                    id: true,
+                    assetTagId: true,
+                    description: true,
                   }
-                },
-                orderBy: { createdAt: 'desc' },
+                }
+              },
+              orderBy: { createdAt: 'desc' },
               })
-            ])
+          ])
           )
           totalActivities = count
           
@@ -494,143 +494,143 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         prisma.assetsMaintenance.count(),
         // Data
         prisma.assetsCheckout.findMany({
-          take: itemsPerType,
-          include: {
-            asset: {
-              select: {
-                id: true,
-                assetTagId: true,
-                description: true,
-              }
-            },
-            employeeUser: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-              }
+        take: itemsPerType,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
             }
           },
-          orderBy: { createdAt: 'desc' },
+          employeeUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
         }),
         prisma.assetsCheckin.findMany({
-          take: itemsPerType,
-          include: {
-            asset: {
-              select: {
-                id: true,
-                assetTagId: true,
-                description: true,
-              }
-            },
-            employeeUser: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-              }
+        take: itemsPerType,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
             }
           },
-          orderBy: { createdAt: 'desc' },
+          employeeUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
         }),
         prisma.assetsMove.findMany({
-          take: itemsPerType,
-          include: {
-            asset: {
-              select: {
-                id: true,
-                assetTagId: true,
-                description: true,
-              }
-            },
-            employeeUser: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-              }
+        take: itemsPerType,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
             }
           },
-          orderBy: { createdAt: 'desc' },
+          employeeUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
         }),
         prisma.assetsReserve.findMany({
-          take: itemsPerType,
-          include: {
-            asset: {
-              select: {
-                id: true,
-                assetTagId: true,
-                description: true,
-              }
-            },
-            employeeUser: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-              }
+        take: itemsPerType,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
             }
           },
-          orderBy: { createdAt: 'desc' },
+          employeeUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
         }),
         prisma.assetsLease.findMany({
-          take: itemsPerType,
-          include: {
-            asset: {
-              select: {
-                id: true,
-                assetTagId: true,
-                description: true,
-              }
+        take: itemsPerType,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
             }
-          },
-          orderBy: { createdAt: 'desc' },
+          }
+        },
+        orderBy: { createdAt: 'desc' },
         }),
         prisma.assetsLeaseReturn.findMany({
-          take: itemsPerType,
-          include: {
-            asset: {
-              select: {
-                id: true,
-                assetTagId: true,
-                description: true,
-              }
-            },
-            lease: {
-              select: {
-                lessee: true,
-              }
+        take: itemsPerType,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
             }
           },
-          orderBy: { createdAt: 'desc' },
+          lease: {
+            select: {
+              lessee: true,
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
         }),
         prisma.assetsDispose.findMany({
-          take: itemsPerType,
-          include: {
-            asset: {
-              select: {
-                id: true,
-                assetTagId: true,
-                description: true,
-              }
+        take: itemsPerType,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
             }
-          },
-          orderBy: { createdAt: 'desc' },
+          }
+        },
+        orderBy: { createdAt: 'desc' },
         }),
         prisma.assetsMaintenance.findMany({
-          take: itemsPerType,
-          include: {
-            asset: {
-              select: {
-                id: true,
-                assetTagId: true,
-                description: true,
-              }
+        take: itemsPerType,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              assetTagId: true,
+              description: true,
             }
-          },
-          orderBy: { createdAt: 'desc' },
+          }
+        },
+        orderBy: { createdAt: 'desc' },
         }),
-      ])
+    ])
     )
     
     totalActivities = checkoutCount + checkinCount + moveCount + reserveCount + 

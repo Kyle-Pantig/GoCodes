@@ -557,6 +557,15 @@ function DisposeAssetPageContent() {
     setSelectedAssets(prev => prev.map(a => (a.id === assetId ? { ...a, [field]: value } : a)))
   }
 
+  // Handle removing an asset from QR scanner
+  const handleQRRemove = async (assetTagId: string) => {
+    const assetToRemove = selectedAssets.find(a => a.assetTagId === assetTagId)
+    if (assetToRemove) {
+      setSelectedAssets((prev) => prev.filter((a) => a.id !== assetToRemove.id))
+      toast.success(`Asset "${assetTagId}" removed from disposal list`)
+    }
+  }
+
   // Sync selectedAssets with form state using useEffect to avoid render issues
   useEffect(() => {
     form.setValue('assetIds', selectedAssets.map(a => a.id))
@@ -1120,7 +1129,10 @@ function DisposeAssetPageContent() {
         open={qrDialogOpen}
         onOpenChange={setQrDialogOpen}
         onScan={handleQRScan}
-        description="Scan or upload a QR code to add an asset"
+        onRemove={handleQRRemove}
+        multiScan={true}
+        existingCodes={selectedAssets.map(asset => asset.assetTagId)}
+        description="Scan or upload QR codes to add assets. Continue scanning to add multiple assets."
       />
           
       {/* QR Code Display Dialog */}

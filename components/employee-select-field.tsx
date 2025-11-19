@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Controller, Control, FieldError } from 'react-hook-form'
 import { Check, ChevronsUpDown } from 'lucide-react'
@@ -67,6 +67,12 @@ export function EmployeeSelectField({
   queryKey = ['employees'],
 }: EmployeeSelectFieldProps) {
   const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  // Prevent hydration mismatch by only rendering Popover after mount
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Fetch employees
   const { data: employees = [], isLoading: isLoadingEmployees } = useQuery<EmployeeUser[]>({
@@ -92,6 +98,29 @@ export function EmployeeSelectField({
   // Shared combobox content
   const renderCombobox = (currentValue: string | undefined, onChange: (value: string) => void) => {
     const selectedEmployee = getSelectedEmployee(currentValue)
+
+    // Render button without Popover on server to avoid hydration mismatch
+    if (!mounted) {
+      return (
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={false}
+          className="w-full justify-between"
+          disabled={disabled || isLoadingEmployees}
+          aria-invalid={error ? 'true' : 'false'}
+        >
+          {selectedEmployee ? (
+            <span className="truncate">
+              {selectedEmployee.name} ({selectedEmployee.email})
+            </span>
+          ) : (
+            <span className="text-muted-foreground">{placeholder}</span>
+          )}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      )
+    }
 
     return (
       <Popover open={open} onOpenChange={setOpen}>

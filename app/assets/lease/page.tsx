@@ -76,16 +76,17 @@ const hasActiveLease = (asset: Asset): boolean => {
 
 // Helper function to get status badge with colors (only for Available status on lease page)
 const getStatusBadge = (status: string | null) => {
-  if (!status) return null
-  const statusLC = status.toLowerCase()
+  // Treat null/undefined as "Available"
+  const statusToCheck = status || "Available"
+  const statusLC = statusToCheck.toLowerCase()
   
   // Only show green badge for Available status, others use default outline
   if (statusLC === 'active' || statusLC === 'available') {
-    return <Badge variant="default" className="bg-green-500">{status}</Badge>
+    return <Badge variant="default" className="bg-green-500">{statusToCheck}</Badge>
   }
   
   // For any other status (shouldn't happen for lease, but just in case)
-  return <Badge variant="outline">{status}</Badge>
+  return <Badge variant="outline">{statusToCheck}</Badge>
 }
 
 // Helper function to get badge for asset suggestions (shows "Leased" if has active lease)
@@ -93,7 +94,8 @@ const getSuggestionBadge = (asset: Asset) => {
   if (hasActiveLease(asset)) {
     return <Badge variant="secondary" className="bg-yellow-500">Leased</Badge>
   }
-  return <Badge variant="outline">{asset.status || 'Available'}</Badge>
+  // Use getStatusBadge to show green badge for Available status
+  return getStatusBadge(asset.status || null)
 }
 
 function LeaseAssetPageContent() {
@@ -452,20 +454,30 @@ function LeaseAssetPageContent() {
     const assetExists = await findAssetById(decodedText)
     
     if (!assetExists) {
-      toast.error(`Asset with ID "${decodedText}" not found`)
-      return
+      const errorMessage = `Asset with ID "${decodedText}" not found`
+      toast.error(errorMessage)
+      throw new Error(errorMessage)
     }
     
-    // Check if asset is available for lease (must be Available status)
-    if (assetExists.status && assetExists.status !== "Available") {
-      toast.error(`Asset "${assetExists.assetTagId}" is not available for lease. Current status: ${assetExists.status}`)
-      return
+    // Check if asset is already checked out
+    if (assetExists.status === "Checked out" || assetExists.status?.toLowerCase() === "checked out" || assetExists.status?.toLowerCase() === "in use") {
+      const errorMessage = `Asset "${assetExists.assetTagId}" is already checked out. Cannot lease an asset that is already checked out.`
+      toast.error(errorMessage)
+      throw new Error(errorMessage)
+    }
+    
+    // Check if asset is available for lease (must be Available status or null/undefined)
+    if (assetExists.status && assetExists.status !== "Available" && assetExists.status !== null && assetExists.status !== undefined) {
+      const errorMessage = `Asset "${assetExists.assetTagId}" is not available for lease. Current status: ${assetExists.status}`
+      toast.error(errorMessage)
+      throw new Error(errorMessage)
     }
     
     // Check if asset has an active lease
     if (hasActiveLease(assetExists)) {
-      toast.error(`Asset "${assetExists.assetTagId}" already has an active lease`)
-      return
+      const errorMessage = `Asset "${assetExists.assetTagId}" already has an active lease`
+      toast.error(errorMessage)
+      throw new Error(errorMessage)
     }
     
     // Asset exists and is available, proceed to select it
@@ -961,7 +973,9 @@ function LeaseAssetPageContent() {
         open={qrDialogOpen}
         onOpenChange={setQrDialogOpen}
         onScan={handleQRScan}
-        description="Scan or upload a QR code to select an asset"
+        multiScan={true}
+        existingCodes={selectedAsset ? [selectedAsset.assetTagId] : []}
+        description="Scan or upload QR codes to select an asset. Continue scanning to change selection."
       />
           
       {/* QR Code Display Dialog */}

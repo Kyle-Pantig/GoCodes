@@ -100,11 +100,34 @@ const RESIGNED_STAFF_ITEMS = [
   'RFID',
 ]
 
+async function fetchCompanyInfo(): Promise<{ companyInfo: { primaryLogoUrl: string | null; secondaryLogoUrl: string | null } | null }> {
+  try {
+    const response = await fetch('/api/setup/company-info')
+    if (!response.ok) {
+      return { companyInfo: null }
+    }
+    return response.json()
+  } catch {
+    return { companyInfo: null }
+  }
+}
+
 export default function ReturnFormPage() {
   const { hasPermission } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const canViewReturnForms = hasPermission('canViewReturnForms')
   const canManageReturnForms = hasPermission('canManageReturnForms')
+
+  // Fetch company info for logos
+  const { data: companyData } = useQuery({
+    queryKey: ['company-info'],
+    queryFn: fetchCompanyInfo,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: false,
+  })
+
+  const primaryLogoUrl = companyData?.companyInfo?.primaryLogoUrl || '/ShoreAgents-Logo.png'
+  const secondaryLogoUrl = companyData?.companyInfo?.secondaryLogoUrl || '/ShoreAgents-Logo-only.png'
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionRef = useRef<HTMLDivElement>(null)
   const [assetIdInput, setAssetIdInput] = useState("")
@@ -356,8 +379,7 @@ export default function ReturnFormPage() {
         // Check if asset is already in the list
         if (selectedAssets.some(a => a.id === asset.id)) {
           toast.error('Asset is already in the return list')
-          setQrDialogContext('general')
-          setTargetRowItem(null)
+          // Keep context active in multi-scan mode
           return
         }
 
@@ -368,14 +390,24 @@ export default function ReturnFormPage() {
         }
         setSelectedAssets((prev) => [...prev, newAsset])
         toast.success(`Asset "${asset.assetTagId}" added to ${targetRowItem}`)
-        setQrDialogContext('general')
-        setTargetRowItem(null)
+        // Keep context active for multi-scan - user can continue scanning same item type
+        // Context will be reset when dialog closes
       } else {
         toast.error(`Asset subcategory "${subCategoryName}" does not match "${targetRowItem}". Please scan a ${targetRowItem} asset.`)
       }
     } else {
       // General scan - add to list normally
       await handleAddAsset(asset)
+    }
+  }
+
+  // Handle removing an asset from QR scanner
+  const handleQRRemove = async (assetTagId: string) => {
+    // Find and remove the asset from selectedAssets
+    const assetToRemove = selectedAssets.find(a => a.assetTagId === assetTagId)
+    if (assetToRemove) {
+      setSelectedAssets((prev) => prev.filter(a => a.id !== assetToRemove.id))
+      toast.success(`Asset "${assetTagId}" removed from return list`)
     }
   }
 
@@ -578,7 +610,7 @@ export default function ReturnFormPage() {
               td[class*="p-2"]:not([class*="py-0.5"]) { padding: 8px !important; }
               img { display: block !important; max-width: 100% !important; height: auto !important; }
               /* Force opacity for background logo div in PDF */
-              div[style*="ShoreAgents-Logo-only.png"] {
+              div[style*="backgroundImage"] {
                 opacity: 0.3 !important;
               }
               /* Ensure checkboxes are visible in PDF */
@@ -1155,7 +1187,7 @@ export default function ReturnFormPage() {
                 <div 
                   className="absolute inset-0 opacity-5 print:opacity-[0.02] pointer-events-none z-0"
                   style={{
-                    backgroundImage: 'url(/ShoreAgents-Logo-only.png)',
+                    backgroundImage: `url(${secondaryLogoUrl})`,
                     backgroundSize: 'cover',
                     backgroundPosition: 'center',
                     backgroundRepeat: 'no-repeat'
@@ -1168,7 +1200,7 @@ export default function ReturnFormPage() {
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 md:mb-6">
                     <div>
                       <Image 
-                        src="/ShoreAgents-Logo.png" 
+                        src={primaryLogoUrl} 
                         alt="ShoreAgents Logo" 
                         width={200}
                         height={80}
@@ -1543,9 +1575,9 @@ export default function ReturnFormPage() {
               <div className="bg-card text-card-foreground p-4 sm:p-6 md:p-8 print:p-8 print:bg-white print:text-black relative print:break-after-page" id="return-form-admin">
                 {/* Background Logo */}
                 <div 
-                  className="absolute inset-0 opacity-[0.01] print:opacity-[0.02] pointer-events-none z-0"
+                  className="absolute inset-0 opacity-[0.03] pointer-events-none z-0"
                   style={{
-                    backgroundImage: 'url(/ShoreAgents-Logo-only.png)',
+                    backgroundImage: `url(${secondaryLogoUrl})`,
                     backgroundSize: 'cover',
                     backgroundPosition: 'center',
                     backgroundRepeat: 'no-repeat'
@@ -1558,7 +1590,7 @@ export default function ReturnFormPage() {
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 md:mb-6">
                     <div>
                       <Image 
-                        src="/ShoreAgents-Logo.png" 
+                        src={primaryLogoUrl} 
                         alt="ShoreAgents Logo" 
                         width={200}
                         height={80}
@@ -1990,9 +2022,12 @@ export default function ReturnFormPage() {
           }
         }}
         onScan={handleQRScan}
+        onRemove={handleQRRemove}
+        multiScan={true}
+        existingCodes={selectedAssets.map(asset => asset.assetTagId)}
         description={qrDialogContext === 'table-row' && targetRowItem 
-          ? `Scan a ${targetRowItem} asset to add to this row`
-          : "Scan or upload a QR code to add an asset"}
+          ? `Scan a ${targetRowItem} asset to add to this row. Continue scanning to add more assets.`
+          : "Scan or upload QR codes to add assets. Continue scanning to add multiple assets."}
       />
 
       {/* Floating Download PDF Button */}

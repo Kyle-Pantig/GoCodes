@@ -250,21 +250,31 @@ export async function POST(request: NextRequest) {
             allElements.forEach((el) => {
               const htmlEl = el as HTMLElement
               
-              // Check if this is the background logo div BEFORE setting opacity
+              // Check if this is the background logo div by checking:
+              // 1. Has backgroundImage style
+              // 2. Is positioned absolutely
+              // 3. Has z-index 0 or is pointer-events-none
               const styleAttr = htmlEl.getAttribute('style') || ''
               const computedStyle = window.getComputedStyle(htmlEl)
               const bgImage = computedStyle.backgroundImage || styleAttr
-              const isBackgroundLogo = bgImage.includes('ShoreAgents-Logo-only') || 
-                                       bgImage.includes('ShoreAgents-Logo-only.png') ||
-                                       styleAttr.includes('ShoreAgents-Logo-only')
+              const position = computedStyle.position || ''
+              const zIndex = computedStyle.zIndex || ''
+              const pointerEvents = computedStyle.pointerEvents || ''
+              const elClassList = htmlEl.className || ''
+              
+              // Check if it's a background logo div
+              const hasBackgroundImage = bgImage && bgImage !== 'none' && (bgImage.includes('url(') || styleAttr.includes('backgroundImage'))
+              const isAbsolute = position === 'absolute' || elClassList.includes('absolute')
+              const isBackgroundLayer = zIndex === '0' || elClassList.includes('z-0') || pointerEvents === 'none' || elClassList.includes('pointer-events-none')
+              const isBackgroundLogo = hasBackgroundImage && isAbsolute && isBackgroundLayer
               
               // Force visibility
               htmlEl.style.visibility = 'visible'
               
-              // Set opacity - keep background logo at 30%, others normal
+              // Set opacity - keep background logo at 0.03 (3%), others normal
               if (isBackgroundLogo) {
-                htmlEl.style.opacity = '0.3' // 30% opacity for background logo
-                htmlEl.style.setProperty('opacity', '0.3', 'important') // Force with !important
+                htmlEl.style.opacity = '0.03' // 3% opacity for background logo
+                htmlEl.style.setProperty('opacity', '0.03', 'important') // Force with !important
               } else {
                 htmlEl.style.opacity = '1'
               }

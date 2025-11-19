@@ -540,4 +540,22 @@ model AssetsDepartment {
   @@index([name])
 }
 
+model CompanyInfo {
+  id                String   @id @default(uuid())
+  companyName       String   @map("company_name") @db.VarChar(255)
+  contactEmail      String?  @map("contact_email") @db.VarChar(255)
+  contactPhone      String?  @map("contact_phone") @db.VarChar(50)
+  address           String?  @map("address") @db.Text
+  zipCode           String?  @map("zip_code") @db.VarChar(20)
+  country           String?  @map("country") @db.VarChar(100)
+  website           String?  @map("website") @db.VarChar(255)
+  primaryLogoUrl    String?  @map("primary_logo_url") @db.VarChar(500)
+  secondaryLogoUrl  String?  @map("secondary_logo_url") @db.VarChar(500)
+  
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  
+  @@map("company_info")
+}
+
 

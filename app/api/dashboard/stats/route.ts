@@ -212,7 +212,7 @@ export async function GET() {
           },
           orderBy: { dueDate: 'asc' },
         }),
-      ])
+    ])
     )
 
     // Process asset value by category - map category IDs to names

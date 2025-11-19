@@ -14,6 +14,7 @@ import {
   Cog,
 } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
+import Image from "next/image"
 
 import { NavMain } from "@/components/nav-main"
 import { NavProjects } from "@/components/nav-projects"
@@ -28,6 +29,7 @@ import {
   SidebarMenuButton,
 } from "@/components/ui/sidebar"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { useSidebar } from "@/components/ui/sidebar"
 
 // Asset Dog sidebar navigation data
 const data = {
@@ -228,6 +230,18 @@ const data = {
   projects: [],
 }
 
+async function fetchCompanyInfo(): Promise<{ companyInfo: { primaryLogoUrl: string | null } | null }> {
+  try {
+    const response = await fetch('/api/setup/company-info')
+    if (!response.ok) {
+      return { companyInfo: null }
+    }
+    return response.json()
+  } catch {
+    return { companyInfo: null }
+  }
+}
+
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // Use React Query to fetch user data so it updates when cache is invalidated
   const { data: userData } = useQuery({
@@ -249,7 +263,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     retry: false,
   })
 
+  // Fetch company info for logo
+  const { data: companyData } = useQuery({
+    queryKey: ['company-info'],
+    queryFn: fetchCompanyInfo,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: false,
+  })
+
   const user = userData || null
+  const primaryLogoUrl = companyData?.companyInfo?.primaryLogoUrl || null
+  const { state, isMobile } = useSidebar()
+  const isCollapsed = state === "collapsed"
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -269,6 +294,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               </span>
             </div>
           </SidebarMenuButton>
+          {primaryLogoUrl && !isCollapsed && !isMobile && (
+            <div className="mt-2 w-full">
+              <div className="relative w-full h-16 overflow-hidden">
+                <Image
+                  src={primaryLogoUrl}
+                  alt="Company Logo"
+                  fill
+                  className="object-contain p-2"
+                  unoptimized
+                />
+              </div>
+            </div>
+          )}
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>

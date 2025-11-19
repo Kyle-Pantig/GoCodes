@@ -524,21 +524,31 @@ function LeaseReturnPageContent() {
     const assetExists = await findAssetById(decodedText)
     
     if (!assetExists) {
-      toast.error(`Asset with ID "${decodedText}" not found`)
-      return
+      const errorMessage = `Asset with ID "${decodedText}" not found`
+      toast.error(errorMessage)
+      throw new Error(errorMessage)
+    }
+    
+    // Check if asset has "Leased" status
+    if (assetExists.status !== "Leased" && assetExists.status?.toLowerCase() !== "leased") {
+      const errorMessage = `Asset "${assetExists.assetTagId}" is not leased. Current status: ${assetExists.status || 'Unknown'}. Only leased assets can be returned.`
+      toast.error(errorMessage)
+      throw new Error(errorMessage)
     }
     
     // Check if asset has active lease
     const activeLease = assetExists.leases?.[0]
     if (!activeLease) {
-      toast.error(`Asset "${assetExists.assetTagId}" is not currently leased`)
-      return
+      const errorMessage = `Asset "${assetExists.assetTagId}" is not currently leased`
+      toast.error(errorMessage)
+      throw new Error(errorMessage)
     }
     
     // Check if lease has already been returned
     if (activeLease.returns && activeLease.returns.length > 0) {
-      toast.error(`Asset "${assetExists.assetTagId}" has already been returned`)
-      return
+      const errorMessage = `Asset "${assetExists.assetTagId}" has already been returned`
+      toast.error(errorMessage)
+      throw new Error(errorMessage)
     }
     
     // Asset exists and has active lease that hasn't been returned, proceed to select it
@@ -557,6 +567,25 @@ function LeaseReturnPageContent() {
       })))
       return updated
     })
+  }
+
+  // Handle removing an asset from QR scanner
+  const handleQRRemove = async (assetTagId: string) => {
+    const assetToRemove = selectedAssets.find(a => a.assetTagId === assetTagId)
+    if (assetToRemove) {
+      setSelectedAssets((prev) => {
+        const updated = prev.filter((a) => a.id !== assetToRemove.id)
+        // Update form state
+        form.setValue('assetIds', updated.map(a => a.id))
+        form.setValue('assetUpdates', updated.map(a => ({
+          assetId: a.id,
+          condition: a.condition || '',
+          notes: a.notes || '',
+        })), { shouldValidate: false })
+        return updated
+      })
+      toast.success(`Asset "${assetTagId}" removed from lease return list`)
+    }
   }
 
   // Lease return mutation
@@ -968,7 +997,10 @@ function LeaseReturnPageContent() {
         open={qrDialogOpen}
         onOpenChange={setQrDialogOpen}
         onScan={handleQRScan}
-        description="Scan or upload a QR code to select an asset"
+        onRemove={handleQRRemove}
+        multiScan={true}
+        existingCodes={selectedAssets.map(asset => asset.assetTagId)}
+        description="Scan or upload QR codes to add assets. Continue scanning to add multiple assets."
       />
           
       {/* QR Code Display Dialog */}

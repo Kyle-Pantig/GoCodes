@@ -209,20 +209,31 @@ function CheckoutPageContent() {
       return
     }
 
-    // Check if asset is available
-    if (assetToAdd.status && assetToAdd.status !== "Available") {
-      toast.error(`Asset "${assetToAdd.assetTagId}" is not available. Current status: ${assetToAdd.status}`)
+    // Check if asset is already checked out
+    if (assetToAdd.status === "Checked out" || assetToAdd.status?.toLowerCase() === "checked out" || assetToAdd.status?.toLowerCase() === "in use") {
+      const errorMessage = `Asset "${assetToAdd.assetTagId}" is already checked out. Cannot checkout an asset that is already checked out.`
+      toast.error(errorMessage)
       setAssetIdInput("")
       setShowSuggestions(false)
-      return
+      throw new Error(errorMessage)
+    }
+
+    // Check if asset is available
+    if (assetToAdd.status && assetToAdd.status !== "Available") {
+      const errorMessage = `Asset "${assetToAdd.assetTagId}" is not available. Current status: ${assetToAdd.status}`
+      toast.error(errorMessage)
+      setAssetIdInput("")
+      setShowSuggestions(false)
+      throw new Error(errorMessage)
     }
 
     // Check if asset is already in the list
     if (selectedAssets.some(a => a.id === assetToAdd.id)) {
-      toast.error('Asset is already in the checkout list')
+      const errorMessage = 'Asset is already in the checkout list'
+      toast.error(errorMessage)
       setAssetIdInput("")
       setShowSuggestions(false)
-      return
+      throw new Error(errorMessage)
     }
 
     setSelectedAssets((prev) => [
@@ -290,6 +301,14 @@ function CheckoutPageContent() {
     toast.success('Asset removed from checkout list')
   }
 
+  // Handle removing an asset from QR scanner
+  const handleQRRemove = async (assetTagId: string) => {
+    const assetToRemove = selectedAssets.find(a => a.assetTagId === assetTagId)
+    if (assetToRemove) {
+      handleRemoveAsset(assetToRemove.id)
+    }
+  }
+
   // Handle URL query parameters for assetId
   useEffect(() => {
     const urlAssetId = searchParams.get('assetId')
@@ -303,6 +322,12 @@ function CheckoutPageContent() {
             const data = await response.json()
             const asset = data.asset as Asset
             
+            // Check if asset is already checked out
+            if (asset.status === "Checked out" || asset.status?.toLowerCase() === "checked out" || asset.status?.toLowerCase() === "in use") {
+              toast.error(`Asset "${asset.assetTagId}" is already checked out. Cannot checkout an asset that is already checked out.`)
+              return
+            }
+
             // Check if asset is available
             if (asset.status && asset.status !== "Available") {
               toast.error(`Asset "${asset.assetTagId}" is not available. Current status: ${asset.status}`)
@@ -360,7 +385,9 @@ function CheckoutPageContent() {
     if (asset) {
       await handleAddAsset(asset)
     } else {
-      toast.error(`Asset with ID "${decodedText}" not found`)
+      const errorMessage = `Asset with ID "${decodedText}" not found`
+      toast.error(errorMessage)
+      throw new Error(errorMessage)
     }
   }
 
@@ -1066,7 +1093,10 @@ function CheckoutPageContent() {
         open={qrDialogOpen}
         onOpenChange={setQrDialogOpen}
         onScan={handleQRScan}
-        description="Scan or upload a QR code to add an asset"
+        onRemove={handleQRRemove}
+        multiScan={true}
+        existingCodes={selectedAssets.map(asset => asset.assetTagId)}
+        description="Scan or upload QR codes to add assets. Continue scanning to add multiple assets."
       />
           
       {/* QR Code Display Dialog */}

@@ -206,29 +206,41 @@ function CheckinPageContent() {
       return
     }
 
-    // Check if asset is checked out
-    if (assetToAdd.status !== "Checked out") {
-      toast.error(`Asset "${assetToAdd.assetTagId}" is not checked out. Current status: ${assetToAdd.status || 'Unknown'}`)
+    // Check if asset is already available (already checked in)
+    if (assetToAdd.status === "Available" || !assetToAdd.status || assetToAdd.status.toLowerCase() === "available") {
+      const errorMessage = `Asset "${assetToAdd.assetTagId}" is already available. Cannot check in an asset that is already checked in.`
+      toast.error(errorMessage)
       setAssetIdInput("")
       setShowSuggestions(false)
-      return
+      throw new Error(errorMessage)
+    }
+
+    // Check if asset is checked out
+    if (assetToAdd.status !== "Checked out") {
+      const errorMessage = `Asset "${assetToAdd.assetTagId}" is not checked out. Current status: ${assetToAdd.status || 'Unknown'}`
+      toast.error(errorMessage)
+      setAssetIdInput("")
+      setShowSuggestions(false)
+      throw new Error(errorMessage)
     }
 
     // Check if asset has an active checkout
     const activeCheckout = assetToAdd.checkouts?.[0]
     if (!activeCheckout) {
-      toast.error(`No active checkout found for asset "${assetToAdd.assetTagId}"`)
+      const errorMessage = `No active checkout found for asset "${assetToAdd.assetTagId}"`
+      toast.error(errorMessage)
       setAssetIdInput("")
       setShowSuggestions(false)
-      return
+      throw new Error(errorMessage)
     }
 
     // Check if asset is already in the list
     if (selectedAssets.some(a => a.id === assetToAdd.id)) {
-      toast.error('Asset is already in the check-in list')
+      const errorMessage = 'Asset is already in the check-in list'
+      toast.error(errorMessage)
       setAssetIdInput("")
       setShowSuggestions(false)
-      return
+      throw new Error(errorMessage)
     }
 
     const newAsset: CheckinAsset = {
@@ -326,6 +338,12 @@ function CheckinPageContent() {
             const data = await response.json()
             const asset = data.asset as Asset
             
+            // Check if asset is already available (already checked in)
+            if (asset.status === "Available" || !asset.status || asset.status.toLowerCase() === "available") {
+              toast.error(`Asset "${asset.assetTagId}" is already available. Cannot check in an asset that is already checked in.`)
+              return
+            }
+
             // Check if asset is checked out
             if (asset.status !== "Checked out") {
               toast.error(`Asset "${asset.assetTagId}" is not checked out. Current status: ${asset.status || 'Unknown'}`)
@@ -398,7 +416,21 @@ function CheckinPageContent() {
     if (asset) {
       await handleAddAsset(asset)
     } else {
-      toast.error(`Asset with ID "${decodedText}" not found`)
+      const errorMessage = `Asset with ID "${decodedText}" not found`
+      toast.error(errorMessage)
+      throw new Error(errorMessage)
+    }
+  }
+
+  // Handle removing an asset from QR scanner
+  const handleQRRemove = async (assetTagId: string) => {
+    const assetToRemove = selectedAssets.find(a => a.assetTagId === assetTagId)
+    if (assetToRemove) {
+      setSelectedAssets((prev) => prev.filter((a) => a.id !== assetToRemove.id))
+      // Remove from form assetUpdates
+      const currentUpdates = form.getValues('assetUpdates') || []
+      form.setValue('assetUpdates', currentUpdates.filter(update => update.assetId !== assetToRemove.id))
+      toast.success(`Asset "${assetTagId}" removed from check-in list`)
     }
   }
 
@@ -1156,7 +1188,10 @@ function CheckinPageContent() {
         open={qrDialogOpen}
         onOpenChange={setQrDialogOpen}
         onScan={handleQRScan}
-        description="Scan or upload a QR code to add an asset"
+        onRemove={handleQRRemove}
+        multiScan={true}
+        existingCodes={selectedAssets.map(asset => asset.assetTagId)}
+        description="Scan or upload QR codes to add assets. Continue scanning to add multiple assets."
       />
           
       {/* QR Code Display Dialog */}

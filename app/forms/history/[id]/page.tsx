@@ -234,7 +234,29 @@ export default function FormDetailsPage({ params }: { params: Promise<{ id: stri
   )
 }
 
+async function fetchCompanyInfo(): Promise<{ companyInfo: { primaryLogoUrl: string | null; secondaryLogoUrl: string | null } | null }> {
+  try {
+    const response = await fetch('/api/setup/company-info')
+    if (!response.ok) {
+      return { companyInfo: null }
+    }
+    return response.json()
+  } catch {
+    return { companyInfo: null }
+  }
+}
+
 function ReturnFormDetails({ form, formData }: { form: ReturnForm; formData: FormData }) {
+  // Fetch company info for logos
+  const { data: companyData } = useQuery({
+    queryKey: ['company-info'],
+    queryFn: fetchCompanyInfo,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: false,
+  })
+
+  const primaryLogoUrl = companyData?.companyInfo?.primaryLogoUrl || '/ShoreAgents-Logo.png'
+  const secondaryLogoUrl = companyData?.companyInfo?.secondaryLogoUrl || '/ShoreAgents-Logo-only.png'
   const selectedAssets = formData.selectedAssets || []
   
   // Group assets by category - use subCategory name if available, otherwise fall back to description
@@ -275,7 +297,7 @@ function ReturnFormDetails({ form, formData }: { form: ReturnForm; formData: For
           <div
             className="absolute inset-0 opacity-5 print:opacity-[0.02] pointer-events-none z-0"
             style={{
-              backgroundImage: 'url(/ShoreAgents-Logo-only.png)',
+              backgroundImage: `url(${secondaryLogoUrl})`,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
               backgroundRepeat: 'no-repeat'
@@ -288,7 +310,7 @@ function ReturnFormDetails({ form, formData }: { form: ReturnForm; formData: For
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 md:mb-6">
               <div>
                 <Image
-                  src="/ShoreAgents-Logo.png"
+                  src={primaryLogoUrl}
                   alt="ShoreAgents Logo"
                   width={200}
                   height={80}
@@ -565,6 +587,16 @@ function ReturnFormDetails({ form, formData }: { form: ReturnForm; formData: For
 }
 
 function AccountabilityFormDetails({ form, formData }: { form: AccountabilityForm; formData: FormData }) {
+  // Fetch company info for logos
+  const { data: companyData } = useQuery({
+    queryKey: ['company-info'],
+    queryFn: fetchCompanyInfo,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: false,
+  })
+
+  const primaryLogoUrl = companyData?.companyInfo?.primaryLogoUrl || '/ShoreAgents-Logo.png'
+  const secondaryLogoUrl = companyData?.companyInfo?.secondaryLogoUrl || '/ShoreAgents-Logo-only.png'
   const selectedAssets = formData.selectedAssets || []
   
   // Group assets - use subCategory name if available, otherwise fall back to description
@@ -595,7 +627,7 @@ function AccountabilityFormDetails({ form, formData }: { form: AccountabilityFor
             <div
               className="absolute inset-0 opacity-5 print:opacity-[0.02] pointer-events-none z-0"
               style={{
-                backgroundImage: 'url(/ShoreAgents-Logo-only.png)',
+                backgroundImage: `url(${secondaryLogoUrl})`,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
                 backgroundRepeat: 'no-repeat'
@@ -608,7 +640,7 @@ function AccountabilityFormDetails({ form, formData }: { form: AccountabilityFor
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 md:mb-6">
                 <div>
                   <Image
-                    src="/ShoreAgents-Logo.png"
+                    src={primaryLogoUrl}
                     alt="ShoreAgents Logo"
                     width={200}
                     height={80}
