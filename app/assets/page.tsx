@@ -359,7 +359,11 @@ const createColumns = (AssetActionsComponent: React.ComponentType<{ asset: Asset
         </Button>
       )
     },
-    cell: ({ row }) => row.original.description,
+    cell: ({ row }) => (
+      <div className="max-w-[300px] truncate" title={row.original.description}>
+        {row.original.description}
+      </div>
+    ),
     enableSorting: true,
   },
   {

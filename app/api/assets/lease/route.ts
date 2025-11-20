@@ -67,10 +67,13 @@ export async function POST(request: NextRequest) {
         throw new Error(`Asset is not available for lease. Current status: ${asset.status}`)
       }
 
-      // Check if asset already has an active lease
+      // Check if asset already has an active lease (not returned)
       const activeLease = await tx.assetsLease.findFirst({
         where: {
           assetId,
+          returns: {
+            none: {}, // Exclude leases that have been returned
+          },
           OR: [
             { leaseEndDate: null },
             { leaseEndDate: { gte: parseDate(leaseStartDate)! } },

@@ -27,9 +27,12 @@ import {
   SidebarRail,
   SidebarMenu,
   SidebarMenuButton,
+  SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useSidebar } from "@/components/ui/sidebar"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ChevronsUpDown } from "lucide-react"
 
 // Asset Dog sidebar navigation data
 const data = {
@@ -243,8 +246,10 @@ async function fetchCompanyInfo(): Promise<{ companyInfo: { primaryLogoUrl: stri
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const [mounted, setMounted] = React.useState(false)
+
   // Use React Query to fetch user data so it updates when cache is invalidated
-  const { data: userData } = useQuery({
+  const { data: userData, isLoading: isLoadingUser, isPending, fetchStatus } = useQuery({
     queryKey: ['sidebar-user'],
     queryFn: async () => {
         const response = await fetch('/api/auth/me')
@@ -261,7 +266,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     },
     staleTime: 2 * 60 * 1000, // 2 minutes
     retry: false,
+    refetchOnMount: true, // Always refetch to show loading state
   })
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Fetch company info for logo
   const { data: companyData } = useQuery({
@@ -317,7 +327,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </ScrollArea>
       </SidebarContent>
       <SidebarFooter>
-        {user && <NavUser user={user} />}
+        {!mounted ? null : (!userData || fetchStatus === 'fetching' || isPending) ? (
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton size="lg" disabled>
+                <Skeleton className="h-8 w-8 rounded-lg" />
+                <div className="grid flex-1 text-left text-sm leading-tight gap-1">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-3 w-32" />
+                </div>
+                <ChevronsUpDown className="ml-auto size-4 opacity-50" />
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        ) : user ? (
+          <NavUser user={user} />
+        ) : null}
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

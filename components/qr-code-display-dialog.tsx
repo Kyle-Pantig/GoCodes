@@ -218,12 +218,12 @@ export function QRCodeDisplayDialog({
 
         // Draw Asset Tag ID text closer to QR code, centered with black color
         const textY = qrY + img.height + textGap + 20 // Position text closer to QR code
-        ctx.font = 'bold 24px Arial'
+        ctx.font = 'bold 36px Arial'
         ctx.fillText(assetTagId, canvas.width / 2, textY)
         
         // Draw "PD:" with purchase date on the next line
-        const pdY = textY + 30 // Position below asset tag ID
-        ctx.font = 'bold 24px Arial'
+        const pdY = textY + 40 // Position below asset tag ID (increased spacing for larger font)
+        ctx.font = 'bold 36px Arial'
         let pdText = 'PD: N/A'
         if (purchaseDate) {
           const date = new Date(purchaseDate)
@@ -257,12 +257,12 @@ export function QRCodeDisplayDialog({
 
         // Draw Asset Tag ID text closer to QR code, centered with black color
         const textY = qrY + img.height + textGap + 20 // Position text closer to QR code
-        ctx.font = 'bold 24px Arial'
+        ctx.font = 'bold 36px Arial'
         ctx.fillText(assetTagId, canvas.width / 2, textY)
         
         // Draw "PD:" with purchase date on the next line
-        const pdY = textY + 30 // Position below asset tag ID
-        ctx.font = 'bold 24px Arial'
+        const pdY = textY + 40 // Position below asset tag ID (increased spacing for larger font)
+        ctx.font = 'bold 36px Arial'
         let pdText = 'PD: N/A'
         if (purchaseDate) {
           const date = new Date(purchaseDate)
@@ -561,7 +561,7 @@ export function QRCodeDisplayDialog({
               </div>
             </div>
           </div>
-          <div className="mt-4 text-sm text-muted-foreground text-center">
+          <div className="mt-4 text-center">
             <Tooltip open={textTooltipOpen} onOpenChange={(open) => {
               if (open !== undefined) {
                 setTextTooltipOpen(open)
@@ -569,7 +569,7 @@ export function QRCodeDisplayDialog({
             }}>
               <TooltipTrigger asChild>
                 <p 
-                  className="font-medium cursor-pointer hover:text-primary transition-colors"
+                  className="text-xl font-bold cursor-pointer hover:text-primary transition-colors"
                   onClick={() => handleCopyToClipboard('text')}
                 >
                   {assetTagId}
@@ -579,7 +579,7 @@ export function QRCodeDisplayDialog({
                 {copied ? 'Copied' : 'Copy'}
               </TooltipContent>
             </Tooltip>
-            <p className="font-medium mt-1 flex items-center justify-center gap-2">
+            <p className="text-xl font-bold mt-1 flex items-center justify-center gap-2">
               PD:{' '}
               {isLoadingPurchaseDate ? (
                 <Spinner className="h-4 w-4" />

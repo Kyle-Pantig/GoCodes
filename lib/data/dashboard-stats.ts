@@ -98,8 +98,12 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   try {
     const now = new Date()
+    now.setHours(0, 0, 0, 0) // Set to start of day for accurate date comparison
     const fiscalYearStart = new Date(now.getFullYear(), 0, 1) // January 1st of current year
     const fiscalYearEnd = new Date(now.getFullYear() + 1, 0, 1) // January 1st of next year
+    // Calculate date 90 days from now for expiring leases
+    const expiringThreshold = new Date(now)
+    expiringThreshold.setDate(expiringThreshold.getDate() + 90) // 90 days from today
 
     // Use a single transaction to avoid connection pool exhaustion
     // This ensures all queries use one connection instead of competing for multiple connections
@@ -262,11 +266,14 @@ export async function getDashboardStats(): Promise<DashboardStats> {
           take: 10,
         }),
 
-        // Calendar data
+        // Calendar data - leases expiring within the next 90 days
         prisma.assetsLease.findMany({
           where: {
-            leaseEndDate: { gte: now },
-            returns: { none: {} },
+            leaseEndDate: {
+              gte: now,
+              lte: expiringThreshold, // Only leases expiring within 90 days
+            },
+            returns: { none: {} }, // Exclude leases that have been returned
           },
           include: {
             asset: {
