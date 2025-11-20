@@ -23,8 +23,24 @@ export async function DELETE(
     const { searchParams } = new URL(request.url)
     const permanent = searchParams.get('permanent') === 'true'
 
+    // Get user info for history logging - use name from metadata, fallback to email
+    const userName = auth.user.user_metadata?.name || 
+                     auth.user.user_metadata?.full_name || 
+                     auth.user.email?.split('@')[0] || 
+                     auth.user.email || 
+                     auth.user.id
+
     if (permanent) {
       // Permanent delete (hard delete) - only for admin or cleanup cron
+      // Log history before deleting
+      await prisma.assetsHistoryLogs.create({
+        data: {
+          assetId: id,
+          eventType: 'deleted',
+          actionBy: userName,
+        },
+      })
+
       await prisma.assets.delete({
         where: {
           id,
@@ -36,15 +52,27 @@ export async function DELETE(
       
       return NextResponse.json({ success: true, message: 'Asset permanently deleted' })
     } else {
-      // Soft delete
-      await prisma.assets.update({
-        where: {
-          id,
-        },
-        data: {
-          deletedAt: new Date(),
-          isDeleted: true,
-        },
+      // Soft delete - log history and update asset in transaction
+      await prisma.$transaction(async (tx) => {
+        // Create history log
+        await tx.assetsHistoryLogs.create({
+          data: {
+            assetId: id,
+            eventType: 'deleted',
+            actionBy: userName,
+          },
+        })
+
+        // Soft delete asset
+        await tx.assets.update({
+          where: {
+            id,
+          },
+          data: {
+            deletedAt: new Date(),
+            isDeleted: true,
+          },
+        })
       })
       
       // Invalidate dashboard cache when asset is archived
@@ -88,9 +116,12 @@ export async function GET(
         checkouts: {
           include: {
             employeeUser: true,
+            checkins: {
+              take: 1,
+            },
           },
           orderBy: { checkoutDate: 'desc' },
-          take: 1,
+          take: 10, // Get more checkouts to find the active one
         },
         leases: {
           where: {
@@ -106,6 +137,10 @@ export async function GET(
           },
           orderBy: { leaseStartDate: 'desc' },
           take: 1,
+        },
+        auditHistory: {
+          orderBy: { auditDate: 'desc' },
+          take: 5,
         },
       },
     })
@@ -144,6 +179,13 @@ export async function PUT(
     const { id } = await params
     const body = await request.json()
 
+    // Get user info for history logging - use name from metadata, fallback to email
+    const userName = auth.user.user_metadata?.name || 
+                     auth.user.user_metadata?.full_name || 
+                     auth.user.email?.split('@')[0] || 
+                     auth.user.email || 
+                     auth.user.id
+
     // Check if assetTagId is being changed and if it already exists (excluding current asset)
     if (body.assetTagId) {
       const existingAsset = await prisma.assets.findFirst({
@@ -161,50 +203,174 @@ export async function PUT(
       }
     }
 
-    const asset = await prisma.assets.update({
-      where: {
-        id,
-      },
-      data: {
-        ...(body.assetTagId && { assetTagId: body.assetTagId }),
-        ...(body.description && { description: body.description }),
-        ...(body.status && { status: body.status }),
-        ...(body.brand && { brand: body.brand }),
-        ...(body.model && { model: body.model }),
-        ...(body.location !== undefined && { location: body.location }),
-        ...(body.issuedTo && { issuedTo: body.issuedTo }),
-        ...(body.department !== undefined && { department: body.department }),
-        ...(body.site !== undefined && { site: body.site }),
-        ...(body.owner && { owner: body.owner }),
-        ...(body.purchasedFrom && { purchasedFrom: body.purchasedFrom }),
-        ...(body.purchaseDate && { purchaseDate: parseDate(body.purchaseDate) }),
-        ...(body.poNumber && { poNumber: body.poNumber }),
-        ...(body.xeroAssetNo && { xeroAssetNo: body.xeroAssetNo }),
-        ...(body.remarks && { remarks: body.remarks }),
-        ...(body.additionalInformation && { additionalInformation: body.additionalInformation }),
-        ...(body.serialNo && { serialNo: body.serialNo }),
-        ...(body.cost && { cost: parseFloat(body.cost) }),
-        ...(body.assetType && { assetType: body.assetType }),
-        ...(body.imageUrl !== undefined && { imageUrl: body.imageUrl || null }),
-      },
-      include: {
-        category: true,
-        subCategory: true,
-        checkouts: {
-          include: {
-            employeeUser: true,
+    // Get current asset to compare values
+    const currentAsset = await prisma.assets.findUnique({
+      where: { id },
+    })
+
+    if (!currentAsset) {
+      return NextResponse.json(
+        { error: 'Asset not found' },
+        { status: 404 }
+      )
+    }
+
+    // Prepare update data
+    const updateData: Record<string, unknown> = {}
+    if (body.assetTagId) updateData.assetTagId = body.assetTagId
+    if (body.description !== undefined) updateData.description = body.description
+    if (body.status !== undefined) updateData.status = body.status
+    if (body.brand !== undefined) updateData.brand = body.brand
+    if (body.model !== undefined) updateData.model = body.model
+    if (body.location !== undefined) updateData.location = body.location
+    if (body.issuedTo !== undefined) updateData.issuedTo = body.issuedTo
+    if (body.department !== undefined) updateData.department = body.department
+    if (body.site !== undefined) updateData.site = body.site
+    if (body.owner !== undefined) updateData.owner = body.owner
+    if (body.purchasedFrom !== undefined) updateData.purchasedFrom = body.purchasedFrom
+    if (body.purchaseDate !== undefined) updateData.purchaseDate = body.purchaseDate ? parseDate(body.purchaseDate) : null
+    if (body.poNumber !== undefined) updateData.poNumber = body.poNumber
+    if (body.xeroAssetNo !== undefined) updateData.xeroAssetNo = body.xeroAssetNo
+    if (body.remarks !== undefined) updateData.remarks = body.remarks
+    if (body.additionalInformation !== undefined) updateData.additionalInformation = body.additionalInformation
+    if (body.serialNo !== undefined) updateData.serialNo = body.serialNo
+    if (body.cost !== undefined) updateData.cost = body.cost ? parseFloat(body.cost) : null
+    if (body.assetType !== undefined) updateData.assetType = body.assetType
+    if (body.imageUrl !== undefined) updateData.imageUrl = body.imageUrl || null
+    if (body.categoryId !== undefined) updateData.categoryId = body.categoryId || null
+    if (body.subCategoryId !== undefined) updateData.subCategoryId = body.subCategoryId || null
+    if (body.deliveryDate !== undefined) updateData.deliveryDate = body.deliveryDate ? parseDate(body.deliveryDate) : null
+    if (body.oldAssetTag !== undefined) updateData.oldAssetTag = body.oldAssetTag
+    if (body.qr !== undefined) updateData.qr = body.qr
+    if (body.unaccountedInventory !== undefined) updateData.unaccountedInventory = body.unaccountedInventory
+    if (body.depreciableAsset !== undefined) updateData.depreciableAsset = body.depreciableAsset
+    if (body.depreciableCost !== undefined) updateData.depreciableCost = body.depreciableCost ? parseFloat(body.depreciableCost) : null
+    if (body.salvageValue !== undefined) updateData.salvageValue = body.salvageValue ? parseFloat(body.salvageValue) : null
+    if (body.assetLifeMonths !== undefined) updateData.assetLifeMonths = body.assetLifeMonths ? parseInt(body.assetLifeMonths) : null
+    if (body.depreciationMethod !== undefined) updateData.depreciationMethod = body.depreciationMethod
+    if (body.dateAcquired !== undefined) updateData.dateAcquired = body.dateAcquired ? parseDate(body.dateAcquired) : null
+
+    // Helper function to normalize date values for comparison
+    const normalizeDate = (value: unknown): Date | null => {
+      if (!value) return null
+      if (value instanceof Date) return value
+      if (typeof value === 'string') {
+        const parsed = new Date(value)
+        return isNaN(parsed.getTime()) ? null : parsed
+      }
+      return null
+    }
+
+    // Helper function to compare dates (only date part, ignore time)
+    const datesAreEqual = (date1: Date | null, date2: Date | null): boolean => {
+      if (!date1 && !date2) return true
+      if (!date1 || !date2) return false
+      return date1.toISOString().split('T')[0] === date2.toISOString().split('T')[0]
+    }
+
+    // Helper function to convert value to string for comparison
+    const valueToString = (value: unknown): string => {
+      if (value === null || value === undefined) return ''
+      if (value instanceof Date) {
+        // For dates, return only the date part (YYYY-MM-DD) for consistent comparison
+        return value.toISOString().split('T')[0]
+      }
+      return String(value)
+    }
+
+    // Date fields that should be compared by date only (not time)
+    const dateFields = [
+      'purchaseDate',
+      'deliveryDate',
+      'dateAcquired',
+    ]
+
+    // Track changes for history logging
+    const historyLogs: Array<{
+      field: string
+      changeFrom: string
+      changeTo: string
+    }> = []
+
+    // Compare each field and create history logs
+    Object.keys(updateData).forEach((key) => {
+      const oldValue = currentAsset[key as keyof typeof currentAsset]
+      const newValue = updateData[key]
+      
+      // Special handling for date fields
+      if (dateFields.includes(key)) {
+        const oldDate = normalizeDate(oldValue)
+        const newDate = normalizeDate(newValue)
+        
+        // Only log if dates are actually different (ignoring time)
+        if (!datesAreEqual(oldDate, newDate)) {
+          historyLogs.push({
+            field: key,
+            changeFrom: oldDate ? oldDate.toISOString().split('T')[0] : '',
+            changeTo: newDate ? newDate.toISOString().split('T')[0] : '',
+          })
+        }
+      } else {
+        // For non-date fields, use string comparison
+        const oldValueStr = valueToString(oldValue)
+        const newValueStr = valueToString(newValue)
+
+        // Only log if value actually changed
+        if (oldValueStr !== newValueStr) {
+          historyLogs.push({
+            field: key,
+            changeFrom: oldValueStr,
+            changeTo: newValueStr,
+          })
+        }
+      }
+    })
+
+    // Update asset and create history logs in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Update asset
+      const updatedAsset = await tx.assets.update({
+        where: { id },
+        data: updateData,
+        include: {
+          category: true,
+          subCategory: true,
+          checkouts: {
+            include: {
+              employeeUser: true,
+            },
+            orderBy: { checkoutDate: 'desc' },
+            take: 1,
           },
-          orderBy: { checkoutDate: 'desc' },
-          take: 1,
         },
-      },
+      })
+
+      // Create history logs for each changed field
+      if (historyLogs.length > 0) {
+        await Promise.all(
+          historyLogs.map((log) =>
+              tx.assetsHistoryLogs.create({
+                data: {
+                  assetId: id,
+                  eventType: 'edited',
+                  field: log.field,
+                  changeFrom: log.changeFrom,
+                  changeTo: log.changeTo,
+                  actionBy: userName,
+                },
+              })
+          )
+        )
+      }
+
+      return updatedAsset
     })
 
     // Invalidate dashboard cache when asset is updated
     // Especially important if status or cost changed
     clearCache('dashboard-stats')
 
-    return NextResponse.json({ asset })
+    return NextResponse.json({ asset: result })
   } catch (error) {
     console.error('Error updating asset:', error)
     return NextResponse.json(

@@ -4,12 +4,12 @@ import { useLayoutEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 
-export default function ToolsPage() {
+export default function AssetsDetailsPage() {
   const router = useRouter()
   
   useLayoutEffect(() => {
-    // Redirect immediately if user visits /tools without a sub-route
-    router.replace('/tools/media')
+    // Redirect immediately if user visits /assets/details without an ID
+    router.replace('/assets')
   }, [router])
   
   return (

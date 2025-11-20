@@ -68,6 +68,7 @@ model Assets {
   disposals              AssetsDispose[]
   maintenances           AssetsMaintenance[]
   auditHistory           AssetsAuditHistory[]
+  historyLogs            AssetsHistoryLogs[]
 
   @@index([isDeleted])
   @@index([status])
@@ -376,6 +377,29 @@ model AssetsAuditHistory {
   @@index([auditDate])
   @@index([auditType])
   @@index([createdAt])
+}
+
+model AssetsHistoryLogs {
+  id                String    @id @default(uuid())
+  assetId           String    @map("asset_id")
+  asset             Assets    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  
+  eventDate         DateTime  @default(now()) @map("event_date") @db.Date
+  eventType         String    @map("event_type") @db.VarChar(50) // "added", "edited", "deleted"
+  field             String?   @map("field") @db.VarChar(100) // Field name that was changed (only for edited events)
+  changeFrom        String?   @map("change_from") @db.Text // Old value (only for edited events)
+  changeTo          String?   @map("change_to") @db.Text // New value (only for edited events)
+  actionBy          String    @map("action_by") @db.VarChar(255) // User ID who performed the action
+  
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  
+  @@map("assets_history_logs")
+  @@index([assetId])
+  @@index([eventDate])
+  @@index([eventType])
+  @@index([createdAt])
+  @@index([assetId, createdAt])
 }
 
 model AssetUser {

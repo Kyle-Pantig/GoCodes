@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useEffect, useMemo, useRef, useTransition, Suspense } from 'react'
+import { useState, useEffect, useMemo, useRef, useTransition, Suspense, useCallback, memo } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -35,7 +35,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { MoreHorizontal, Trash2, Edit, Download, Upload, Search, Package, CheckCircle2, User, DollarSign, XIcon, ArrowUpDown, ArrowUp, ArrowDown, ArrowRight, Image as ImageIcon, RefreshCw } from 'lucide-react'
+import { MoreHorizontal, Trash2, Edit, Download, Upload, Search, Package, CheckCircle2, User, DollarSign, XIcon, ArrowUpDown, ArrowUp, ArrowDown, ArrowRight, Image as ImageIcon, RefreshCw, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { AssetMediaDialog } from '@/components/asset-media-dialog'
@@ -1403,7 +1403,7 @@ function AssetTagCell({ asset }: { asset: Asset }) {
   )
 }
 
-function AssetActions({ asset }: { asset: Asset }) {
+const AssetActions = memo(function AssetActions({ asset }: { asset: Asset }) {
   const queryClient = useQueryClient()
   const router = useRouter()
   const { hasPermission } = usePermissions()
@@ -1425,45 +1425,50 @@ function AssetActions({ asset }: { asset: Asset }) {
     },
   })
 
-  const confirmDelete = () => {
+  const confirmDelete = useCallback(() => {
     deleteMutation.mutate(asset.id)
-  }
+  }, [deleteMutation, asset.id])
 
-  const handleEdit = () => {
+  const handleEdit = useCallback(() => {
     if (!hasPermission('canEditAssets')) {
       toast.error('You do not have permission to edit assets')
       return
     }
     router.push(`/assets/${asset.id}`)
-  }
+  }, [hasPermission, router, asset.id])
 
-  const handleAudit = () => {
+  const handleAudit = useCallback(() => {
     if (!hasPermission('canAudit')) {
       toast.error('You do not have permission to manage audits')
       return
     }
     setIsAuditOpen(true)
-  }
+  }, [hasPermission])
 
-  const handleCheckout = () => {
+  const handleCheckout = useCallback(() => {
     if (!hasPermission('canCheckout')) {
       toast.error('You do not have permission to manage checkouts')
       return
     }
     setIsCheckoutOpen(true)
-  }
+  }, [hasPermission])
 
-  const handleDelete = () => {
+  const handleDelete = useCallback(() => {
     if (!hasPermission('canDeleteAssets')) {
       toast.error('You do not have permission to delete assets')
       return
     }
     setIsDeleteOpen(true)
-  }
+  }, [hasPermission])
+
+  const handleViewDetails = useCallback(() => {
+    if (!asset.id) return
+    router.push(`/assets/details/${asset.id}`)
+  }, [router, asset.id])
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu key={`dropdown-${asset.id}`}>
         <DropdownMenuTrigger asChild>
           <Button 
             variant="ghost" 
@@ -1473,7 +1478,17 @@ function AssetActions({ asset }: { asset: Asset }) {
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" sideOffset={4}>
+          <DropdownMenuItem 
+            onClick={(e) => {
+              e.preventDefault()
+              handleViewDetails()
+            }}
+          >
+            <Eye className="mr-2 h-4 w-4" />
+            View Details
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleEdit}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
@@ -1538,7 +1553,7 @@ function AssetActions({ asset }: { asset: Asset }) {
       </ManagerDialog>
     </>
   )
-}
+})
 
 
 

@@ -140,7 +140,7 @@ function generateBreadcrumbs(pathname: string) {
 }
 
 // Asset Media Tab Content Component
-function AssetMediaTabContent({ assetTagId }: { assetTagId: string }) {
+export function AssetMediaTabContent({ assetTagId }: { assetTagId: string }) {
   const [activeMediaTab, setActiveMediaTab] = useState<'images' | 'documents'>('images')
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [previewImageIndex, setPreviewImageIndex] = useState(0)
@@ -730,8 +730,8 @@ export function AppHeader() {
       }}>
         <DialogContent className="max-w-4xl! max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Scan QR Code to View Asset Details</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="sm:text-lg text-sm">Scan QR Code to View Asset Details</DialogTitle>
+            <DialogDescription className="sm:text-sm text-xs">
               {scanMode === 'camera' 
                 ? 'Point your camera at the QR code on the asset to view its details'
                 : 'Upload an image containing a QR code to view asset details'}
@@ -1055,7 +1055,7 @@ export function AppHeader() {
 
                 {/* Tabs */}
                 <ScrollArea className="w-full border-b">
-                  <div className="flex items-center gap-2  max-w-sm">
+                  <div className="flex items-center gap-2 max-w-xs ">
                     <Button
                       type="button"
                       variant="ghost"

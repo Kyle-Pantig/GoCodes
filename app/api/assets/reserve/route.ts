@@ -4,6 +4,62 @@ import { parseDate } from '@/lib/date-utils'
 import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
 
+export async function GET(request: NextRequest) {
+  const auth = await verifyAuth()
+  if (auth.error) return auth.error
+
+  // Check view permission
+  const permissionCheck = await requirePermission('canViewAssets')
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
+
+  try {
+    const { searchParams } = new URL(request.url)
+    const assetId = searchParams.get('assetId')
+
+    if (!assetId) {
+      return NextResponse.json(
+        { error: 'Asset ID is required' },
+        { status: 400 }
+      )
+    }
+
+    const reservations = await prisma.assetsReserve.findMany({
+      where: {
+        assetId,
+      },
+      include: {
+        employeeUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        asset: {
+          select: {
+            id: true,
+            assetTagId: true,
+            description: true,
+          },
+        },
+      },
+      orderBy: {
+        reservationDate: 'desc',
+      },
+    })
+
+    return NextResponse.json({ reservations })
+  } catch (error) {
+    console.error('Error fetching reservations:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch reservations' },
+      { status: 500 }
+    )
+  }
+}
+
 export async function POST(request: NextRequest) {
   const auth = await verifyAuth()
   if (auth.error) return auth.error

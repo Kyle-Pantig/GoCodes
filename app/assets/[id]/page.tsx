@@ -6,7 +6,7 @@ import { use } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { ArrowLeft, Sparkles, ImageIcon, Upload, FileText, PlusIcon, Eye, X, ArrowRight, ClipboardCheck, Scroll } from "lucide-react"
+import { ArrowLeft, Sparkles, ImageIcon, Upload, FileText, PlusIcon, Eye, X, ArrowRight, ClipboardCheck } from "lucide-react"
 import Image from "next/image"
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
@@ -192,13 +192,50 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<EditAssetFormData> }) => updateAsset(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      queryClient.invalidateQueries({ queryKey: ['asset', resolvedParams.id] })
-      if (asset?.assetTagId) {
-        queryClient.invalidateQueries({ queryKey: ['assets', 'images', asset.assetTagId] })
-        queryClient.invalidateQueries({ queryKey: ['assets', 'documents', asset.assetTagId] })
+    onSuccess: async (response) => {
+      const updatedAsset = response?.asset
+      const updatedAssetTagId = updatedAsset?.assetTagId || asset?.assetTagId
+      
+      // Invalidate ALL assets queries (including paginated/filtered ones)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => {
+          const key = query.queryKey
+          return Array.isArray(key) && (
+            key[0] === 'assets' || 
+            key[0] === 'assets-list'
+          )
+        },
+        refetchType: 'all' // Refetch all matching queries
+      })
+      
+      // Invalidate specific asset and history queries
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['asset', resolvedParams.id], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['asset-history', resolvedParams.id], refetchType: 'active' }),
+      ])
+      
+      // If assetTagId changed, also invalidate queries for the old assetTagId
+      if (asset?.assetTagId && updatedAssetTagId && asset.assetTagId !== updatedAssetTagId) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['asset-thumbnail', asset.assetTagId] }),
+          queryClient.invalidateQueries({ queryKey: ['asset-images', asset.assetTagId] }),
+          queryClient.invalidateQueries({ queryKey: ['asset-documents', asset.assetTagId] }),
+        ])
       }
+      
+      // Invalidate queries for the updated assetTagId
+      if (updatedAssetTagId) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['asset-thumbnail', updatedAssetTagId] }),
+          queryClient.invalidateQueries({ queryKey: ['asset-images', updatedAssetTagId] }),
+          queryClient.invalidateQueries({ queryKey: ['asset-documents', updatedAssetTagId] }),
+          queryClient.invalidateQueries({ queryKey: ['assets', 'images', updatedAssetTagId] }),
+          queryClient.invalidateQueries({ queryKey: ['assets', 'documents', updatedAssetTagId] }),
+        ])
+      }
+      
+      // Refetch the current asset data to update the form
+      await queryClient.refetchQueries({ queryKey: ['asset', resolvedParams.id] })
     },
   })
 
@@ -810,8 +847,31 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
         toast.success('Asset updated successfully')
       }
 
+      // Invalidate ALL assets queries (including paginated/filtered ones)
+      // Use predicate to match all queries starting with 'assets' or 'assets-list'
+      // This marks them as stale so they will refetch when the page loads
+      queryClient.invalidateQueries({ 
+        predicate: (query) => {
+          const key = query.queryKey
+          return Array.isArray(key) && (
+            key[0] === 'assets' || 
+            key[0] === 'assets-list'
+          )
+        }
+      })
+      
+      // Remove cached data to force fresh fetch
+      queryClient.removeQueries({
+        predicate: (query) => {
+          const key = query.queryKey
+          return Array.isArray(key) && (
+            key[0] === 'assets' || 
+            key[0] === 'assets-list'
+          )
+        }
+      })
+
       router.push("/assets")
-      router.refresh()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to update asset')
     }

@@ -307,19 +307,36 @@ export function EditAssetDialog({
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Asset> }) => updateAsset(id, data),
-    onSuccess: (updatedAsset) => {
-      queryClient.setQueriesData<{ assets: Asset[]; pagination: { total: number; page: number; pageSize: number; totalPages: number } }>(
-        { queryKey: ['assets'] },
-        (oldData) => {
-          if (!oldData?.assets) return oldData
-          return {
-            ...oldData,
-            assets: oldData.assets.map((a: Asset) =>
-              a.id === updatedAsset.id ? { ...a, ...updatedAsset } : a
-            ),
-          }
-        }
-      )
+    onSuccess: (response) => {
+      const updatedAsset = response?.asset || response
+      const updatedAssetTagId = updatedAsset?.assetTagId || asset?.assetTagId
+      const oldAssetTagId = asset?.assetTagId
+      
+      // Invalidate all assets list queries (both 'assets' and 'assets-list' patterns)
+      queryClient.invalidateQueries({ queryKey: ['assets'] })
+      queryClient.invalidateQueries({ queryKey: ['assets-list'] })
+      
+      // Invalidate the specific asset query
+      queryClient.invalidateQueries({ queryKey: ['asset', asset.id] })
+      
+      // If assetTagId changed, invalidate queries for the old assetTagId
+      if (oldAssetTagId && updatedAssetTagId && oldAssetTagId !== updatedAssetTagId) {
+        queryClient.invalidateQueries({ queryKey: ['asset-thumbnail', oldAssetTagId] })
+        queryClient.invalidateQueries({ queryKey: ['asset-images', oldAssetTagId] })
+        queryClient.invalidateQueries({ queryKey: ['asset-documents', oldAssetTagId] })
+      }
+      
+      // Invalidate queries for the updated assetTagId
+      if (updatedAssetTagId) {
+        queryClient.invalidateQueries({ queryKey: ['asset-thumbnail', updatedAssetTagId] })
+        queryClient.invalidateQueries({ queryKey: ['asset-images', updatedAssetTagId] })
+        queryClient.invalidateQueries({ queryKey: ['asset-documents', updatedAssetTagId] })
+        queryClient.invalidateQueries({ queryKey: ['assets', 'images', updatedAssetTagId] })
+        queryClient.invalidateQueries({ queryKey: ['assets', 'documents', updatedAssetTagId] })
+      }
+      
+      // Invalidate asset history queries
+      queryClient.invalidateQueries({ queryKey: ['asset-history', asset.id] })
     },
     onError: () => {
       toast.error('Failed to update asset')
