@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, use } from 'react'
+import { useState, use, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ImageIcon, FileText, Edit, CheckCircle2, ArrowRight, Trash2, Move, Package, FileText as FileTextIcon, Wrench, ChevronDown, Download } from 'lucide-react'
 import Link from 'next/link'
@@ -104,7 +104,7 @@ const getTimeAgo = (date: Date): string => {
 }
 
 // Photos Tab Content Component
-function PhotosTabContent({ assetTagId }: { assetTagId: string }) {
+function PhotosTabContent({ assetTagId, isActive }: { assetTagId: string; isActive: boolean }) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [previewImageIndex, setPreviewImageIndex] = useState(0)
 
@@ -116,7 +116,7 @@ function PhotosTabContent({ assetTagId }: { assetTagId: string }) {
       const data = await response.json()
       return { images: data.images || [] }
     },
-    enabled: !!assetTagId,
+    enabled: !!assetTagId && isActive, // Only fetch when tab is active
   })
 
   const images = imagesData?.images || []
@@ -182,7 +182,7 @@ function PhotosTabContent({ assetTagId }: { assetTagId: string }) {
 }
 
 // Docs Tab Content Component
-function DocsTabContent({ assetTagId }: { assetTagId: string }) {
+function DocsTabContent({ assetTagId, isActive }: { assetTagId: string; isActive: boolean }) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [previewImageIndex, setPreviewImageIndex] = useState(0)
   const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false)
@@ -196,7 +196,7 @@ function DocsTabContent({ assetTagId }: { assetTagId: string }) {
       const data = await response.json()
       return { documents: data.documents || [] }
     },
-    enabled: !!assetTagId,
+    enabled: !!assetTagId && isActive, // Only fetch when tab is active
   })
 
   const documents = documentsData?.documents || []
@@ -447,7 +447,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
 
   const asset = assetData?.asset
 
-  // Fetch thumbnail image (first image)
+  // Fetch thumbnail image (first image) - only for details tab
   const { data: thumbnailData } = useQuery({
     queryKey: ['asset-thumbnail', asset?.assetTagId],
     queryFn: async () => {
@@ -459,13 +459,34 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       const data = await response.json()
       return { images: data.images || [] }
     },
-    enabled: !!asset?.assetTagId,
+    enabled: !!asset?.assetTagId && activeTab === 'details', // Only fetch when details tab is active
     retry: 2,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   })
 
   // Get the first image (most recent by createdAt desc, so [0] is the latest)
   const thumbnailImage = thumbnailData?.images?.[0]
+
+  // Preload the thumbnail image for LCP optimization
+  useEffect(() => {
+    if (thumbnailImage?.imageUrl) {
+      const link = document.createElement('link')
+      link.rel = 'preload'
+      link.as = 'image'
+      link.href = thumbnailImage.imageUrl
+      link.setAttribute('fetchpriority', 'high')
+      link.setAttribute('data-preload-thumbnail', 'true')
+      document.head.appendChild(link)
+      
+      return () => {
+        // Cleanup: remove the preload link when component unmounts or image changes
+        const existingLink = document.querySelector('link[data-preload-thumbnail="true"]')
+        if (existingLink && existingLink.parentNode) {
+          existingLink.parentNode.removeChild(existingLink)
+        }
+      }
+    }
+  }, [thumbnailImage?.imageUrl])
 
   const { data: historyData } = useQuery({
     queryKey: ['asset-history', resolvedParams.id],
@@ -823,6 +844,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 fill
                 className="object-contain p-2"
                 unoptimized
+                loading="eager"
+                priority
               />
             ) : (
               <div className="flex items-center justify-center h-full">
@@ -1092,11 +1115,11 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         )}
 
         {activeTab === 'photos' && asset && (
-          <PhotosTabContent assetTagId={asset.assetTagId} />
+          <PhotosTabContent assetTagId={asset.assetTagId} isActive={activeTab === 'photos'} />
         )}
 
         {activeTab === 'docs' && asset && (
-          <DocsTabContent assetTagId={asset.assetTagId} />
+          <DocsTabContent assetTagId={asset.assetTagId} isActive={activeTab === 'docs'} />
         )}
 
         {activeTab === 'depreciation' && (

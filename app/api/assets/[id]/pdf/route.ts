@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import puppeteerCore from 'puppeteer-core'
 import puppeteer from 'puppeteer'
+import chromium from '@sparticuz/chromium'
 import { prisma } from '@/lib/prisma'
 import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
@@ -76,35 +78,44 @@ export async function POST(
       )
     }
 
-    // Fetch related data
-    const [images, documents, maintenances, reservations, historyLogs] = await Promise.all([
-      prisma.assetsImage.findMany({
-        where: { assetTagId: asset.assetTagId },
-        orderBy: { createdAt: 'desc' },
-      }),
-      prisma.assetsDocument.findMany({
-        where: { assetTagId: asset.assetTagId },
-        orderBy: { createdAt: 'desc' },
-      }),
-      prisma.assetsMaintenance.findMany({
-        where: { assetId: asset.id },
-        orderBy: { createdAt: 'desc' },
-      }),
-      prisma.assetsReserve.findMany({
-        where: {
-          assetId: asset.id,
-          reservationDate: { gte: new Date() },
-        },
-        include: {
-          employeeUser: true,
-        },
-        orderBy: { reservationDate: 'asc' },
-      }),
-      prisma.assetsHistoryLogs.findMany({
-        where: { assetId: asset.id },
-        orderBy: { eventDate: 'desc' },
-      }),
-    ])
+    // Fetch related data using transaction to optimize connection pool usage
+    // This batches all queries into a single transaction, using fewer connections
+    const [images, documents, maintenances, reservations, historyLogs] = await prisma.$transaction(
+      async (tx) => {
+        return await Promise.all([
+          tx.assetsImage.findMany({
+            where: { assetTagId: asset.assetTagId },
+            orderBy: { createdAt: 'desc' },
+          }),
+          tx.assetsDocument.findMany({
+            where: { assetTagId: asset.assetTagId },
+            orderBy: { createdAt: 'desc' },
+          }),
+          tx.assetsMaintenance.findMany({
+            where: { assetId: asset.id },
+            orderBy: { createdAt: 'desc' },
+          }),
+          tx.assetsReserve.findMany({
+            where: {
+              assetId: asset.id,
+              reservationDate: { gte: new Date() },
+            },
+            include: {
+              employeeUser: true,
+            },
+            orderBy: { reservationDate: 'asc' },
+          }),
+          tx.assetsHistoryLogs.findMany({
+            where: { assetId: asset.id },
+            orderBy: { eventDate: 'desc' },
+          }),
+        ])
+      },
+      {
+        timeout: 30000, // 30 second timeout
+        isolationLevel: 'ReadCommitted', // Read-only transaction
+      }
+    )
 
     // Find active checkout
     const activeCheckout = asset.checkouts?.find(
@@ -369,11 +380,33 @@ export async function POST(
       </html>
     `
 
-    // Launch Puppeteer
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    })
+    // Configure Chromium for Vercel/serverless environment
+    // In production: use puppeteer-core with @sparticuz/chromium (optimized for serverless)
+    // In development: use full puppeteer package (includes bundled Chromium)
+    const isProduction = process.env.NODE_ENV === 'production'
+    
+    let browser: Awaited<ReturnType<typeof puppeteerCore.launch>> | Awaited<ReturnType<typeof puppeteer.launch>>
+    if (isProduction) {
+      // Production: Use puppeteer-core with @sparticuz/chromium for Vercel
+      try {
+        browser = await puppeteerCore.launch({
+          args: [...chromium.args, '--hide-scrollbars', '--disable-web-security'],
+          defaultViewport: { width: 794, height: 1123 },
+          executablePath: await chromium.executablePath(),
+          headless: true,
+        })
+      } catch (error) {
+        console.error('Failed to launch Chromium in production:', error)
+        throw new Error('Failed to generate PDF: Chromium initialization failed')
+      }
+    } else {
+      // Development: Use full puppeteer package (includes bundled Chromium)
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--hide-scrollbars', '--disable-web-security'],
+        defaultViewport: { width: 794, height: 1123 },
+      })
+    }
 
     try {
       const page = await browser.newPage()
@@ -391,15 +424,16 @@ export async function POST(
       })
 
       // Wait for images to load
-      await page.evaluate(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (page.evaluate as any)(async (): Promise<void> => {
         const images = Array.from(document.querySelectorAll('img'))
         await Promise.all(
           images.map((img) => {
             if (img.complete) return Promise.resolve()
-            return new Promise((resolve) => {
-              img.onload = resolve
-              img.onerror = resolve
-              setTimeout(resolve, 3000)
+            return new Promise<void>((resolve) => {
+              img.onload = () => resolve()
+              img.onerror = () => resolve()
+              setTimeout(() => resolve(), 3000)
             })
           })
         )

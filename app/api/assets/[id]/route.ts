@@ -105,45 +105,54 @@ export async function GET(
   try {
     const { id } = await params
 
-    const asset = await prisma.assets.findFirst({
-      where: {
-        id,
-        isDeleted: false,
-      },
-      include: {
-        category: true,
-        subCategory: true,
-        checkouts: {
-          include: {
-            employeeUser: true,
-            checkins: {
-              take: 1,
-            },
-          },
-          orderBy: { checkoutDate: 'desc' },
-          take: 10, // Get more checkouts to find the active one
-        },
-        leases: {
+    // Use transaction to optimize connection pool usage and ensure atomicity
+    const asset = await prisma.$transaction(
+      async (tx) => {
+        return await tx.assets.findFirst({
           where: {
-            OR: [
-              { leaseEndDate: null },
-              { leaseEndDate: { gte: new Date() } },
-            ],
+            id,
+            isDeleted: false,
           },
           include: {
-            returns: {
+            category: true,
+            subCategory: true,
+            checkouts: {
+              include: {
+                employeeUser: true,
+                checkins: {
+                  take: 1,
+                },
+              },
+              orderBy: { checkoutDate: 'desc' },
+              take: 10, // Get more checkouts to find the active one
+            },
+            leases: {
+              where: {
+                OR: [
+                  { leaseEndDate: null },
+                  { leaseEndDate: { gte: new Date() } },
+                ],
+              },
+              include: {
+                returns: {
+                  take: 1,
+                },
+              },
+              orderBy: { leaseStartDate: 'desc' },
               take: 1,
             },
+            auditHistory: {
+              orderBy: { auditDate: 'desc' },
+              take: 5,
+            },
           },
-          orderBy: { leaseStartDate: 'desc' },
-          take: 1,
-        },
-        auditHistory: {
-          orderBy: { auditDate: 'desc' },
-          take: 5,
-        },
+        })
       },
-    })
+      {
+        timeout: 30000, // 30 second timeout
+        isolationLevel: 'ReadCommitted', // Read-only transaction
+      }
+    )
 
     if (!asset) {
       return NextResponse.json(
@@ -155,8 +164,37 @@ export async function GET(
     return NextResponse.json({ asset })
   } catch (error) {
     console.error('Error fetching asset:', error)
+    
+    // Provide more specific error messages
+    if (error instanceof Error) {
+      // Check for connection pool timeout
+      if (error.message.includes('connection pool') || error.message.includes('P2024')) {
+        return NextResponse.json(
+          { 
+            error: 'Database connection timeout. Please try again.',
+            details: 'The database is currently busy. Please wait a moment and retry.'
+          },
+          { status: 503 } // Service Unavailable
+        )
+      }
+      
+      // Check for query timeout
+      if (error.message.includes('timeout') || error.message.includes('P2025')) {
+        return NextResponse.json(
+          { 
+            error: 'Query timeout. Please try again.',
+            details: 'The request took too long to process.'
+          },
+          { status: 504 } // Gateway Timeout
+        )
+      }
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to fetch asset' },
+      { 
+        error: 'Failed to fetch asset',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }
