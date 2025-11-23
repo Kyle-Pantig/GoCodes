@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import puppeteer from 'puppeteer'
+import puppeteerCore from 'puppeteer-core'
 import { prisma } from '@/lib/prisma'
 import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
 
-// Try to use @sparticuz/chromium for Vercel/serverless environments
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let chromium: any = null
-try {
-  // Dynamic import for optional dependency
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  chromium = require('@sparticuz/chromium')
-} catch {
-  // Not available, will use regular puppeteer
-  console.log('@sparticuz/chromium not available, using regular puppeteer')
+// Helper to get Chromium for serverless environments
+async function getChromium() {
+  try {
+    // Dynamic import for Vercel/serverless
+    const chromiumModule = await import('@sparticuz/chromium')
+    return chromiumModule.default || chromiumModule
+  } catch {
+    return null
+  }
 }
 
 // Format utilities
@@ -53,7 +53,8 @@ export async function POST(
   }
 
   // Declare browser at function scope so it's accessible in catch block
-  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let browser: any = null
 
   try {
     const { id } = await params
@@ -388,21 +389,48 @@ export async function POST(
     try {
       // Check if we're in a serverless environment (Vercel)
       const isVercel = process.env.VERCEL === '1'
+      const chromium = await getChromium()
       const useChromium = isVercel && chromium !== null
       
+      console.log('Puppeteer launch config:', {
+        isVercel,
+        useChromium,
+        hasChromium: chromium !== null,
+        nodeEnv: process.env.NODE_ENV,
+      })
+      
       // For Vercel/serverless with @sparticuz/chromium
-      if (useChromium) {
-        // Configure Chromium for serverless
-        chromium.setGraphicsMode(false)
-        
-        browser = await puppeteer.launch({
-          args: chromium.args,
-          defaultViewport: chromium.defaultViewport,
-          executablePath: await chromium.executablePath(),
-          headless: chromium.headless,
-        })
-      } else {
-        // Regular Puppeteer configuration
+      if (useChromium && chromium) {
+        try {
+          // Configure Chromium for serverless (disable graphics for better performance)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(chromium as any).setGraphicsMode = false
+          
+          const executablePath = await chromium.executablePath()
+          const args = chromium.args || []
+          const defaultViewport = { width: 1280, height: 720 }
+          
+          console.log('Using @sparticuz/chromium with puppeteer-core:', {
+            executablePath: executablePath ? 'found' : 'not found',
+            argsCount: args.length,
+          })
+          
+          // Use puppeteer-core when using @sparticuz/chromium
+          browser = await puppeteerCore.launch({
+            args,
+            defaultViewport,
+            executablePath,
+            headless: true,
+            timeout: 30000,
+          })
+        } catch (chromiumError) {
+          console.error('Failed to launch with @sparticuz/chromium, falling back to regular puppeteer:', chromiumError)
+          // Fall through to regular puppeteer - don't throw, let it try regular puppeteer
+        }
+      }
+      
+      // Regular Puppeteer configuration (fallback or default)
+      if (!browser) {
         const launchOptions: Parameters<typeof puppeteer.launch>[0] = {
           headless: true,
           args: [
@@ -419,11 +447,8 @@ export async function POST(
           timeout: 30000,
         }
         
-        console.log('Launching Puppeteer with options:', {
-          isVercel,
-          useChromium,
+        console.log('Launching regular Puppeteer with options:', {
           argsCount: launchOptions.args?.length,
-          nodeEnv: process.env.NODE_ENV,
         })
         
         browser = await puppeteer.launch(launchOptions)
