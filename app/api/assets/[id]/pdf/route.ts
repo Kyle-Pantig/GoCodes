@@ -4,6 +4,18 @@ import { prisma } from '@/lib/prisma'
 import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
 
+// Try to use @sparticuz/chromium for Vercel/serverless environments
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let chromium: any = null
+try {
+  // Dynamic import for optional dependency
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  chromium = require('@sparticuz/chromium')
+} catch {
+  // Not available, will use regular puppeteer
+  console.log('@sparticuz/chromium not available, using regular puppeteer')
+}
+
 // Format utilities
 const formatDate = (date: string | Date | null | undefined) => {
   if (!date) return 'N/A'
@@ -39,6 +51,9 @@ export async function POST(
   if (!permissionCheck.allowed && permissionCheck.error) {
     return permissionCheck.error
   }
+
+  // Declare browser at function scope so it's accessible in catch block
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null
 
   try {
     const { id } = await params
@@ -370,24 +385,49 @@ export async function POST(
     `
 
     // Launch Puppeteer with production-friendly configuration
-    let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null
-    
     try {
-      browser = await puppeteer.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-          '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--disable-site-isolation-trials',
-          '--single-process',
-        ],
-        timeout: 30000, // 30 second timeout for browser launch
-      })
+      // Check if we're in a serverless environment (Vercel)
+      const isVercel = process.env.VERCEL === '1'
+      const useChromium = isVercel && chromium !== null
+      
+      // For Vercel/serverless with @sparticuz/chromium
+      if (useChromium) {
+        // Configure Chromium for serverless
+        chromium.setGraphicsMode(false)
+        
+        browser = await puppeteer.launch({
+          args: chromium.args,
+          defaultViewport: chromium.defaultViewport,
+          executablePath: await chromium.executablePath(),
+          headless: chromium.headless,
+        })
+      } else {
+        // Regular Puppeteer configuration
+        const launchOptions: Parameters<typeof puppeteer.launch>[0] = {
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--disable-web-security',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--disable-site-isolation-trials',
+            ...(isVercel ? ['--single-process'] : []),
+          ],
+          timeout: 30000,
+        }
+        
+        console.log('Launching Puppeteer with options:', {
+          isVercel,
+          useChromium,
+          argsCount: launchOptions.args?.length,
+          nodeEnv: process.env.NODE_ENV,
+        })
+        
+        browser = await puppeteer.launch(launchOptions)
+      }
 
       const page = await browser.newPage()
 
@@ -478,12 +518,23 @@ export async function POST(
       }
     }
   } catch (error) {
-    console.error('Error generating PDF:', error)
+    // Enhanced error logging for debugging
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorStack = error instanceof Error ? error.stack : undefined
+    
+    console.error('Error generating PDF:', {
+      message: errorMessage,
+      stack: errorStack,
+      name: error instanceof Error ? error.name : undefined,
+      // Log environment info
+      nodeEnv: process.env.NODE_ENV,
+      // Log if browser was initialized
+      browserInitialized: browser !== null,
+    })
     
     // Provide more detailed error messages for debugging
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     const errorDetails = process.env.NODE_ENV === 'production' 
-      ? 'PDF generation failed. Please try again or contact support.'
+      ? `PDF generation failed: ${errorMessage}. Please try again or contact support.`
       : errorMessage
     
     return NextResponse.json(
@@ -491,7 +542,10 @@ export async function POST(
         error: 'Failed to generate PDF', 
         details: errorDetails,
         // Include full error in development
-        ...(process.env.NODE_ENV !== 'production' && { stack: error instanceof Error ? error.stack : undefined })
+        ...(process.env.NODE_ENV !== 'production' && { 
+          stack: errorStack,
+          name: error instanceof Error ? error.name : undefined,
+        })
       },
       { status: 500 }
     )
