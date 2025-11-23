@@ -3,27 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
 
-// Dynamic imports for Puppeteer based on environment
-// Production (Vercel): Use puppeteer-core with @sparticuz/chromium
-// Development: Use regular puppeteer
-const getPuppeteer = async () => {
-  if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-    const puppeteerCore = await import('puppeteer-core')
-    const chromium = await import('@sparticuz/chromium')
-    return {
-      puppeteer: puppeteerCore.default,
-      chromium: chromium.default,
-      isProduction: true,
-    }
-  } else {
-    const puppeteer = await import('puppeteer')
-    return {
-      puppeteer: puppeteer.default,
-      chromium: null,
-      isProduction: false,
-    }
-  }
-}
+// Determine if we're in production
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.VERCEL
 
 // Format utilities
 const formatDate = (date: string | Date | null | undefined) => {
@@ -390,8 +371,23 @@ export async function POST(
       </html>
     `
 
-    // Get Puppeteer instance based on environment
-    const { puppeteer, chromium, isProduction } = await getPuppeteer()
+    // Import Puppeteer based on environment
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let puppeteer: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let chromium: any = null
+
+    if (isProduction) {
+      // Production: Use puppeteer-core with @sparticuz/chromium
+      const puppeteerCore = await import('puppeteer-core')
+      const chromiumModule = await import('@sparticuz/chromium')
+      puppeteer = puppeteerCore.default
+      chromium = chromiumModule.default
+    } else {
+      // Development: Use regular puppeteer
+      const puppeteerModule = await import('puppeteer')
+      puppeteer = puppeteerModule.default
+    }
 
     // Launch Puppeteer with production-safe configuration
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -400,33 +396,30 @@ export async function POST(
     try {
       // Configure browser launch options based on environment
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let launchOptions: any = {
-        headless: true,
-        timeout: 30000, // 30 second timeout for browser launch
-      }
+      let launchOptions: any
 
       if (isProduction && chromium) {
-        // Production: Use @sparticuz/chromium configuration
-        // Disable graphics mode for better performance in serverless
-        chromium.setGraphicsMode = false
+        // Production: Use @sparticuz/chromium configuration (following official pattern)
         launchOptions = {
           args: chromium.args,
           executablePath: await chromium.executablePath(),
           headless: true,
-          timeout: 30000,
         }
       } else {
         // Development: Use standard Puppeteer configuration
-        launchOptions.args = [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-          '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--disable-blink-features=AutomationControlled',
-        ]
+        launchOptions = {
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--disable-web-security',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--disable-blink-features=AutomationControlled',
+          ],
+        }
       }
 
       browser = await puppeteer.launch(launchOptions)
