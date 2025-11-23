@@ -373,13 +373,34 @@ export async function POST(
     `
 
     // Launch Puppeteer with Vercel-compatible Chromium
-    const executablePath = await chromium.executablePath()
-    
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath,
-      headless: true, // Always true on Vercel
-    })
+    let browser
+    try {
+      const executablePath = await chromium.executablePath()
+      
+      if (!executablePath) {
+        throw new Error('Chromium executable path is not available')
+      }
+      
+      console.log('Launching browser with Chromium from @sparticuz/chromium')
+      
+      browser = await puppeteer.launch({
+        args: chromium.args,
+        executablePath,
+        headless: true, // Always true on Vercel
+      })
+      
+      console.log('Browser launched successfully')
+    } catch (launchError) {
+      console.error('Failed to launch browser:', launchError)
+      const errorMessage = launchError instanceof Error ? launchError.message : 'Unknown launch error'
+      const errorStack = launchError instanceof Error ? launchError.stack : undefined
+      console.error('Launch error details:', {
+        message: errorMessage,
+        stack: errorStack,
+        chromiumArgs: chromium.args?.length || 0,
+      })
+      throw new Error(`Browser launch failed: ${errorMessage}`)
+    }
 
     try {
       const page = await browser.newPage()
@@ -442,13 +463,27 @@ export async function POST(
         },
       })
     } catch (error) {
-      await browser.close()
+      if (browser) {
+        try {
+          await browser.close()
+        } catch (closeError) {
+          console.error('Error closing browser:', closeError)
+        }
+      }
       throw error
     }
   } catch (error) {
     console.error('Error generating PDF:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorStack = error instanceof Error ? error.stack : undefined
+    console.error('Error details:', { message: errorMessage, stack: errorStack })
+    
     return NextResponse.json(
-      { error: 'Failed to generate PDF', details: error instanceof Error ? error.message : 'Unknown error' },
+      { 
+        error: 'Failed to generate PDF', 
+        details: errorMessage,
+        ...(process.env.NODE_ENV === 'development' && { stack: errorStack })
+      },
       { status: 500 }
     )
   }
