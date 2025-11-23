@@ -369,13 +369,26 @@ export async function POST(
       </html>
     `
 
-    // Launch Puppeteer
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    })
-
+    // Launch Puppeteer with production-friendly configuration
+    let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null
+    
     try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--disable-gpu',
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--disable-site-isolation-trials',
+          '--single-process',
+        ],
+        timeout: 30000, // 30 second timeout for browser launch
+      })
+
       const page = await browser.newPage()
 
       // Set viewport to A4 proportions
@@ -385,27 +398,42 @@ export async function POST(
         deviceScaleFactor: 2,
       })
 
-      // Set HTML content
+      // Set HTML content with timeout
       await page.setContent(html, {
-        waitUntil: ['networkidle0', 'load', 'domcontentloaded'],
+        waitUntil: 'domcontentloaded', // Changed from networkidle0 to avoid timeout on slow images
+        timeout: 30000,
       })
 
-      // Wait for images to load
-      await page.evaluate(async () => {
-        const images = Array.from(document.querySelectorAll('img'))
-        await Promise.all(
-          images.map((img) => {
-            if (img.complete) return Promise.resolve()
-            return new Promise((resolve) => {
-              img.onload = resolve
-              img.onerror = resolve
-              setTimeout(resolve, 3000)
+      // Wait for images to load with better error handling
+      try {
+        await page.evaluate(async () => {
+          const images = Array.from(document.querySelectorAll('img'))
+          await Promise.all(
+            images.map((img) => {
+              if (img.complete) return Promise.resolve<void>(undefined)
+              return new Promise<void>((resolve) => {
+                const timeout = setTimeout(() => {
+                  resolve() // Resolve even if image fails to load
+                }, 5000) // Increased timeout to 5s
+                img.onload = () => {
+                  clearTimeout(timeout)
+                  resolve()
+                }
+                img.onerror = () => {
+                  clearTimeout(timeout)
+                  resolve() // Continue even if image fails
+                }
+              })
             })
-          })
-        )
-      })
+          )
+        })
+      } catch (imageError) {
+        // Log but continue - images are optional
+        console.warn('Some images failed to load, continuing PDF generation:', imageError)
+      }
 
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      // Small delay to ensure rendering is complete
+      await new Promise(resolve => setTimeout(resolve, 500))
 
       // Generate PDF
       const pdfOptions: Parameters<typeof page.pdf>[0] = {
@@ -423,9 +451,13 @@ export async function POST(
 
       await page.emulateMediaType('print')
       
-      const pdf = await page.pdf(pdfOptions)
-
-      await browser.close()
+      // Generate PDF with timeout protection
+      const pdf = await Promise.race([
+        page.pdf(pdfOptions),
+        new Promise<Buffer>((_, reject) => 
+          setTimeout(() => reject(new Error('PDF generation timeout')), 25000)
+        ),
+      ])
 
       const filename = `asset-details-${asset.assetTagId}-${new Date().toISOString().split('T')[0]}.pdf`
       
@@ -435,14 +467,32 @@ export async function POST(
           'Content-Disposition': `attachment; filename="${filename}"`,
         },
       })
-    } catch (error) {
-      await browser.close()
-      throw error
+    } finally {
+      // Always close browser, even if there's an error
+      if (browser) {
+        try {
+          await browser.close()
+        } catch (closeError) {
+          console.error('Error closing browser:', closeError)
+        }
+      }
     }
   } catch (error) {
     console.error('Error generating PDF:', error)
+    
+    // Provide more detailed error messages for debugging
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorDetails = process.env.NODE_ENV === 'production' 
+      ? 'PDF generation failed. Please try again or contact support.'
+      : errorMessage
+    
     return NextResponse.json(
-      { error: 'Failed to generate PDF', details: error instanceof Error ? error.message : 'Unknown error' },
+      { 
+        error: 'Failed to generate PDF', 
+        details: errorDetails,
+        // Include full error in development
+        ...(process.env.NODE_ENV !== 'production' && { stack: error instanceof Error ? error.stack : undefined })
+      },
       { status: 500 }
     )
   }
