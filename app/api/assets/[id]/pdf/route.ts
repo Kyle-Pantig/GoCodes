@@ -413,7 +413,7 @@ export async function POST(
         // chromium-min is optimized for serverless environments (smaller size)
         try {
           // Get chromium executable path
-          console.log('[PDF] Getting Chromium executable path...')
+          console.log('[PDF] Getting Chromium executable path')
           const executablePath = await chromium.executablePath()
           console.log('[PDF] Chromium path:', executablePath)
           
