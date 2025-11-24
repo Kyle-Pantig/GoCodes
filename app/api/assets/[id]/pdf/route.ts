@@ -45,10 +45,13 @@ export async function POST(
   }
 
   try {
+    console.log('[PDF] Starting PDF generation...')
     const { id } = await params
+    console.log('[PDF] Asset ID:', id)
     // No need to parse request body - we fetch all data server-side
 
     // Fetch all asset data with retry for connection issues
+    console.log('[PDF] Fetching asset data...')
     const asset = await retryDbOperation(() =>
       prisma.assets.findFirst({
         where: {
@@ -76,15 +79,19 @@ export async function POST(
     )
 
     if (!asset) {
+      console.error('[PDF] Asset not found:', id)
       return NextResponse.json(
         { error: 'Asset not found' },
         { status: 404 }
       )
     }
 
+    console.log('[PDF] Asset found:', asset.assetTagId)
+    
     // Fetch related data using transaction to optimize connection pool usage
     // This batches all queries into a single transaction, using fewer connections
     // Wrap in retry for transient connection errors
+    console.log('[PDF] Fetching related data...')
     const [images, documents, maintenances, reservations, historyLogs] = await retryDbOperation(() =>
       prisma.$transaction(
         async (tx) => {
@@ -132,6 +139,8 @@ export async function POST(
     const assignedTo = activeCheckout?.employeeUser?.name || 'N/A'
     const issuedTo = asset.issuedTo || 'N/A'
 
+    console.log('[PDF] Data fetched. Generating HTML...')
+    
     // Generate HTML with tables
     const html = `
       <!DOCTYPE html>
@@ -387,22 +396,29 @@ export async function POST(
       </html>
     `
 
+    console.log('[PDF] HTML generated. Starting browser...')
+    
     // Configure Chromium for Vercel/serverless environment
     // In production: use puppeteer-core with @sparticuz/chromium (optimized for serverless)
     // In development: use full puppeteer package (includes bundled Chromium)
     const isProduction = process.env.NODE_ENV === 'production'
+    console.log('[PDF] Environment:', isProduction ? 'production' : 'development')
     
     let browser: Awaited<ReturnType<typeof puppeteerCore.launch>> | Awaited<ReturnType<typeof puppeteer.launch>> | null = null
     
     try {
       if (isProduction) {
+        console.log('[PDF] Using puppeteer-core with Chromium...')
         // Production: Use puppeteer-core with @sparticuz/chromium for Vercel
         // Note: This requires @sparticuz/chromium to be properly installed with all its files
         try {
           // Get chromium executable path
           // This may fail if brotli files are missing - that's a deployment configuration issue
+          console.log('[PDF] Getting Chromium executable path...')
           const executablePath = await chromium.executablePath()
+          console.log('[PDF] Chromium path:', executablePath)
           
+          console.log('[PDF] Launching browser...')
           browser = await puppeteerCore.launch({
             args: [
               ...chromium.args,
@@ -436,7 +452,9 @@ export async function POST(
         }
       } else {
         // Development: Use full puppeteer package (includes bundled Chromium)
+        console.log('[PDF] Using full puppeteer package...')
         try {
+          console.log('[PDF] Launching browser...')
           browser = await puppeteer.launch({
             headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--hide-scrollbars', '--disable-web-security'],
@@ -452,6 +470,7 @@ export async function POST(
         throw new Error('Failed to generate PDF: Browser instance is null')
       }
 
+      console.log('[PDF] Browser launched. Creating page...')
       const page = await browser.newPage()
 
       // Set viewport to A4 proportions
@@ -462,6 +481,7 @@ export async function POST(
       })
 
       // Set HTML content with timeout
+      console.log('[PDF] Setting page content...')
       await Promise.race([
         page.setContent(html, {
           waitUntil: ['networkidle0', 'load', 'domcontentloaded'],
@@ -470,6 +490,7 @@ export async function POST(
           setTimeout(() => reject(new Error('Page content loading timeout after 30 seconds')), 30000)
         )
       ])
+      console.log('[PDF] Page content loaded.')
 
       // Wait for images to load
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -503,13 +524,17 @@ export async function POST(
         displayHeaderFooter: false,
       }
 
+      console.log('[PDF] Generating PDF...')
       await page.emulateMediaType('print')
       
       const pdf = await page.pdf(pdfOptions)
+      console.log('[PDF] PDF generated, size:', pdf.length, 'bytes')
 
       await browser.close()
+      console.log('[PDF] Browser closed.')
 
       const filename = `asset-details-${asset.assetTagId}-${new Date().toISOString().split('T')[0]}.pdf`
+      console.log('[PDF] Returning PDF response...')
       
       return new NextResponse(Buffer.from(pdf), {
         headers: {
@@ -518,12 +543,13 @@ export async function POST(
         },
       })
     } catch (error) {
+      console.error('[PDF] Error in browser operations:', error)
       // Safely close browser if it exists
       if (browser) {
         try {
           await browser.close()
         } catch (closeError) {
-          console.error('Error closing browser:', closeError)
+          console.error('[PDF] Error closing browser:', closeError)
         }
       }
       throw error

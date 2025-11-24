@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
   poweredByHeader: false, // Remove X-Powered-By header
   compress: true, // Enable gzip compression
   
+  // Enable console logs in production for debugging
+  // Remove this or set to true to remove console logs in production
+  compiler: {
+    removeConsole: false, // Keep console logs in production
+  },
+  
   // Image optimization
   images: {
     remotePatterns: [
@@ -74,6 +80,24 @@ const nextConfig: NextConfig = {
           },
         },
       };
+    }
+    
+    // Ensure console logs are not removed in production
+    // This is a fallback if compiler.removeConsole doesn't work
+    if (!dev && config.optimization?.minimizer) {
+      config.optimization.minimizer = config.optimization.minimizer.map((plugin: { constructor: { name: string }; options?: { terserOptions?: { compress?: { drop_console?: boolean } } } }) => {
+        if (plugin.constructor.name === 'TerserPlugin') {
+          plugin.options = plugin.options || {};
+          plugin.options.terserOptions = {
+            ...plugin.options.terserOptions,
+            compress: {
+              ...plugin.options.terserOptions?.compress,
+              drop_console: false, // Keep console logs
+            },
+          };
+        }
+        return plugin;
+      });
     }
     
     return config;
