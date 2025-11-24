@@ -379,9 +379,20 @@ export async function POST(
       // Local dev: PUPPETEER_EXECUTABLE_PATH is optional - if not set, puppeteer-core will try to find Chrome/Chromium automatically
       // You can set it in .env.local if you want to use a specific Chrome path, e.g.:
       // PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
-      const executablePath = isVercel
-        ? await chromium.executablePath()
-        : process.env.PUPPETEER_EXECUTABLE_PATH || undefined
+      let executablePath: string | undefined
+      
+      if (isVercel) {
+        try {
+          executablePath = await chromium.executablePath()
+          console.log('Chromium executable path obtained:', executablePath ? 'Yes' : 'No')
+        } catch (chromiumError) {
+          const chromiumErrorMsg = chromiumError instanceof Error ? chromiumError.message : 'Unknown error'
+          console.error('Failed to get Chromium executable path:', chromiumErrorMsg)
+          throw new Error(`Chromium executable path failed: ${chromiumErrorMsg}. Make sure @sparticuz/chromium is properly installed.`)
+        }
+      } else {
+        executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined
+      }
       
       console.log('Launching browser:', {
         isVercel,
@@ -404,7 +415,12 @@ export async function POST(
       })
     } catch (browserError) {
       const browserErrorMessage = browserError instanceof Error ? browserError.message : 'Unknown browser launch error'
-      console.error('Failed to launch browser:', browserErrorMessage)
+      const browserErrorStack = browserError instanceof Error ? browserError.stack : undefined
+      console.error('Failed to launch browser:', {
+        message: browserErrorMessage,
+        stack: browserErrorStack,
+        isVercel,
+      })
       throw new Error(`Browser launch failed: ${browserErrorMessage}`)
     }
 
