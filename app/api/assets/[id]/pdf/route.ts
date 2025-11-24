@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import puppeteerCore from 'puppeteer-core'
 import puppeteer from 'puppeteer'
-import chromium from '@sparticuz/chromium'
+import chromium from '@sparticuz/chromium-min'
 import { prisma } from '@/lib/prisma'
 import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
@@ -408,32 +408,21 @@ export async function POST(
     
     try {
       if (isProduction) {
-        console.log('[PDF] Using puppeteer-core with Chromium...')
-        // Production: Use puppeteer-core with @sparticuz/chromium for Vercel
-        // Note: This requires @sparticuz/chromium to be properly installed with all its files
+        console.log('[PDF] Using puppeteer-core with Chromium-min...')
+        // Production: Use puppeteer-core with @sparticuz/chromium-min for Vercel
+        // chromium-min is optimized for serverless environments (smaller size)
         try {
           // Get chromium executable path
-          // This may fail if brotli files are missing - that's a deployment configuration issue
           console.log('[PDF] Getting Chromium executable path...')
           const executablePath = await chromium.executablePath()
           console.log('[PDF] Chromium path:', executablePath)
           
           console.log('[PDF] Launching browser...')
           browser = await puppeteerCore.launch({
-            args: [
-              ...chromium.args,
-              '--hide-scrollbars',
-              '--disable-web-security',
-              '--disable-dev-shm-usage',
-              '--disable-software-rasterizer',
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-gpu',
-              '--single-process',
-            ],
-            defaultViewport: { width: 794, height: 1123 },
+            args: chromium.args,
+            defaultViewport: chromium.defaultViewport,
             executablePath,
-            headless: true,
+            headless: chromium.headless,
           })
         } catch (error) {
           console.error('Failed to launch Chromium in production:', error)
