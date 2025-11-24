@@ -580,7 +580,10 @@ export default function AccountabilityFormPage() {
     }
 
     try {
-      toast.loading('Generating PDF...', { id: 'pdf-generation' })
+      toast.loading('Generating PDF... 0%', { id: 'pdf-generation' })
+      
+      // Update progress: Preparing HTML (0-10%)
+      toast.loading('Generating PDF... 5%', { id: 'pdf-generation' })
       
       // Get the HTML content with computed styles for first page
       let htmlContent = formElement.outerHTML
@@ -612,12 +615,18 @@ export default function AccountabilityFormPage() {
         )
       }
       
+      // Update progress: Converting images (10-30%)
+      toast.loading('Generating PDF... 10%', { id: 'pdf-generation' })
+      
       // Convert images to base64 for better reliability
       const allImages = [
         ...Array.from(formElement.querySelectorAll('img')),
         ...(rulesElement ? Array.from(rulesElement.querySelectorAll('img')) : [])
       ]
       const imageReplacements: Array<{ original: string, replacement: string }> = []
+      
+      let imageProgress = 0
+      const totalImages = allImages.length
       
       await Promise.all(Array.from(allImages).map(async (img) => {
         const htmlImg = img as HTMLImageElement
@@ -643,6 +652,11 @@ export default function AccountabilityFormPage() {
               original: originalSrc,
               replacement: base64
             })
+            
+            // Update progress for each image converted (10-30%)
+            imageProgress++
+            const imagePercent = 10 + Math.round((imageProgress / totalImages) * 20)
+            toast.loading(`Generating PDF... ${imagePercent}%`, { id: 'pdf-generation' })
           } catch (error) {
             console.error('Failed to convert image to base64:', error)
             if (originalSrc.startsWith('/')) {
@@ -651,9 +665,17 @@ export default function AccountabilityFormPage() {
                 replacement: `${origin}${originalSrc}`
               })
             }
+            
+            // Update progress even on error
+            imageProgress++
+            const imagePercent = 10 + Math.round((imageProgress / totalImages) * 20)
+            toast.loading(`Generating PDF... ${imagePercent}%`, { id: 'pdf-generation' })
           }
         }
       }))
+      
+      // Update progress: Preparing HTML document (30-35%)
+      toast.loading('Generating PDF... 30%', { id: 'pdf-generation' })
       
       // Apply image replacements to both pages
       imageReplacements.forEach(({ original, replacement }) => {
@@ -732,87 +754,204 @@ export default function AccountabilityFormPage() {
         </html>
       `
 
-      const response = await fetch('/api/assets/accountability-form/pdf', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          html: fullHTML,
-          elementIds: ['#accountability-form', '#accountability-form-rules'],
-        }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to generate PDF')
-      }
-
-      // Get PDF blob
-      const blob = await response.blob()
+      // Use XMLHttpRequest to track download progress
+      const xhr = new XMLHttpRequest()
+      let simulatedProgress = 35
+      let progressInterval: NodeJS.Timeout | null = null
+      let hasStartedDownload = false
       
-      // Create download link
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `Accountability-Form-${selectedEmployee?.name?.replace(/\s+/g, '-') || 'Employee'}-${dateIssued || new Date().toISOString().split('T')[0]}.pdf`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
+      return new Promise<void>((resolve, reject) => {
+        try {
+          // Update progress: Sending request (35-40%)
+          toast.loading('Generating PDF... 35%', { id: 'pdf-generation' })
+          
+          // Simulate progress during generation phase (35-70%)
+          progressInterval = setInterval(() => {
+            if (!hasStartedDownload && simulatedProgress < 70) {
+              simulatedProgress += 2
+              if (simulatedProgress > 70) simulatedProgress = 70
+              toast.loading(`Generating PDF... ${simulatedProgress}%`, { id: 'pdf-generation' })
+            }
+          }, 200) // Update every 200ms
 
-      toast.success('PDF downloaded successfully', { id: 'pdf-generation' })
+          xhr.open('POST', '/api/assets/accountability-form/pdf', true)
+          xhr.setRequestHeader('Content-Type', 'application/json')
+          xhr.responseType = 'blob'
 
-      // Save form data to database
+          // Track real download progress (70-100%)
+          xhr.addEventListener('progress', (event) => {
+            hasStartedDownload = true
+            if (progressInterval) {
+              clearInterval(progressInterval)
+              progressInterval = null
+            }
+            
+            if (event.lengthComputable && event.total > 0) {
+              // Map download progress to 70-100% range
+              const downloadPercent = Math.round((event.loaded / event.total) * 100)
+              const totalPercent = 70 + Math.round(downloadPercent * 0.3) // 70% + (download% * 30%)
+              toast.loading(`Generating PDF... ${totalPercent}%`, { id: 'pdf-generation' })
+            } else if (event.loaded > 0) {
+              // If content length is unknown but we have loaded bytes, show progress
+              toast.loading('Generating PDF... 75%', { id: 'pdf-generation' })
+            }
+          })
+
+          xhr.addEventListener('load', () => {
+            // Clear progress interval if still running
+            if (progressInterval) {
+              clearInterval(progressInterval)
+              progressInterval = null
+            }
+            
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                const blob = xhr.response
+      
+                // Create download link
+                const url = window.URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = url
+                link.download = `Accountability-Form-${selectedEmployee?.name?.replace(/\s+/g, '-') || 'Employee'}-${dateIssued || new Date().toISOString().split('T')[0]}.pdf`
+                document.body.appendChild(link)
+                link.click()
+                document.body.removeChild(link)
+                window.URL.revokeObjectURL(url)
+
+                toast.success('PDF downloaded successfully', { id: 'pdf-generation' })
+
+                resolve()
+              } catch (error) {
+                console.error('Error processing PDF:', error)
+                toast.error('Failed to process PDF', { id: 'pdf-generation' })
+                reject(error)
+              }
+            } else {
+              // Try to parse error response
+              if (progressInterval) {
+                clearInterval(progressInterval)
+                progressInterval = null
+              }
+              
+              const reader = new FileReader()
+              reader.onload = () => {
+                try {
+                  const errorData = JSON.parse(reader.result as string)
+                  const errorMessage = errorData.error || 'Failed to generate PDF'
+                  toast.error(errorMessage, { id: 'pdf-generation' })
+                  reject(new Error(errorMessage))
+                } catch {
+                  toast.error('Failed to generate PDF', { id: 'pdf-generation' })
+                  reject(new Error('Failed to generate PDF'))
+                }
+              }
+              reader.onerror = () => {
+                toast.error('Failed to generate PDF', { id: 'pdf-generation' })
+                reject(new Error('Failed to generate PDF'))
+              }
+              if (xhr.response) {
+                reader.readAsText(xhr.response)
+              } else {
+                toast.error('Failed to generate PDF', { id: 'pdf-generation' })
+                reject(new Error('Failed to generate PDF'))
+              }
+            }
+          })
+
+          xhr.addEventListener('error', () => {
+            if (progressInterval) {
+              clearInterval(progressInterval)
+              progressInterval = null
+            }
+            toast.error('Network error while generating PDF', { id: 'pdf-generation' })
+            reject(new Error('Network error'))
+          })
+
+          xhr.addEventListener('abort', () => {
+            if (progressInterval) {
+              clearInterval(progressInterval)
+              progressInterval = null
+            }
+            toast.error('PDF generation cancelled', { id: 'pdf-generation' })
+            reject(new Error('Cancelled'))
+          })
+
+          xhr.send(JSON.stringify({
+            html: fullHTML,
+            elementIds: ['#accountability-form', '#accountability-form-rules'],
+          }))
+        } catch (error) {
+          if (progressInterval) {
+            clearInterval(progressInterval)
+            progressInterval = null
+          }
+          console.error('Error generating PDF:', error)
+          toast.error(error instanceof Error ? error.message : 'Failed to generate PDF', { id: 'pdf-generation' })
+          reject(error)
+        }
+      })
+      
+      // Save form data to database after PDF is downloaded
       try {
-        const formData = {
-          dateIssued,
-          position,
-          clientDepartment,
-          ticketNo,
-          accountabilityFormNo,
-          mobileBrand,
-          mobileModel,
-          imeiNo,
-          simNo,
-          networkProvider,
-          planAmount,
-          selectedAssets: selectedAssets.map(asset => ({
-            id: asset.id,
-            assetTagId: asset.assetTagId,
-            description: asset.description,
-            remarks: asset.remarks,
-          })),
-          replacementItems,
-          staffSignature,
-          staffDate,
-          itSignature,
-          itDate,
-          assetCustodianSignature,
-          assetCustodianDate,
-          financeSignature,
-          financeDate,
-        }
+        await new Promise<void>((resolve) => {
+          // Wait a bit to ensure PDF download completes
+          setTimeout(async () => {
+            try {
+              const formData = {
+                dateIssued,
+                position,
+                clientDepartment,
+                ticketNo,
+                accountabilityFormNo,
+                mobileBrand,
+                mobileModel,
+                imeiNo,
+                simNo,
+                networkProvider,
+                planAmount,
+                selectedAssets: selectedAssets.map(asset => ({
+                  id: asset.id,
+                  assetTagId: asset.assetTagId,
+                  description: asset.description,
+                  remarks: asset.remarks,
+                })),
+                replacementItems,
+                staffSignature,
+                staffDate,
+                itSignature,
+                itDate,
+                assetCustodianSignature,
+                assetCustodianDate,
+                financeSignature,
+                financeDate,
+              }
 
-        const saveResponse = await fetch('/api/forms/accountability-form', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            employeeUserId: selectedEmployeeId,
-            dateIssued,
-            department: clientDepartment || selectedEmployee?.department || null,
-            accountabilityFormNo: accountabilityFormNo || null,
-            formData,
-          }),
+              const saveResponse = await fetch('/api/forms/accountability-form', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  employeeUserId: selectedEmployeeId,
+                  dateIssued,
+                  department: clientDepartment || selectedEmployee?.department || null,
+                  accountabilityFormNo: accountabilityFormNo || null,
+                  formData,
+                }),
+              })
+
+              if (!saveResponse.ok) {
+                const error = await saveResponse.json()
+                console.error('Failed to save accountability form:', error)
+                // Don't show error to user since PDF was already downloaded successfully
+              }
+            } catch (saveError) {
+              console.error('Error saving accountability form:', saveError)
+              // Don't show error to user since PDF was already downloaded successfully
+            }
+            resolve()
+          }, 100)
         })
-
-        if (!saveResponse.ok) {
-          const error = await saveResponse.json()
-          console.error('Failed to save accountability form:', error)
-          // Don't show error to user since PDF was already downloaded successfully
-        }
       } catch (saveError) {
         console.error('Error saving accountability form:', saveError)
         // Don't show error to user since PDF was already downloaded successfully
