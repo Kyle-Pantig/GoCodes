@@ -5,6 +5,8 @@ import chromium from '@sparticuz/chromium'
 import { prisma } from '@/lib/prisma'
 import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
+import { retryDbOperation } from '@/lib/db-utils'
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'
 
 // Format utilities
 const formatDate = (date: string | Date | null | undefined) => {
@@ -46,30 +48,32 @@ export async function POST(
     const { id } = await params
     // No need to parse request body - we fetch all data server-side
 
-    // Fetch all asset data
-    const asset = await prisma.assets.findFirst({
-      where: {
-        id,
-        isDeleted: false,
-      },
-      include: {
-        category: true,
-        subCategory: true,
-        checkouts: {
-          include: {
-            employeeUser: true,
-            checkins: {
-              take: 1,
+    // Fetch all asset data with retry for connection issues
+    const asset = await retryDbOperation(() =>
+      prisma.assets.findFirst({
+        where: {
+          id,
+          isDeleted: false,
+        },
+        include: {
+          category: true,
+          subCategory: true,
+          checkouts: {
+            include: {
+              employeeUser: true,
+              checkins: {
+                take: 1,
+              },
             },
+            orderBy: { checkoutDate: 'desc' },
+            take: 10,
           },
-          orderBy: { checkoutDate: 'desc' },
-          take: 10,
+          auditHistory: {
+            orderBy: { auditDate: 'desc' },
+          },
         },
-        auditHistory: {
-          orderBy: { auditDate: 'desc' },
-        },
-      },
-    })
+      })
+    )
 
     if (!asset) {
       return NextResponse.json(
@@ -80,41 +84,44 @@ export async function POST(
 
     // Fetch related data using transaction to optimize connection pool usage
     // This batches all queries into a single transaction, using fewer connections
-    const [images, documents, maintenances, reservations, historyLogs] = await prisma.$transaction(
-      async (tx) => {
-        return await Promise.all([
-          tx.assetsImage.findMany({
-            where: { assetTagId: asset.assetTagId },
-            orderBy: { createdAt: 'desc' },
-          }),
-          tx.assetsDocument.findMany({
-            where: { assetTagId: asset.assetTagId },
-            orderBy: { createdAt: 'desc' },
-          }),
-          tx.assetsMaintenance.findMany({
-            where: { assetId: asset.id },
-            orderBy: { createdAt: 'desc' },
-          }),
-          tx.assetsReserve.findMany({
-            where: {
-              assetId: asset.id,
-              reservationDate: { gte: new Date() },
-            },
-            include: {
-              employeeUser: true,
-            },
-            orderBy: { reservationDate: 'asc' },
-          }),
-          tx.assetsHistoryLogs.findMany({
-            where: { assetId: asset.id },
-            orderBy: { eventDate: 'desc' },
-          }),
-        ])
-      },
-      {
-        timeout: 30000, // 30 second timeout
-        isolationLevel: 'ReadCommitted', // Read-only transaction
-      }
+    // Wrap in retry for transient connection errors
+    const [images, documents, maintenances, reservations, historyLogs] = await retryDbOperation(() =>
+      prisma.$transaction(
+        async (tx) => {
+          return await Promise.all([
+            tx.assetsImage.findMany({
+              where: { assetTagId: asset.assetTagId },
+              orderBy: { createdAt: 'desc' },
+            }),
+            tx.assetsDocument.findMany({
+              where: { assetTagId: asset.assetTagId },
+              orderBy: { createdAt: 'desc' },
+            }),
+            tx.assetsMaintenance.findMany({
+              where: { assetId: asset.id },
+              orderBy: { createdAt: 'desc' },
+            }),
+            tx.assetsReserve.findMany({
+              where: {
+                assetId: asset.id,
+                reservationDate: { gte: new Date() },
+              },
+              include: {
+                employeeUser: true,
+              },
+              orderBy: { reservationDate: 'asc' },
+            }),
+            tx.assetsHistoryLogs.findMany({
+              where: { assetId: asset.id },
+              orderBy: { eventDate: 'desc' },
+            }),
+          ])
+        },
+        {
+          timeout: 30000, // 30 second timeout
+          isolationLevel: 'ReadCommitted', // Read-only transaction
+        }
+      )
     )
 
     // Find active checkout
@@ -522,26 +529,67 @@ export async function POST(
       throw error
     }
   } catch (error) {
-    // Enhanced error logging
+    // Enhanced error logging with specific error type detection
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     const errorStack = error instanceof Error ? error.stack : undefined
     const errorName = error instanceof Error ? error.name : 'Error'
+    
+    // Check for database connection errors
+    const isDbError = 
+      error instanceof PrismaClientKnownRequestError ||
+      (error instanceof Error && (
+        error.message.includes('connection pool') ||
+        error.message.includes('Timed out fetching') ||
+        error.message.includes("Can't reach database server") ||
+        error.message.includes('P1001') ||
+        error.message.includes('P2024') ||
+        error.message.includes('P1017')
+      ))
+    
+    // Check for Puppeteer/Chromium errors
+    const isPuppeteerError = 
+      error instanceof Error && (
+        error.message.includes('Chromium') ||
+        error.message.includes('Puppeteer') ||
+        error.message.includes('browser') ||
+        error.message.includes('executablePath') ||
+        error.message.includes('brotli')
+      )
     
     console.error('Error generating PDF:', {
       name: errorName,
       message: errorMessage,
       stack: errorStack,
       isProduction: process.env.NODE_ENV === 'production',
+      isDbError,
+      isPuppeteerError,
+      prismaCode: error instanceof PrismaClientKnownRequestError ? error.code : undefined,
     })
+    
+    // Return specific error messages based on error type
+    let statusCode = 500
+    let errorDetails = errorMessage
+    
+    if (isDbError) {
+      statusCode = 503 // Service Unavailable
+      errorDetails = 'Database connection error. Please check your database configuration and try again.'
+    } else if (isPuppeteerError) {
+      statusCode = 500
+      if (errorMessage.includes('brotli') || errorMessage.includes('executablePath')) {
+        errorDetails = 'PDF generation service configuration error. Please ensure Chromium is properly installed.'
+      } else {
+        errorDetails = 'Failed to initialize PDF generation service. Please try again.'
+      }
+    }
     
     return NextResponse.json(
       { 
         error: 'Failed to generate PDF', 
-        details: errorMessage,
+        details: errorDetails,
         // Only include stack in development
         ...(process.env.NODE_ENV === 'development' && errorStack ? { stack: errorStack } : {})
       },
-      { status: 500 }
+      { status: statusCode }
     )
   }
 }
