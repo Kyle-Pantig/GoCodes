@@ -589,11 +589,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        console.error('PDF generation error response:', errorData)
-        // Include detailed error message in the thrown error
-        const errorMsg = errorData.message || errorData.details || errorData.error || 'Failed to generate PDF'
-        throw new Error(errorMsg)
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to generate PDF')
       }
 
       // Get PDF blob
@@ -612,17 +609,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       toast.success('PDF downloaded successfully', { id: 'pdf-generation' })
     } catch (error) {
       console.error('Error generating PDF:', error)
-      // Log full error details for debugging
-      if (error instanceof Error) {
-        console.error('Error message:', error.message)
-        console.error('Error stack:', error.stack)
-      }
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : typeof error === 'object' && error !== null && 'message' in error
-        ? String(error.message)
-        : 'Failed to generate PDF'
-      toast.error(errorMessage, { id: 'pdf-generation' })
+      toast.error(error instanceof Error ? error.message : 'Failed to generate PDF', { id: 'pdf-generation' })
     }
   }
 

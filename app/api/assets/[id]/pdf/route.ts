@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import puppeteerCore from 'puppeteer-core'
 import puppeteer from 'puppeteer'
-import chromium from '@sparticuz/chromium-min'
+import chromium from '@sparticuz/chromium'
 import { prisma } from '@/lib/prisma'
 import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
-import { retryDbOperation } from '@/lib/db-utils'
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'
 
 // Format utilities
 const formatDate = (date: string | Date | null | undefined) => {
@@ -45,90 +43,78 @@ export async function POST(
   }
 
   try {
-    console.log('[PDF] Starting PDF generation...')
     const { id } = await params
-    console.log('[PDF] Asset ID:', id)
     // No need to parse request body - we fetch all data server-side
 
-    // Fetch all asset data with retry for connection issues
-    console.log('[PDF] Fetching asset data...')
-    const asset = await retryDbOperation(() =>
-      prisma.assets.findFirst({
-        where: {
-          id,
-          isDeleted: false,
-        },
-        include: {
-          category: true,
-          subCategory: true,
-          checkouts: {
-            include: {
-              employeeUser: true,
-              checkins: {
-                take: 1,
-              },
+    // Fetch all asset data
+    const asset = await prisma.assets.findFirst({
+      where: {
+        id,
+        isDeleted: false,
+      },
+      include: {
+        category: true,
+        subCategory: true,
+        checkouts: {
+          include: {
+            employeeUser: true,
+            checkins: {
+              take: 1,
             },
-            orderBy: { checkoutDate: 'desc' },
-            take: 10,
           },
-          auditHistory: {
-            orderBy: { auditDate: 'desc' },
-          },
+          orderBy: { checkoutDate: 'desc' },
+          take: 10,
         },
-      })
-    )
+        auditHistory: {
+          orderBy: { auditDate: 'desc' },
+        },
+      },
+    })
 
     if (!asset) {
-      console.error('[PDF] Asset not found:', id)
       return NextResponse.json(
         { error: 'Asset not found' },
         { status: 404 }
       )
     }
 
-    console.log('[PDF] Asset found:', asset.assetTagId)
-    
     // Fetch related data using transaction to optimize connection pool usage
     // This batches all queries into a single transaction, using fewer connections
-    // Wrap in retry for transient connection errors
-    console.log('[PDF] Fetching related data...')
-    const [images, documents, maintenances, reservations, historyLogs] = await retryDbOperation(() =>
-      prisma.$transaction(
-        async (tx) => {
-          return await Promise.all([
-            tx.assetsImage.findMany({
-              where: { assetTagId: asset.assetTagId },
-              orderBy: { createdAt: 'desc' },
-            }),
-            tx.assetsDocument.findMany({
-              where: { assetTagId: asset.assetTagId },
-              orderBy: { createdAt: 'desc' },
-            }),
-            tx.assetsMaintenance.findMany({
-              where: { assetId: asset.id },
-              orderBy: { createdAt: 'desc' },
-            }),
-            tx.assetsReserve.findMany({
-              where: {
-                assetId: asset.id,
-                reservationDate: { gte: new Date() },
-              },
-              include: {
-                employeeUser: true,
-              },
-              orderBy: { reservationDate: 'asc' },
-            }),
-            tx.assetsHistoryLogs.findMany({
-              where: { assetId: asset.id },
-              orderBy: { eventDate: 'desc' },
-            }),
-          ])
-        },
-        {
-          timeout: 30000, // 30 second timeout
-          isolationLevel: 'ReadCommitted', // Read-only transaction
-        }
-      )
+    const [images, documents, maintenances, reservations, historyLogs] = await prisma.$transaction(
+      async (tx) => {
+        return await Promise.all([
+          tx.assetsImage.findMany({
+            where: { assetTagId: asset.assetTagId },
+            orderBy: { createdAt: 'desc' },
+          }),
+          tx.assetsDocument.findMany({
+            where: { assetTagId: asset.assetTagId },
+            orderBy: { createdAt: 'desc' },
+          }),
+          tx.assetsMaintenance.findMany({
+            where: { assetId: asset.id },
+            orderBy: { createdAt: 'desc' },
+          }),
+          tx.assetsReserve.findMany({
+            where: {
+              assetId: asset.id,
+              reservationDate: { gte: new Date() },
+            },
+            include: {
+              employeeUser: true,
+            },
+            orderBy: { reservationDate: 'asc' },
+          }),
+          tx.assetsHistoryLogs.findMany({
+            where: { assetId: asset.id },
+            orderBy: { eventDate: 'desc' },
+          }),
+        ])
+      },
+      {
+        timeout: 30000, // 30 second timeout
+        isolationLevel: 'ReadCommitted', // Read-only transaction
+      }
     )
 
     // Find active checkout
@@ -139,8 +125,6 @@ export async function POST(
     const assignedTo = activeCheckout?.employeeUser?.name || 'N/A'
     const issuedTo = asset.issuedTo || 'N/A'
 
-    console.log('[PDF] Data fetched. Generating HTML...')
-    
     // Generate HTML with tables
     const html = `
       <!DOCTYPE html>
@@ -396,33 +380,37 @@ export async function POST(
       </html>
     `
 
-    console.log('[PDF] HTML generated. Starting browser...')
-    
     // Configure Chromium for Vercel/serverless environment
     // In production: use puppeteer-core with @sparticuz/chromium (optimized for serverless)
     // In development: use full puppeteer package (includes bundled Chromium)
     const isProduction = process.env.NODE_ENV === 'production'
-    console.log('[PDF] Environment:', isProduction ? 'production' : 'development')
     
     let browser: Awaited<ReturnType<typeof puppeteerCore.launch>> | Awaited<ReturnType<typeof puppeteer.launch>> | null = null
     
     try {
       if (isProduction) {
-        console.log('[PDF] Using puppeteer-core with Chromium-min...')
-        // Production: Use puppeteer-core with @sparticuz/chromium-min for Vercel
-        // chromium-min is optimized for serverless environments (smaller size)
+        // Production: Use puppeteer-core with @sparticuz/chromium for Vercel
+        // Note: This requires @sparticuz/chromium to be properly installed with all its files
         try {
           // Get chromium executable path
-          console.log('[PDF] Getting Chromium executable path')
+          // This may fail if brotli files are missing - that's a deployment configuration issue
           const executablePath = await chromium.executablePath()
-          console.log('[PDF] Chromium path:', executablePath)
           
-          console.log('[PDF] Launching browser...')
           browser = await puppeteerCore.launch({
-            args: chromium.args,
-            defaultViewport: chromium.defaultViewport,
+            args: [
+              ...chromium.args,
+              '--hide-scrollbars',
+              '--disable-web-security',
+              '--disable-dev-shm-usage',
+              '--disable-software-rasterizer',
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-gpu',
+              '--single-process',
+            ],
+            defaultViewport: { width: 794, height: 1123 },
             executablePath,
-            headless: chromium.headless,
+            headless: true,
           })
         } catch (error) {
           console.error('Failed to launch Chromium in production:', error)
@@ -441,9 +429,7 @@ export async function POST(
         }
       } else {
         // Development: Use full puppeteer package (includes bundled Chromium)
-        console.log('[PDF] Using full puppeteer package...')
         try {
-          console.log('[PDF] Launching browser...')
           browser = await puppeteer.launch({
             headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--hide-scrollbars', '--disable-web-security'],
@@ -459,7 +445,6 @@ export async function POST(
         throw new Error('Failed to generate PDF: Browser instance is null')
       }
 
-      console.log('[PDF] Browser launched. Creating page...')
       const page = await browser.newPage()
 
       // Set viewport to A4 proportions
@@ -470,7 +455,6 @@ export async function POST(
       })
 
       // Set HTML content with timeout
-      console.log('[PDF] Setting page content...')
       await Promise.race([
         page.setContent(html, {
           waitUntil: ['networkidle0', 'load', 'domcontentloaded'],
@@ -479,7 +463,6 @@ export async function POST(
           setTimeout(() => reject(new Error('Page content loading timeout after 30 seconds')), 30000)
         )
       ])
-      console.log('[PDF] Page content loaded.')
 
       // Wait for images to load
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -513,17 +496,13 @@ export async function POST(
         displayHeaderFooter: false,
       }
 
-      console.log('[PDF] Generating PDF...')
       await page.emulateMediaType('print')
       
       const pdf = await page.pdf(pdfOptions)
-      console.log('[PDF] PDF generated, size:', pdf.length, 'bytes')
 
       await browser.close()
-      console.log('[PDF] Browser closed.')
 
       const filename = `asset-details-${asset.assetTagId}-${new Date().toISOString().split('T')[0]}.pdf`
-      console.log('[PDF] Returning PDF response...')
       
       return new NextResponse(Buffer.from(pdf), {
         headers: {
@@ -532,81 +511,37 @@ export async function POST(
         },
       })
     } catch (error) {
-      console.error('[PDF] Error in browser operations:', error)
       // Safely close browser if it exists
       if (browser) {
         try {
           await browser.close()
         } catch (closeError) {
-          console.error('[PDF] Error closing browser:', closeError)
+          console.error('Error closing browser:', closeError)
         }
       }
       throw error
     }
   } catch (error) {
-    // Enhanced error logging with specific error type detection
+    // Enhanced error logging
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     const errorStack = error instanceof Error ? error.stack : undefined
     const errorName = error instanceof Error ? error.name : 'Error'
-    
-    // Check for database connection errors
-    const isDbError = 
-      error instanceof PrismaClientKnownRequestError ||
-      (error instanceof Error && (
-        error.message.includes('connection pool') ||
-        error.message.includes('Timed out fetching') ||
-        error.message.includes("Can't reach database server") ||
-        error.message.includes('P1001') ||
-        error.message.includes('P2024') ||
-        error.message.includes('P1017')
-      ))
-    
-    // Check for Puppeteer/Chromium errors
-    const isPuppeteerError = 
-      error instanceof Error && (
-        error.message.includes('Chromium') ||
-        error.message.includes('Puppeteer') ||
-        error.message.includes('browser') ||
-        error.message.includes('executablePath') ||
-        error.message.includes('brotli')
-      )
     
     console.error('Error generating PDF:', {
       name: errorName,
       message: errorMessage,
       stack: errorStack,
       isProduction: process.env.NODE_ENV === 'production',
-      isDbError,
-      isPuppeteerError,
-      prismaCode: error instanceof PrismaClientKnownRequestError ? error.code : undefined,
     })
-    
-    // Return specific error messages based on error type
-    let statusCode = 500
-    let errorDetails = errorMessage
-    
-    if (isDbError) {
-      statusCode = 503 // Service Unavailable
-      errorDetails = 'Database connection error. Please check your database configuration and try again.'
-    } else if (isPuppeteerError) {
-      statusCode = 500
-      if (errorMessage.includes('brotli') || errorMessage.includes('executablePath')) {
-        errorDetails = 'PDF generation service configuration error. Please ensure Chromium is properly installed.'
-      } else {
-        errorDetails = 'Failed to initialize PDF generation service. Please try again.'
-      }
-    }
     
     return NextResponse.json(
       { 
         error: 'Failed to generate PDF', 
-        message: errorMessage, // Always include actual error message for debugging
-        details: errorDetails,
-        errorType: isDbError ? 'database' : isPuppeteerError ? 'puppeteer' : 'unknown',
-        // Include stack in both dev and production for debugging
-        ...(errorStack ? { stack: errorStack } : {})
+        details: errorMessage,
+        // Only include stack in development
+        ...(process.env.NODE_ENV === 'development' && errorStack ? { stack: errorStack } : {})
       },
-      { status: statusCode }
+      { status: 500 }
     )
   }
 }
