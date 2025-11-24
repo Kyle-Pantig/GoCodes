@@ -611,9 +611,11 @@ export async function POST(
     return NextResponse.json(
       { 
         error: 'Failed to generate PDF', 
+        message: errorMessage, // Always include actual error message for debugging
         details: errorDetails,
-        // Only include stack in development
-        ...(process.env.NODE_ENV === 'development' && errorStack ? { stack: errorStack } : {})
+        errorType: isDbError ? 'database' : isPuppeteerError ? 'puppeteer' : 'unknown',
+        // Include stack in both dev and production for debugging
+        ...(errorStack ? { stack: errorStack } : {})
       },
       { status: statusCode }
     )
