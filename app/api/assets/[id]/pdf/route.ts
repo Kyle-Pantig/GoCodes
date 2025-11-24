@@ -416,7 +416,7 @@ export async function POST(
     } catch (browserError) {
       const browserErrorMessage = browserError instanceof Error ? browserError.message : 'Unknown browser launch error'
       const browserErrorStack = browserError instanceof Error ? browserError.stack : undefined
-      console.error('Failed to launch browser:', {
+      console.error('Failed to launch browser', {
         message: browserErrorMessage,
         stack: browserErrorStack,
         isVercel,
