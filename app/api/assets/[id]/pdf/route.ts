@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import puppeteer from 'puppeteer-core'
-import chromium from '@sparticuz/chromium'
+import chromium from '@sparticuz/chromium-min'
 import { prisma } from '@/lib/prisma'
 import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
+
+// Cache Chromium executable path to avoid re-downloading on subsequent requests
+let cachedExecutablePath: string | null = null
 
 // Format utilities
 const formatDate = (date: string | Date | null | undefined) => {
@@ -383,12 +386,19 @@ export async function POST(
       
       if (isVercel) {
         try {
-          executablePath = await chromium.executablePath()
-          console.log('Chromium executable path obtained:', executablePath ? 'Yes' : 'No')
+          // Use cached path if available, otherwise get it and cache it
+          if (cachedExecutablePath) {
+            executablePath = cachedExecutablePath
+            console.log('Using cached Chromium executable path')
+          } else {
+            executablePath = await chromium.executablePath()
+            cachedExecutablePath = executablePath
+            console.log('Chromium executable path obtained and cached:', executablePath ? 'Yes' : 'No')
+          }
         } catch (chromiumError) {
           const chromiumErrorMsg = chromiumError instanceof Error ? chromiumError.message : 'Unknown error'
           console.error('Failed to get Chromium executable path:', chromiumErrorMsg)
-          throw new Error(`Chromium executable path failed: ${chromiumErrorMsg}. Make sure @sparticuz/chromium is properly installed.`)
+          throw new Error(`Chromium executable path failed: ${chromiumErrorMsg}. Make sure @sparticuz/chromium-min is properly installed.`)
         }
       } else {
         executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined
