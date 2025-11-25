@@ -50,6 +50,37 @@ interface ScannedAsset extends Asset {
   scannedAt: Date
 }
 
+// Helper function to get status badge with colors
+const getStatusBadge = (status: string | null) => {
+  if (!status) return null
+  const statusLC = status.toLowerCase()
+  let statusVariant: 'default' | 'secondary' | 'destructive' | 'outline' = 'outline'
+  let statusColor = ''
+  
+  if (statusLC === 'active' || statusLC === 'available') {
+    statusVariant = 'default'
+    statusColor = 'bg-green-500'
+  } else if (statusLC === 'checked out' || statusLC === 'in use') {
+    statusVariant = 'destructive'
+    statusColor = 'bg-blue-500'
+  } else if (statusLC === 'leased') {
+    statusVariant = 'secondary'
+    statusColor = 'bg-yellow-500'
+  } else if (statusLC === 'inactive' || statusLC === 'unavailable') {
+    statusVariant = 'secondary'
+    statusColor = 'bg-gray-500'
+  } else if (statusLC === 'maintenance' || statusLC === 'repair') {
+    statusColor = 'bg-red-600 text-white'
+  } else if (statusLC === 'lost' || statusLC === 'missing') {
+    statusVariant = 'destructive'
+    statusColor = 'bg-orange-500'
+  } else if (statusLC === 'disposed' || statusLC === 'disposal') {
+    statusVariant = 'secondary'
+    statusColor = 'bg-purple-500'
+  }
+  
+  return <Badge variant={statusVariant} className={statusColor}>{status}</Badge>
+}
 
 export default function AuditPage() {
   const queryClient = useQueryClient()
@@ -697,7 +728,7 @@ export default function AuditPage() {
                           {asset.subCategory?.name && ` - ${asset.subCategory.name}`}
                         </div>
                       </div>
-                      <Badge variant="outline">{asset.status || 'Available'}</Badge>
+                      {getStatusBadge(asset.status || 'Available')}
                     </div>
                   </div>
                 ))
@@ -805,11 +836,7 @@ export default function AuditPage() {
                                 <span className="font-mono font-semibold text-sm text-foreground">
                                   {asset.assetTagId}
                                 </span>
-                                {asset.status && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {asset.status}
-                                  </Badge>
-                                )}
+                                {getStatusBadge(asset.status)}
                               </div>
                               <p className="text-sm text-foreground font-medium line-clamp-1">
                                 {asset.description}
@@ -922,7 +949,7 @@ export default function AuditPage() {
                         <div className="text-xs font-medium text-muted-foreground mb-1">
                           Status
                         </div>
-                        <Badge variant="outline">{selectedAsset.status}</Badge>
+                        {getStatusBadge(selectedAsset.status)}
                       </div>
                     )}
                     {selectedAsset.location && (

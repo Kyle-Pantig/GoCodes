@@ -87,16 +87,17 @@ interface CheckinAsset extends Asset {
 
 // Helper function to get status badge with colors (for Checked out status on checkin page)
 const getStatusBadge = (status: string | null) => {
-  if (!status) return null
-  const statusLC = status.toLowerCase()
+  // Checkin page only shows Checked out assets, so always show blue badge
+  const statusToShow = status || 'Checked out'
+  const statusLC = statusToShow.toLowerCase()
   
-  // Show blue badge for Checked out status (checkin page only handles checked out assets)
+  // Show blue badge for Checked out status
   if (statusLC === 'checked out' || statusLC === 'in use') {
-    return <Badge variant="destructive" className="bg-blue-500">{status}</Badge>
+    return <Badge variant="destructive" className="bg-blue-500">{statusToShow}</Badge>
   }
   
-  // For any other status (shouldn't happen for checkin, but just in case)
-  return <Badge variant="outline">{status}</Badge>
+  // Fallback (shouldn't happen on checkin page, but just in case)
+  return <Badge variant="outline">{statusToShow}</Badge>
 }
 
 function CheckinPageContent() {
@@ -943,7 +944,7 @@ function CheckinPageContent() {
                               {asset.subCategory?.name && ` - ${asset.subCategory.name}`}
                             </div>
                           </div>
-                          <Badge variant="outline">{asset.status || 'Available'}</Badge>
+                          {getStatusBadge(asset.status || 'Checked out')}
                         </div>
                       </div>
                     ))

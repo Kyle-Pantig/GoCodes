@@ -68,6 +68,38 @@ interface AccountabilityAsset extends Asset {
   remarks?: string
 }
 
+// Helper function to get status badge with colors
+const getStatusBadge = (status: string | null) => {
+  if (!status) return null
+  const statusLC = status.toLowerCase()
+  let statusVariant: 'default' | 'secondary' | 'destructive' | 'outline' = 'outline'
+  let statusColor = ''
+  
+  if (statusLC === 'active' || statusLC === 'available') {
+    statusVariant = 'default'
+    statusColor = 'bg-green-500'
+  } else if (statusLC === 'checked out' || statusLC === 'in use') {
+    statusVariant = 'destructive'
+    statusColor = 'bg-blue-500'
+  } else if (statusLC === 'leased') {
+    statusVariant = 'secondary'
+    statusColor = 'bg-yellow-500'
+  } else if (statusLC === 'inactive' || statusLC === 'unavailable') {
+    statusVariant = 'secondary'
+    statusColor = 'bg-gray-500'
+  } else if (statusLC === 'maintenance' || statusLC === 'repair') {
+    statusColor = 'bg-red-600 text-white'
+  } else if (statusLC === 'lost' || statusLC === 'missing') {
+    statusVariant = 'destructive'
+    statusColor = 'bg-orange-500'
+  } else if (statusLC === 'disposed' || statusLC === 'disposal') {
+    statusVariant = 'secondary'
+    statusColor = 'bg-purple-500'
+  }
+  
+  return <Badge variant={statusVariant} className={statusColor}>{status}</Badge>
+}
+
 interface ReplacementItem {
   id: string
   assetDescription: string
@@ -1369,7 +1401,7 @@ export default function AccountabilityFormPage() {
                                   {asset.subCategory?.name && ` - ${asset.subCategory.name}`}
                                 </div>
                               </div>
-                              <Badge variant="outline">{asset.status || 'Available'}</Badge>
+                              {getStatusBadge(asset.status || null)}
                             </div>
                           </div>
                         ))

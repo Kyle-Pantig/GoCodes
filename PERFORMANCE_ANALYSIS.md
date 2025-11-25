@@ -3,8 +3,8 @@
 ## 🔍 Current Status
 
 ### ✅ Already Optimized
-- **Dashboard Stats** - Redis cached (15s TTL), RSC
-- **Activities** - Redis cached (10s TTL), RSC  
+- **Dashboard Stats** - Redis cached (15s TTL), RSC (Server Component)
+- **Activities** - Redis cached (10s TTL), RSC (Server Component)
 - **Categories/Locations/Sites/Departments** - In-memory cached (10min TTL)
 - **User Profile** - React Query with shared cache (`useUserProfile`)
 - **Company Info** - React Query cached (5min TTL)
@@ -79,13 +79,33 @@
 
 ---
 
-## 🟡 MEDIUM PRIORITY - Convert to RSC
+## 🟡 MEDIUM PRIORITY - RSC Status
 
-### Pages Currently Client Components (Fetch via API)
+### Pages Using RSC (Server Components) ✅
 
-> **⚠️ NOTE:** RSC conversion is only recommended for pages with minimal client-side interactivity. Pages with heavy interactivity (sorting, filtering, real-time search, complex state) should remain client components for better performance.
+#### 1. **`/app/dashboard/page.tsx`** ✅ **RSC IMPLEMENTED**
+**Status:** Server Component with RSC
+**Implementation:**
+- Server-side data fetching for dashboard stats
+- Redis cached (15s TTL)
+- Client component (`dashboard-client.tsx`) receives initialData via props
+- React Query uses initialData for client-side updates
 
-#### 1. **`/app/assets/page.tsx`** ❌ **NOT RECOMMENDED**
+#### 2. **`/app/dashboard/activity/page.tsx`** ✅ **RSC IMPLEMENTED**
+**Status:** Server Component with RSC
+**Implementation:**
+- Server-side data fetching for activities
+- Redis cached (10s TTL)
+- Client component (`activity-client.tsx`) receives initialData via props
+- React Query uses initialData for client-side updates
+
+---
+
+### Pages That Should Remain Client Components ❌
+
+> **⚠️ NOTE:** These pages have heavy client-side interactivity and should NOT be converted to RSC. Converting them would make them slower as every interaction would require a server roundtrip.
+
+#### 1. **`/app/assets/page.tsx`** ❌ **NOT RECOMMENDED FOR RSC**
 **Current:** `'use client'`, fetches via `/api/assets`
 **Why NOT RSC:**
 - Heavy client-side interactivity (TanStack Table with sorting, filtering, column visibility)
@@ -97,12 +117,12 @@
 - **Converting to RSC would make it slower** - every interaction would require server roundtrip
 **Current Optimization:** ✅ Already optimized with Redis caching on API route
 
-#### 2. **`/app/lists/assets/page.tsx`** ❌ **NOT RECOMMENDED**
+#### 2. **`/app/lists/assets/page.tsx`** ❌ **NOT RECOMMENDED FOR RSC**
 **Current:** `'use client'`, fetches via `/api/assets`
 **Why NOT RSC:** Similar to `/app/assets/page.tsx` - heavy interactivity
 **Current Optimization:** ✅ Already optimized with Redis caching on API route
 
-#### 3. **`/app/lists/maintenances/page.tsx`** ❌ **NOT RECOMMENDED**
+#### 3. **`/app/lists/maintenances/page.tsx`** ❌ **NOT RECOMMENDED FOR RSC**
 **Current:** `'use client'`, fetches via API
 **Why NOT RSC:**
 - Uses TanStack Table with client-side sorting
@@ -112,7 +132,7 @@
 - **Converting to RSC would make it slower** - every sort/filter would require server roundtrip
 **Current Optimization:** ✅ Already optimized with Redis caching on API route
 
-#### 4. **`/app/employees/page.tsx`** ❌ **NOT RECOMMENDED**
+#### 4. **`/app/employees/page.tsx`** ❌ **NOT RECOMMENDED FOR RSC**
 **Current:** `'use client'`, fetches via `/api/employees`
 **Why NOT RSC:**
 - Uses TanStack Table with client-side sorting
@@ -123,7 +143,7 @@
 - **Converting to RSC would make it slower** - every interaction would require server roundtrip
 **Current Optimization:** ✅ Already optimized with Redis caching on API route
 
-#### 5. **`/app/forms/history/page.tsx`** ❌ **NOT RECOMMENDED**
+#### 5. **`/app/forms/history/page.tsx`** ❌ **NOT RECOMMENDED FOR RSC**
 **Current:** `'use client'`, fetches via `/api/forms/history`
 **Why NOT RSC:**
 - Real-time search with debouncing
@@ -160,12 +180,16 @@
 - `/api/forms/history/route.ts`
 - 5 stats routes
 
-### RSC Conversion Needed: **5 pages**
-- `/app/assets/page.tsx`
-- `/app/lists/assets/page.tsx`
-- `/app/lists/maintenances/page.tsx`
-- `/app/employees/page.tsx`
-- `/app/forms/history/page.tsx`
+### RSC Implementation Status: **2 pages using RSC** ✅
+- `/app/dashboard/page.tsx` ✅ RSC
+- `/app/dashboard/activity/page.tsx` ✅ RSC
+
+### Pages That Should Remain Client Components: **5 pages**
+- `/app/assets/page.tsx` ❌ (Heavy interactivity - NOT recommended for RSC)
+- `/app/lists/assets/page.tsx` ❌ (Heavy interactivity - NOT recommended for RSC)
+- `/app/lists/maintenances/page.tsx` ❌ (Heavy interactivity - NOT recommended for RSC)
+- `/app/employees/page.tsx` ❌ (Heavy interactivity - NOT recommended for RSC)
+- `/app/forms/history/page.tsx` ❌ (Heavy interactivity - NOT recommended for RSC)
 
 ### React Query: **Already Good** ✅
 - Most pages use React Query correctly
@@ -178,9 +202,9 @@
 
 1. **Phase 1:** Add Redis caching to `/api/assets/route.ts` (highest impact)
 2. **Phase 2:** Add Redis caching to `/api/assets/[id]/route.ts`
-3. **Phase 3:** Convert `/app/assets/page.tsx` to RSC
-4. **Phase 4:** Add Redis caching to remaining API routes
-5. **Phase 5:** Convert remaining pages to RSC
+3. **Phase 3:** Add Redis caching to remaining API routes (employees, forms/history, stats routes)
+4. **Phase 4:** Optimize React Query with prefetching and optimistic updates
+5. **Phase 5:** Consider additional RSC conversions only for pages with minimal interactivity
 
 ---
 

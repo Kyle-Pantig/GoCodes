@@ -81,18 +81,19 @@ interface CheckoutAsset extends Asset {
   newLocation?: string
 }
 
-// Helper function to get status badge with colors (only for Available status on checkout page)
+// Helper function to get status badge with colors (only for Available status)
 const getStatusBadge = (status: string | null) => {
-  if (!status) return null
-  const statusLC = status.toLowerCase()
+  // Checkout page only shows Available assets, so always show green badge
+  const statusToShow = status || 'Available'
+  const statusLC = statusToShow.toLowerCase()
   
-  // Only show green badge for Available status, others use default outline
+  // Show green badge for Available status
   if (statusLC === 'active' || statusLC === 'available') {
-    return <Badge variant="default" className="bg-green-500">{status}</Badge>
+    return <Badge variant="default" className="bg-green-500">{statusToShow}</Badge>
   }
   
-  // For any other status (shouldn't happen for checkout, but just in case)
-  return <Badge variant="outline">{status}</Badge>
+  // Fallback (shouldn't happen on checkout page, but just in case)
+  return <Badge variant="outline">{statusToShow}</Badge>
 }
 
 function CheckoutPageContent() {
@@ -878,7 +879,7 @@ function CheckoutPageContent() {
                               {asset.subCategory?.name && ` - ${asset.subCategory.name}`}
                             </div>
                           </div>
-                          <Badge variant="outline">{asset.status || 'Available'}</Badge>
+                          {getStatusBadge(asset.status || 'Available')}
                         </div>
                       </div>
                     ))
