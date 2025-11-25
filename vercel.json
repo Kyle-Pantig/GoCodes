@@ -11,6 +11,14 @@
       "maxDuration": 60,
       "memory": 2048
     },
+    "app/api/assets/return-form/pdf/route.ts": {
+      "maxDuration": 60,
+      "memory": 2048
+    },
+    "app/api/assets/accountability-form/pdf/route.ts": {
+      "maxDuration": 60,
+      "memory": 2048
+    },
     "app/dashboard/**/*.tsx": {
       "maxDuration": 30,
       "memory": 1024
