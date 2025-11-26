@@ -391,7 +391,10 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         // Feed data - Move, Reserve, Lease, Return, Dispose
         prisma.assetsMove.count(),
         prisma.assetsMove.findMany({
-          include: {
+          select: {
+            id: true,
+            moveDate: true,
+            moveType: true,
             asset: {
               select: {
                 id: true,
@@ -521,7 +524,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       recentMoves: recentMoves.map((move) => ({
         id: move.id,
         moveDate: move.moveDate.toISOString(),
-        newLocation: move.newLocation || null,
+        newLocation: move.moveType || null, // moveType indicates the type of move (Location Transfer, Employee Assignment, etc.)
         asset: move.asset,
         employeeUser: move.employeeUser || null,
       })),
