@@ -301,13 +301,69 @@ function FormsHistoryPageContent() {
       }
       return response.json()
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["forms-history"] })
+    onMutate: async ({ id, type }) => {
+      // Cancel any outgoing refetches to avoid overwriting optimistic update
+      await queryClient.cancelQueries({ queryKey: ["forms-history", activeTab, searchQuery, searchType, page, pageSize] })
+
+      // Snapshot the previous value
+      const previousData = queryClient.getQueryData<{
+        returnForms?: ReturnForm[]
+        accountabilityForms?: AccountabilityForm[]
+        pagination: PaginationInfo
+        counts?: FormCounts
+      }>(["forms-history", activeTab, searchQuery, searchType, page, pageSize])
+
+      // Optimistically update the cache
+      if (previousData) {
+        const updatedData = { ...previousData }
+        if (type === "return" && updatedData.returnForms) {
+          updatedData.returnForms = updatedData.returnForms.filter(form => form.id !== id)
+          updatedData.pagination = {
+            ...updatedData.pagination,
+            total: updatedData.pagination.total - 1,
+          }
+          if (updatedData.counts) {
+            updatedData.counts.returnForms = Math.max(0, updatedData.counts.returnForms - 1)
+          }
+        } else if (type === "accountability" && updatedData.accountabilityForms) {
+          updatedData.accountabilityForms = updatedData.accountabilityForms.filter(form => form.id !== id)
+          updatedData.pagination = {
+            ...updatedData.pagination,
+            total: updatedData.pagination.total - 1,
+          }
+          if (updatedData.counts) {
+            updatedData.counts.accountabilityForms = Math.max(0, updatedData.counts.accountabilityForms - 1)
+          }
+        }
+
+        queryClient.setQueryData(
+          ["forms-history", activeTab, searchQuery, searchType, page, pageSize],
+          updatedData
+        )
+      }
+
+      return { previousData }
+    },
+    onSuccess: async () => {
+      // Don't immediately refetch - let the optimistic update persist
+      // Only invalidate to mark queries as stale for background refetch
+      // This prevents the "flash" of old data before server confirms deletion
+      queryClient.invalidateQueries({ 
+        queryKey: ["forms-history"],
+        refetchType: 'none' // Don't refetch immediately, let optimistic update stay
+      })
       toast.success("Form deleted successfully")
       setDeleteDialogOpen(false)
       setFormToDelete(null)
     },
-    onError: (error: Error) => {
+    onError: (error: Error, variables, context) => {
+      // Rollback optimistic update on error
+      if (context?.previousData) {
+        queryClient.setQueryData(
+          ["forms-history", activeTab, searchQuery, searchType, page, pageSize],
+          context.previousData
+        )
+      }
       toast.error(error.message || "Failed to delete form")
     },
   })

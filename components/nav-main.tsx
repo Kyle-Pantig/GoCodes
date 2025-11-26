@@ -72,35 +72,35 @@ export function NavMain({
 
           // If has sub-items, render as collapsible
           return (
-            <Collapsible
-              key={item.title}
-              asChild
-              defaultOpen={item.isActive || isItemActive(item)}
-              className="group/collapsible"
-            >
-              <SidebarMenuItem suppressHydrationWarning>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuButton tooltip={item.title} suppressHydrationWarning>
-                    {item.icon && <item.icon />}
-                    <span>{item.title}</span>
-                    <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                  </SidebarMenuButton>
-                </CollapsibleTrigger>
-                <CollapsibleContent suppressHydrationWarning>
-                  <SidebarMenuSub>
+          <Collapsible
+            key={item.title}
+            asChild
+            defaultOpen={item.isActive || isItemActive(item)}
+            className="group/collapsible"
+          >
+            <SidebarMenuItem suppressHydrationWarning>
+              <CollapsibleTrigger asChild>
+                <SidebarMenuButton tooltip={item.title} suppressHydrationWarning>
+                  {item.icon && <item.icon />}
+                  <span>{item.title}</span>
+                  <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                </SidebarMenuButton>
+              </CollapsibleTrigger>
+              <CollapsibleContent suppressHydrationWarning>
+                <SidebarMenuSub>
                     {item.items.map((subItem) => (
-                      <SidebarMenuSubItem key={subItem.title}>
-                        <SidebarMenuSubButton asChild>
-                          <Link href={subItem.url}>
-                            <span>{subItem.title}</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </SidebarMenuItem>
-            </Collapsible>
+                    <SidebarMenuSubItem key={subItem.title}>
+                      <SidebarMenuSubButton asChild>
+                        <Link href={subItem.url}>
+                          <span>{subItem.title}</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  ))}
+                </SidebarMenuSub>
+              </CollapsibleContent>
+            </SidebarMenuItem>
+          </Collapsible>
           )
         })}
       </SidebarMenu>
