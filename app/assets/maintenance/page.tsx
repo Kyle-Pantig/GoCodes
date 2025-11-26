@@ -5,8 +5,10 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { useForm, Controller, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { XIcon, History, QrCode } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { QRScannerDialog } from '@/components/qr-scanner-dialog'
 import { QRCodeDisplayDialog } from '@/components/qr-code-display-dialog'
@@ -114,6 +116,7 @@ function MaintenancePageContent() {
   const router = useRouter()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
+  const isMobile = useIsMobile()
   
   const canViewAssets = hasPermission('canViewAssets')
   const canManageMaintenance = hasPermission('canManageMaintenance')
@@ -129,6 +132,7 @@ function MaintenancePageContent() {
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
   const [loadingAssets, setLoadingAssets] = useState<Set<string>>(new Set())
   const hasProcessedUrlParams = useRef(false)
+  const isInitialMount = useRef(true)
 
   const form = useForm<MaintenanceFormData>({
     resolver: zodResolver(maintenanceSchema),
@@ -641,8 +645,23 @@ function MaintenancePageContent() {
     }
   }
 
+  // Track initial mount for animations
+  useEffect(() => {
+    if (isInitialMount.current && maintenanceStats?.recentMaintenances && maintenanceStats.recentMaintenances.length > 0) {
+      const timer = setTimeout(() => {
+        isInitialMount.current = false
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [maintenanceStats?.recentMaintenances])
+
   return (
-    <div className={isFormDirty ? "pb-16" : ""}>
+    <motion.div 
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className={isFormDirty ? "pb-16" : ""}
+    >
       <div>
         <h1 className="text-3xl font-bold">Maintenance</h1>
         <p className="text-muted-foreground">
@@ -651,7 +670,12 @@ function MaintenancePageContent() {
       </div>
 
       {/* Recent History */}
-      <div className="mt-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+        className="mt-6"
+      >
         <Card className="flex flex-col py-0 gap-2">
           <CardHeader className="p-4 pb-2">
             <div className="flex items-center gap-2">
@@ -701,8 +725,24 @@ function MaintenancePageContent() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {maintenanceStats.recentMaintenances.map((maintenance) => (
-                      <TableRow key={maintenance.id} className="h-10">
+                    <AnimatePresence mode='popLayout'>
+                      {maintenanceStats.recentMaintenances.map((maintenance, index) => (
+                        <motion.tr
+                          key={maintenance.id}
+                          layout
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -20 }}
+                          transition={{ 
+                            duration: 0.2, 
+                            delay: isInitialMount.current ? index * 0.05 : 0,
+                            layout: {
+                              duration: 0.15,
+                              ease: [0.4, 0, 0.2, 1]
+                            }
+                          }}
+                          className="h-10 border-b"
+                        >
                         <TableCell className="py-1.5">
                           <Badge 
                             variant="outline" 
@@ -735,8 +775,9 @@ function MaintenancePageContent() {
                         <TableCell className="py-1.5 text-xs text-muted-foreground text-right">
                           {getTimeAgo(maintenance.createdAt)}
                         </TableCell>
-                      </TableRow>
+                        </motion.tr>
                     ))}
+                    </AnimatePresence>
                   </TableBody>
                   </Table>
                 </div>
@@ -746,10 +787,15 @@ function MaintenancePageContent() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </motion.div>
 
       <form onSubmit={handleSubmit} className="space-y-6 mt-6">
         {/* Asset Selection Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+        >
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Asset Selection</CardTitle>
@@ -805,8 +851,11 @@ function MaintenancePageContent() {
                         </div>
                       ) : (
                         assetSuggestions.map((asset, index) => (
-                          <div
+                          <motion.div
                             key={asset.id}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.2, delay: index * 0.05 }}
                             className={cn(
                               "px-4 py-3 cursor-pointer hover:bg-accent",
                               index === selectedSuggestionIndex && "bg-accent"
@@ -823,7 +872,7 @@ function MaintenancePageContent() {
                               </div>
                               {getStatusBadge(asset.status || 'Available')}
                             </div>
-                          </div>
+                          </motion.div>
                         ))
                       )}
                     </div>
@@ -842,11 +891,16 @@ function MaintenancePageContent() {
               )}
             </div>
             {/* Loading state */}
+            <AnimatePresence>
             {loadingAssets.size > 0 && (
               <div className="mt-2 space-y-2">
                 {Array.from(loadingAssets).map((code) => (
-                  <div
+                    <motion.div
                     key={`loading-${code}`}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      transition={{ duration: 0.2 }}
                     className="flex items-center justify-between gap-2 p-3 border rounded-md bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"
                   >
                     <div className="flex-1 min-w-0">
@@ -875,13 +929,21 @@ function MaintenancePageContent() {
                     >
                       <XIcon className="h-4 w-4" />
                     </Button>
-                  </div>
+                    </motion.div>
                 ))}
               </div>
             )}
+            </AnimatePresence>
             {/* Selected asset */}
+            <AnimatePresence>
             {selectedAsset && (
-              <div className="mt-2 p-3 border rounded-md bg-muted/50">
+                <motion.div
+                  initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                  animate={{ opacity: 1, x: 0, scale: 1 }}
+                  exit={{ opacity: 0, x: 20, scale: 0.95 }}
+                  transition={{ duration: 0.3 }}
+                  className="mt-2 p-3 border rounded-md bg-muted/50"
+                >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{selectedAsset.assetTagId}</Badge>
@@ -904,12 +966,19 @@ function MaintenancePageContent() {
                     </Button>
                   </div>
                 </div>
-              </div>
+                </motion.div>
             )}
+            </AnimatePresence>
           </CardContent>
         </Card>
+        </motion.div>
 
         {/* Maintenance Form */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.3 }}
+        >
         <Card>
           <CardHeader>
             <CardTitle>Create Maintenance Record</CardTitle>
@@ -1130,20 +1199,27 @@ function MaintenancePageContent() {
       </div>
           </CardContent>
         </Card>
+        </motion.div>
 
       </form>
 
       {/* Floating Action Buttons - Only show when form has changes */}
+      <AnimatePresence>
       {isFormDirty && canViewAssets && canManageMaintenance && (
-        <div 
+          <motion.div 
+            initial={{ opacity: 0, y: 20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 20, x: '-50%' }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
           className="fixed bottom-6 z-50 flex items-center justify-center gap-3"
           style={{
-            left: !sidebarOpen 
+              left: isMobile 
+                ? '50%'
+                : !sidebarOpen 
               ? '50%'
               : sidebarState === 'collapsed' 
                 ? 'calc(var(--sidebar-width-icon, 3rem) + ((100vw - var(--sidebar-width-icon, 3rem)) / 2))'
-                : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))',
-            transform: 'translateX(-50%)'
+                    : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))'
           }}
         >
           <Button
@@ -1176,8 +1252,9 @@ function MaintenancePageContent() {
               'Save'
             )}
           </Button>
-        </div>
+          </motion.div>
       )}
+      </AnimatePresence>
 
       {/* QR Code Scanner Dialog */}
       <QRScannerDialog
@@ -1196,7 +1273,7 @@ function MaintenancePageContent() {
         onOpenChange={setQrDisplayDialogOpen}
         assetTagId={selectedAssetTagForQR}
       />
-    </div>
+    </motion.div>
   )
 }
 

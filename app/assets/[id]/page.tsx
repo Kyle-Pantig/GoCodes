@@ -8,8 +8,10 @@ import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { ArrowLeft, Sparkles, ImageIcon, Upload, FileText, PlusIcon, Eye, X, Trash2 } from "lucide-react"
 import Image from "next/image"
+import { motion, AnimatePresence } from "framer-motion"
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { toast } from 'sonner'
 import { useCategories, useSubCategories, useCreateCategory, useCreateSubCategory } from "@/hooks/use-categories"
@@ -118,6 +120,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   const queryClient = useQueryClient()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
+  const isMobile = useIsMobile()
   const canEditAssets = hasPermission('canEditAssets')
   const canManageSetup = hasPermission('canManageSetup')
   const [, startTransition] = useTransition()
@@ -235,19 +238,19 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   }
 
   // Fetch history logs, maintenance, and reserve data for read-only tabs
-  const { data: historyData } = useQuery({
+  const { data: historyData, isLoading: isLoadingHistory } = useQuery({
     queryKey: ['asset-history', resolvedParams.id],
     queryFn: () => fetchHistoryLogs(resolvedParams.id),
     enabled: !!resolvedParams.id && activeTab === 'history',
   })
 
-  const { data: maintenanceData } = useQuery({
+  const { data: maintenanceData, isLoading: isLoadingMaintenance } = useQuery({
     queryKey: ['asset-maintenance', resolvedParams.id],
     queryFn: () => fetchMaintenance(resolvedParams.id),
     enabled: !!resolvedParams.id && activeTab === 'maintenance',
   })
 
-  const { data: reserveData } = useQuery({
+  const { data: reserveData, isLoading: isLoadingReserve } = useQuery({
     queryKey: ['asset-reserve', resolvedParams.id],
     queryFn: () => fetchReserve(resolvedParams.id),
     enabled: !!resolvedParams.id && activeTab === 'reserve',
@@ -1146,11 +1149,9 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   // Show loading state while permissions or asset are being fetched
   if (permissionsLoading || assetLoading) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
-          <Spinner className="h-8 w-8" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <Spinner className="h-6 w-6" />
+        <p className="text-sm text-muted-foreground">Loading asset details...</p>
       </div>
     )
   }
@@ -1337,7 +1338,12 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   }
 
   return (
-    <div className="space-y-6 pb-16">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="space-y-6 pb-16"
+    >
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
@@ -1536,8 +1542,17 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
       <div className="min-h-[400px]">
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
         <div className="grid gap-2.5 md:grid-cols-2">
+          <AnimatePresence mode="wait">
           {/* Details Tab - Basic Information & Asset Details */}
           {activeTab === 'details' && (
+          <motion.div
+            key="details"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="md:col-span-2"
+          >
           <Card className="md:col-span-2">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Basic Information & Asset Details</CardTitle>
@@ -1855,10 +1870,19 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
               </div>
             </CardContent>
           </Card>
+          </motion.div>
           )}
 
           {/* Photos Tab */}
           {activeTab === 'photos' && (
+          <motion.div
+            key="photos"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="md:col-span-2"
+          >
           <>
           <Card className="md:col-span-2">
             <CardHeader className="pb-3">
@@ -2053,10 +2077,19 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
             </CardContent>
           </Card>
           </>
+          </motion.div>
           )}
 
           {/* Docs Tab */}
           {activeTab === 'docs' && (
+          <motion.div
+            key="docs"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="md:col-span-2"
+          >
           <>
           {/* Asset Documents */}
           <Card className="md:col-span-2">
@@ -2350,10 +2383,19 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
             </CardContent>
           </Card>
           </>
+          </motion.div>
           )}
 
           {/* Purchase & Additional Information - Part of Details Tab */}
           {activeTab === 'details' && (
+          <motion.div
+            key="details-purchase"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="md:col-span-2"
+          >
           <>
           <Card className="md:col-span-2">
             <CardHeader className="pb-3">
@@ -2594,10 +2636,19 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
             </CardContent>
           </Card>
           </>
+          </motion.div>
           )}
 
           {/* Depreciation Tab */}
           {activeTab === 'depreciation' && (
+          <motion.div
+            key="depreciation"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="md:col-span-2"
+          >
           <>
             <Card className="md:col-span-2">
               <CardHeader className="pb-3">
@@ -2725,18 +2776,34 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
               </CardContent>
             </Card>
           </>
+          </motion.div>
           )}
-
+          </AnimatePresence>
         </div>
       </form>
         {/* Audit Tab */}
+        <AnimatePresence mode="wait">
         {activeTab === 'audit' && (
+        <motion.div
+          key="audit"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
           <div className="space-y-4">
-            {!asset?.auditHistory || asset.auditHistory.length === 0 ? (
+            {assetLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex flex-col items-center gap-3">
+                  <Spinner className="h-8 w-8" />
+                  <p className="text-sm text-muted-foreground">Loading audit records...</p>
+                </div>
+              </div>
+            ) : !asset?.auditHistory || asset.auditHistory.length === 0 ? (
               <p className="text-sm text-muted-foreground">No audit records found.</p>
             ) : (
               <div className="min-w-full">
-                <ScrollArea className="h-[500px] relative">
+                <ScrollArea className="h-[500px] relative border">
                   <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
                   <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
                     <Table className="border-b">
@@ -2806,16 +2873,33 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
               </div>
             )}
           </div>
+        </motion.div>
         )}
+        </AnimatePresence>
 
         {/* Maintenance Tab */}
+        <AnimatePresence mode="wait">
         {activeTab === 'maintenance' && (
+        <motion.div
+          key="maintenance"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
           <div className="space-y-4">
-            {maintenances.length === 0 ? (
+            {isLoadingMaintenance ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex flex-col items-center gap-3">
+                  <Spinner className="h-8 w-8" />
+                  <p className="text-sm text-muted-foreground">Loading maintenance records...</p>
+                </div>
+              </div>
+            ) : maintenances.length === 0 ? (
               <p className="text-sm text-muted-foreground">No maintenance records found.</p>
             ) : (
               <div className="min-w-full">
-                <ScrollArea className="h-[500px] relative">
+                <ScrollArea className="h-[500px] relative border">
                   <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
                   <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
                     <Table className="border-b">
@@ -2905,16 +2989,33 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
               </div>
             )}
           </div>
+        </motion.div>
         )}
+        </AnimatePresence>
 
         {/* Reserve Tab */}
+        <AnimatePresence mode="wait">
         {activeTab === 'reserve' && (
+        <motion.div
+          key="reserve"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
           <div className="space-y-4">
-            {reservations.length === 0 ? (
+            {isLoadingReserve ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex flex-col items-center gap-3">
+                  <Spinner className="h-8 w-8" />
+                  <p className="text-sm text-muted-foreground">Loading reservations...</p>
+                </div>
+              </div>
+            ) : reservations.length === 0 ? (
               <p className="text-sm text-muted-foreground">No reservations found.</p>
             ) : (
               <div className="min-w-full">
-                <ScrollArea className="h-[500px] relative">
+                <ScrollArea className="h-[500px] relative border">
                   <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
                   <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
                     <Table className="border-b">
@@ -3004,16 +3105,33 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
               </div>
             )}
           </div>
+        </motion.div>
         )}
+        </AnimatePresence>
 
         {/* History Tab */}
+        <AnimatePresence mode="wait">
         {activeTab === 'history' && (
+        <motion.div
+          key="history"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
           <div className="space-y-4">
-            {historyLogs.length === 0 ? (
+            {isLoadingHistory ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex flex-col items-center gap-3">
+                  <Spinner className="h-8 w-8" />
+                  <p className="text-sm text-muted-foreground">Loading history logs...</p>
+                </div>
+              </div>
+            ) : historyLogs.length === 0 ? (
               <p className="text-sm text-muted-foreground">No history logs found.</p>
             ) : (
               <div className="min-w-full">
-                <ScrollArea className="h-[500px] relative">
+                <ScrollArea className="h-[500px] relative border">
                   <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
                   <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
                     <Table className="border-b">
@@ -3098,54 +3216,63 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
               </div>
             )}
           </div>
+        </motion.div>
         )}
+        </AnimatePresence>
       </div>
 
       {/* Floating Action Buttons */}
-      {isFormDirty && (
-        <div 
-          className="fixed bottom-6 z-50 flex items-center justify-center gap-3"
-          style={{
-            left: !sidebarOpen 
-              ? '50%'
-              : sidebarState === 'collapsed' 
-                ? 'calc(var(--sidebar-width-icon, 3rem) + ((100vw - var(--sidebar-width-icon, 3rem)) / 2))'
-                : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))',
-            transform: 'translateX(-50%)'
-          }}
-        >
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            onClick={clearForm}
-            className="min-w-[120px] bg-accent!"
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            size="lg"
-            onClick={() => {
-              const formElement = document.querySelector('form') as HTMLFormElement
-              if (formElement) {
-                formElement.requestSubmit()
-              }
+      <AnimatePresence>
+        {isFormDirty && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 20, x: '-50%' }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="fixed bottom-6 z-50 flex items-center justify-center gap-3"
+            style={{
+              left: isMobile 
+                ? '50%'
+                : !sidebarOpen 
+                  ? '50%'
+                  : sidebarState === 'collapsed' 
+                    ? 'calc(var(--sidebar-width-icon, 3rem) + ((100vw - var(--sidebar-width-icon, 3rem)) / 2))'
+                    : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))'
             }}
-            disabled={loading || uploadingImages || uploadingDocuments || isCheckingAssetTag}
-            className="min-w-[120px]"
           >
-            {loading || uploadingImages || uploadingDocuments ? (
-              <>
-                <Spinner className="mr-2 h-4 w-4" />
-                Saving...
-              </>
-            ) : (
-              'Save'
-            )}
-          </Button>
-        </div>
-      )}
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={clearForm}
+              className="min-w-[120px] bg-accent!"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="lg"
+              onClick={() => {
+                const formElement = document.querySelector('form') as HTMLFormElement
+                if (formElement) {
+                  formElement.requestSubmit()
+                }
+              }}
+              disabled={loading || uploadingImages || uploadingDocuments || isCheckingAssetTag}
+              className="min-w-[120px]"
+            >
+              {loading || uploadingImages || uploadingDocuments ? (
+                <>
+                  <Spinner className="mr-2 h-4 w-4" />
+                  Saving...
+                </>
+              ) : (
+                'Save'
+              )}
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Dialogs */}
       <MediaBrowserDialog
@@ -3291,7 +3418,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
         selectedCategoryName={categories.find(c => c.id === selectedCategory)?.name}
         isLoading={createSubCategoryMutation.isPending}
       />
-    </div>
+    </motion.div>
   )
 }
 

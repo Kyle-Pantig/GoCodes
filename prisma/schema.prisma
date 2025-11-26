@@ -69,6 +69,7 @@ model Assets {
   maintenances           AssetsMaintenance[]
   auditHistory           AssetsAuditHistory[]
   historyLogs            AssetsHistoryLogs[]
+  schedules              AssetSchedule[]
 
   @@index([isDeleted])
   @@index([status])
@@ -580,6 +581,39 @@ model CompanyInfo {
   updatedAt         DateTime @updatedAt @map("updated_at")
   
   @@map("company_info")
+}
+
+model AssetSchedule {
+  id                String   @id @default(uuid())
+  assetId           String   @map("asset_id")
+  asset             Assets   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  
+  scheduleType      String   @map("schedule_type") @db.VarChar(50) // maintenance, dispose, lease_return, lease, reserve, move, checkin, checkout
+  scheduledDate     DateTime @map("scheduled_date") @db.Date
+  scheduledTime     String?  @map("scheduled_time") @db.VarChar(10) // HH:mm format, optional
+  title             String   @map("title") @db.VarChar(255)
+  notes             String?  @map("notes") @db.Text
+  status            String   @default("pending") @map("status") @db.VarChar(50) // pending, completed, cancelled
+  
+  // Additional fields for specific schedule types
+  assignedTo        String?  @map("assigned_to") @db.VarChar(255) // For checkout/reserve
+  location          String?  @map("location") @db.VarChar(255) // For move
+  employeeId        String?  @map("employee_id") // For checkout/checkin
+  
+  // Metadata
+  createdBy         String?  @map("created_by") @db.VarChar(255) // User ID who created the schedule
+  completedAt       DateTime? @map("completed_at")
+  cancelledAt       DateTime? @map("cancelled_at")
+  
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  
+  @@index([assetId])
+  @@index([scheduledDate])
+  @@index([scheduleType])
+  @@index([status])
+  @@index([assetId, scheduledDate])
+  @@map("asset_schedules")
 }
 
 

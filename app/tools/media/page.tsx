@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useIsMobile } from '@/hooks/use-mobile'
 import Image from 'next/image'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -91,6 +92,7 @@ function MediaPageContent() {
   // Initialize activeTab from URL params, default to 'media'
   const tabFromUrl = searchParams.get('tab') as 'media' | 'documents' | null
   const [activeTab, setActiveTab] = useState<'media' | 'documents'>(tabFromUrl === 'documents' ? 'documents' : 'media')
+  const [reloadKey, setReloadKey] = useState(0) // Key to trigger re-animation on reload
 
   // Sync activeTab with URL params when URL changes (e.g., back/forward navigation)
   useEffect(() => {
@@ -351,12 +353,13 @@ function MediaPageContent() {
   })
 
   const handleRefresh = () => {
+    // Trigger reload animation by updating key
+    setReloadKey(prev => prev + 1)
+    
     if (activeTab === 'media') {
-    queryClient.invalidateQueries({ queryKey: ['assets', 'media'] })
     refetch()
     toast.success('Media refreshed')
     } else {
-      queryClient.invalidateQueries({ queryKey: ['assets', 'documents'] })
       refetchDocuments()
       toast.success('Documents refreshed')
     }
@@ -1007,35 +1010,53 @@ function MediaPageContent() {
   }
 
   return (
-    <>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
       <div className="mb-6 space-y-4">
         {/* Tabs */}
-        <div className="flex items-center gap-2 border-b">
+        <div className="flex items-center gap-2 border-b relative">
           <button
             onClick={() => setActiveTab('media')}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+            className={`px-4 py-2 text-sm font-medium transition-colors relative z-10 ${
               activeTab === 'media'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'text-primary'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             <div className="flex items-center gap-2">
               <ImageIcon className="h-4 w-4" />
               Media
             </div>
+            {activeTab === 'media' && (
+              <motion.div
+                layoutId="activeTab"
+                className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+              />
+            )}
           </button>
           <button
             onClick={() => setActiveTab('documents')}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+            className={`px-4 py-2 text-sm font-medium transition-colors relative z-10 ${
               activeTab === 'documents'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'text-primary'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
               Documents
             </div>
+            {activeTab === 'documents' && (
+              <motion.div
+                layoutId="activeTab"
+                className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+              />
+            )}
           </button>
         </div>
 
@@ -1270,48 +1291,24 @@ function MediaPageContent() {
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger>Grid</DropdownMenuSubTrigger>
                       <DropdownMenuSubContent>
+                        <AnimatePresence>
+                          {[4, 5, 6, 7, 8, 9, 10].map((cols, index) => (
+                            <motion.div
+                              key={cols}
+                              initial={{ opacity: 0, x: -10 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: -10 }}
+                              transition={{ duration: 0.15, delay: index * 0.02 }}
+                            >
                         <DropdownMenuItem
-                          onClick={() => setGridColumns(4)}
-                          className={gridColumns === 4 ? 'bg-accent' : ''}
+                                onClick={() => setGridColumns(cols)}
+                                className={gridColumns === cols ? 'bg-accent' : ''}
                         >
-                          4 Columns
+                                {cols} Columns
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setGridColumns(5)}
-                          className={gridColumns === 5 ? 'bg-accent' : ''}
-                        >
-                          5 Columns
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setGridColumns(6)}
-                          className={gridColumns === 6 ? 'bg-accent' : ''}
-                        >
-                          6 Columns
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setGridColumns(7)}
-                          className={gridColumns === 7 ? 'bg-accent' : ''}
-                        >
-                          7 Columns
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setGridColumns(8)}
-                          className={gridColumns === 8 ? 'bg-accent' : ''}
-                        >
-                          8 Columns
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setGridColumns(9)}
-                          className={gridColumns === 9 ? 'bg-accent' : ''}
-                        >
-                          9 Columns
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setGridColumns(10)}
-                          className={gridColumns === 10 ? 'bg-accent' : ''}
-                        >
-                          10 Columns
-                        </DropdownMenuItem>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
                     <DropdownMenuSeparator />
@@ -1503,8 +1500,15 @@ function MediaPageContent() {
         )}
       </div>
 
+      <AnimatePresence mode="wait">
       {isLoadingData && activeTab === 'media' ? (
-        <>
+          <motion.div
+            key="loading-media"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2 }}
+          >
           {/* Placeholder Storage Usage Card */}
           <div className="p-5 border rounded-lg bg-linear-to-br from-muted/50 to-muted/30 shadow-sm animate-pulse mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -1536,9 +1540,15 @@ function MediaPageContent() {
               ))}
             </div>
           )}
-        </>
+          </motion.div>
       ) : isLoadingData && activeTab === 'documents' ? (
-        <>
+          <motion.div
+            key="loading-documents"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2 }}
+          >
           {/* Placeholder Storage Usage Card */}
           <div className="p-5 border rounded-lg bg-linear-to-br from-muted/50 to-muted/30 shadow-sm animate-pulse mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -1570,8 +1580,15 @@ function MediaPageContent() {
               ))}
             </div>
           )}
-        </>
+          </motion.div>
       ) : activeTab === 'media' && images.length === 0 ? (
+          <motion.div
+            key="empty-media"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2 }}
+          >
         <Card>
           <CardContent className="pt-6">
             <p className="text-center text-muted-foreground">
@@ -1579,7 +1596,15 @@ function MediaPageContent() {
             </p>
           </CardContent>
         </Card>
+          </motion.div>
       ) : activeTab === 'documents' && documents.length === 0 ? (
+          <motion.div
+            key="empty-documents"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2 }}
+          >
         <Card>
           <CardContent className="pt-6">
             <p className="text-center text-muted-foreground">
@@ -1587,15 +1612,47 @@ function MediaPageContent() {
             </p>
           </CardContent>
         </Card>
+          </motion.div>
       ) : !isClient ? (
         null
       ) : activeTab === 'media' ? (
-        <>
+          <motion.div
+            key="media-content"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.3 }}
+          >
           {/* Image Grid */}
-          <div className={`grid ${gridClasses[gridColumns as keyof typeof gridClasses]} gap-3 mb-6`}>
-            {images.map((image) => (
-              <div
-                key={image.id}
+          <motion.div 
+            layout
+            className={`grid ${gridClasses[gridColumns as keyof typeof gridClasses]} gap-3 mb-6`}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+          >
+            <AnimatePresence mode="popLayout">
+              {images.map((image, index) => (
+                <motion.div
+                  key={`${image.id}-${reloadKey}`}
+                  layout
+                  initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                  animate={{ 
+                    opacity: 1, 
+                    scale: 1, 
+                    y: 0,
+                    transition: {
+                      type: "spring",
+                      stiffness: 300,
+                      damping: 20,
+                      delay: index * 0.03
+                    }
+                  }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  whileHover={{ scale: 1.02 }}
+                  transition={{ 
+                    duration: 0.2, 
+                    delay: index * 0.03,
+                    layout: { duration: 0.3 }
+                  }}
                 className={`relative group aspect-square rounded-lg overflow-hidden border ${
                   isSelectionMode ? 'cursor-pointer' : 'cursor-pointer hover:opacity-90'
                 } ${
@@ -1775,9 +1832,10 @@ function MediaPageContent() {
                     )}
                   </div>
                 )}
-              </div>
+              </motion.div>
             ))}
-          </div>
+            </AnimatePresence>
+          </motion.div>
 
           {/* Pagination */}
           {pagination && (
@@ -1845,17 +1903,47 @@ function MediaPageContent() {
               </Pagination>
             </div>
           )}
-
-        </>
+          </motion.div>
       ) : activeTab === 'documents' && isClient ? (
-        <>
+          <motion.div
+            key="documents-content"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.3 }}
+          >
           {/* Documents Grid */}
-          <div className={`grid ${gridClasses[gridColumns as keyof typeof gridClasses]} gap-3 mb-6`}>
-            {documents.map((document) => {
+            <motion.div 
+            layout
+            className={`grid ${gridClasses[gridColumns as keyof typeof gridClasses]} gap-3 mb-6`}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+          >
+            <AnimatePresence mode="popLayout">
+              {documents.map((document, index) => {
               
               return (
-                <div
-                  key={document.id}
+                  <motion.div
+                  key={`${document.id}-${reloadKey}`}
+                    layout
+                    initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                    animate={{ 
+                      opacity: 1, 
+                      scale: 1, 
+                      y: 0,
+                      transition: {
+                        type: "spring",
+                        stiffness: 300,
+                        damping: 20,
+                        delay: index * 0.03
+                      }
+                    }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    whileHover={{ scale: 1.02 }}
+                    transition={{ 
+                      duration: 0.2, 
+                      delay: index * 0.03,
+                      layout: { duration: 0.3 }
+                    }}
                 className={`relative group aspect-square rounded-lg overflow-hidden border transition-all bg-muted flex flex-col ${
                   isSelectionMode ? 'cursor-pointer' : 'cursor-pointer hover:opacity-90'
                 } ${
@@ -2081,10 +2169,11 @@ function MediaPageContent() {
                     )}
                   </div>
                 )}
-                </div>
+                </motion.div>
               )
             })}
-          </div>
+            </AnimatePresence>
+          </motion.div>
 
           {/* Pagination */}
           {pagination && (
@@ -2147,8 +2236,9 @@ function MediaPageContent() {
               </Pagination>
             </div>
           )}
-        </>
+          </motion.div>
       ) : null}
+      </AnimatePresence>
 
       {/* Delete Confirmation Dialog */}
       <DeleteConfirmationDialog
@@ -2449,7 +2539,7 @@ function MediaPageContent() {
           setDocumentToDownload(null)
         }}
       />
-    </>
+    </motion.div>
   )
 }
 

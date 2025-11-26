@@ -1,7 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
 import puppeteer from 'puppeteer'
+import puppeteerCore from 'puppeteer-core'
+import { verifyAuth } from '@/lib/auth-utils'
+import { requirePermission } from '@/lib/permission-utils'
+
+// For Vercel/serverless, use lightweight Chromium
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let chromium: any = null
+if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    chromium = require('@sparticuz/chromium')
+    // Configure for serverless
+    if (chromium && typeof chromium.setGraphicsMode === 'function') {
+      chromium.setGraphicsMode(false)
+    }
+  } catch {
+    // @sparticuz/chromium not available, will use regular puppeteer
+  }
+}
 
 export async function POST(request: NextRequest) {
+  // Check authentication
+  const auth = await verifyAuth()
+  if (auth.error) return auth.error
+
+  // Check permission
+  const permissionCheck = await requirePermission('canManageAccountabilityForms')
+  if (!permissionCheck.allowed && permissionCheck.error) {
+    return permissionCheck.error
+  }
+
   try {
     const { html, url, elementId, elementIds } = await request.json()
 
@@ -21,14 +50,102 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Launch Puppeteer
-    const browser = await puppeteer.launch({
+    // Launch Puppeteer with serverless support
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let browser: any = null
+    
+    const launchOptions: Parameters<typeof puppeteer.launch>[0] = {
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    })
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        // Windows-specific: Don't use --single-process as it can cause ECONNRESET
+        // Use it only for serverless environments (not Windows local dev)
+        ...(process.platform !== 'win32' && (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) 
+          ? ['--single-process'] 
+          : []),
+        '--disable-extensions',
+        '--disable-plugins',
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-breakpad',
+        '--disable-client-side-phishing-detection',
+        '--disable-component-update',
+        '--disable-default-apps',
+        '--disable-domain-reliability',
+        '--disable-features=AudioServiceOutOfProcess',
+        '--disable-hang-monitor',
+        '--disable-ipc-flooding-protection',
+        '--disable-notifications',
+        '--disable-offer-store-unmasked-wallet-cards',
+        '--disable-popup-blocking',
+        '--disable-print-preview',
+        '--disable-prompt-on-repost',
+        '--disable-renderer-backgrounding',
+        '--disable-speech-api',
+        '--disable-sync',
+        '--disable-translate',
+        '--disable-windows10-custom-titlebar',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--no-pings',
+        '--no-zygote',
+        '--safebrowsing-disable-auto-update',
+        '--use-mock-keychain',
+      ],
+      timeout: 60000, // 60 second timeout for browser launch
+    }
 
     try {
-      const page = await browser.newPage()
+      // For Vercel/serverless, use puppeteer-core with @sparticuz/chromium
+      if (chromium && (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)) {
+        try {
+          // Get executable path - chromium handles extraction automatically
+          const chromiumPath = await chromium.executablePath()
+          
+          // Merge args - chromium provides optimized args for serverless
+          const chromiumArgs = chromium.args || []
+          launchOptions.args = [...(Array.isArray(chromiumArgs) ? chromiumArgs : []), ...(launchOptions.args || [])]
+          launchOptions.executablePath = chromiumPath
+          launchOptions.headless = chromium.headless !== false // Default to headless
+          
+          browser = await puppeteerCore.launch(launchOptions)
+        } catch (chromiumError) {
+          // Fallback to regular puppeteer if chromium fails
+          throw chromiumError
+        }
+      } else {
+        // Launch with increased timeout for Windows
+        const launchTimeout = process.platform === 'win32' ? 90000 : 60000
+        launchOptions.timeout = launchTimeout
+
+        browser = await puppeteer.launch(launchOptions)
+      }
+    } catch (launchError) {
+      console.error('Failed to launch browser:', launchError)
+      const errorMessage = launchError instanceof Error ? launchError.message : 'Unknown error'
+      return NextResponse.json(
+        { 
+          error: 'Failed to launch browser',
+          details: errorMessage,
+          hint: 'Chrome connection was reset - Chrome may have crashed during startup. Try closing all Chrome/Chromium windows and restarting your dev server.',
+        },
+        { status: 500 }
+      )
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let page: any = null
+    try {
+      page = await browser.newPage()
 
       // Set viewport to A4 proportions (210mm x 297mm at 96 DPI ≈ 794px x 1123px)
       await page.setViewport({
@@ -42,7 +159,7 @@ export async function POST(request: NextRequest) {
         try {
           await page.goto(url, {
             waitUntil: ['networkidle0', 'load', 'domcontentloaded'],
-            timeout: 30000,
+            timeout: 60000, // Increased timeout
           })
           
           if (targetIds.length > 0) {
@@ -71,6 +188,7 @@ export async function POST(request: NextRequest) {
           if (html) {
             await page.setContent(html, {
               waitUntil: ['networkidle0', 'load', 'domcontentloaded'],
+              timeout: 60000, // Increased timeout
             })
           } else {
             throw new Error(`Failed to navigate to URL: ${error instanceof Error ? error.message : 'Unknown error'}.`)
@@ -79,6 +197,7 @@ export async function POST(request: NextRequest) {
       } else if (html) {
         await page.setContent(html, {
           waitUntil: ['networkidle0', 'load', 'domcontentloaded'],
+          timeout: 60000, // Increased timeout
         })
       } else {
         return NextResponse.json(
@@ -119,8 +238,8 @@ export async function POST(request: NextRequest) {
           throw new Error(`Elements ${missingElements.join(', ')} not found.`)
         }
         
-        // Hide everything except the target elements
-        await page.evaluate((ids) => {
+            // Hide everything except the target elements
+        await page.evaluate((ids: string[]) => {
           const body = document.body
           if (body) {
             body.style.overflow = 'hidden'
@@ -423,25 +542,42 @@ export async function POST(request: NextRequest) {
         },
         preferCSSPageSize: false,
         displayHeaderFooter: false,
+        timeout: 60000, // 60 second timeout
       }
 
       await page.emulateMediaType('print')
       
-      const pdf = await page.pdf(pdfOptions)
+      const pdfData = await page.pdf(pdfOptions)
+      
+      // Convert Uint8Array to Buffer if needed
+      const pdfBuffer = Buffer.isBuffer(pdfData) ? pdfData : Buffer.from(pdfData)
 
-      await browser.close()
+      // Close browser
+      try {
+        await browser.close()
+      } catch {
+        // Ignore errors when closing browser
+      }
 
       const filename = 'accountability-form.pdf'
       
-      return new NextResponse(Buffer.from(pdf), {
+      return new NextResponse(pdfBuffer, {
         headers: {
           'Content-Type': 'application/pdf',
           'Content-Disposition': `attachment; filename="${filename}"`,
+          'Content-Length': pdfBuffer.length.toString(),
         },
       })
-    } catch (error) {
-      await browser.close()
-      throw error
+    } catch (pageError) {
+      console.error('Failed to create page or generate PDF:', pageError)
+      if (browser) {
+        try {
+          await browser.close()
+        } catch {
+          // Ignore errors when closing browser
+        }
+      }
+      throw pageError
     }
   } catch (error) {
     console.error('Error generating PDF:', error)

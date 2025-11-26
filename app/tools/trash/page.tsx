@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'rea
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   useReactTable,
   getCoreRowModel,
@@ -56,6 +57,53 @@ interface DeletedAsset {
   } | null
   location: string | null
   deletedAt: string
+}
+
+// Helper function to get status badge with colors
+const getStatusBadge = (status: string | null) => {
+  if (!status) return null
+  const statusLC = status.toLowerCase()
+  let statusVariant: 'default' | 'secondary' | 'destructive' | 'outline' = 'outline'
+  let statusColor = ''
+  
+  if (statusLC === 'active' || statusLC === 'available') {
+    statusVariant = 'default'
+    statusColor = 'bg-green-500'
+  } else if (statusLC === 'checked out' || statusLC === 'in use') {
+    statusVariant = 'destructive'
+    statusColor = 'bg-blue-500'
+  } else if (statusLC === 'leased') {
+    statusVariant = 'secondary'
+    statusColor = 'bg-yellow-500'
+  } else if (statusLC === 'inactive' || statusLC === 'unavailable') {
+    statusVariant = 'secondary'
+    statusColor = 'bg-gray-500'
+  } else if (statusLC === 'maintenance' || statusLC === 'repair') {
+    statusColor = 'bg-red-600 text-white'
+  } else if (statusLC === 'lost' || statusLC === 'missing') {
+    statusVariant = 'destructive'
+    statusColor = 'bg-orange-500'
+  } else if (statusLC === 'disposed' || statusLC === 'disposal') {
+    statusVariant = 'secondary'
+    statusColor = 'bg-purple-500'
+  } else if (statusLC === 'sold') {
+    statusVariant = 'default'
+    statusColor = 'bg-teal-500 text-white border-0'
+  } else if (statusLC === 'donated') {
+    statusVariant = 'default'
+    statusColor = 'bg-blue-500 text-white border-0'
+  } else if (statusLC === 'scrapped') {
+    statusVariant = 'default'
+    statusColor = 'bg-orange-500 text-white border-0'
+  } else if (statusLC === 'lost/missing' || statusLC.replace(/\s+/g, '').replace('/', '').toLowerCase() === 'lostmissing') {
+    statusVariant = 'default'
+    statusColor = 'bg-yellow-500 text-white border-0'
+  } else if (statusLC === 'destroyed') {
+    statusVariant = 'default'
+    statusColor = 'bg-red-500 text-white border-0'
+  }
+  
+  return <Badge variant={statusVariant} className={statusColor}>{status}</Badge>
 }
 
 async function fetchDeletedAssets(page: number = 1, pageSize: number = 50, search?: string, searchType: string = 'unified') {
@@ -150,6 +198,7 @@ function TrashPageContent() {
   const [sorting, setSorting] = useState<SortingState>([])
   const [isManualRefresh, setIsManualRefresh] = useState(false)
   const [isEmptyTrashDialogOpen, setIsEmptyTrashDialogOpen] = useState(false)
+  const isInitialMount = useRef(true)
 
   // Update URL parameters
   const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string; searchType?: string }) => {
@@ -442,6 +491,11 @@ function TrashPageContent() {
     },
     {
       id: 'category',
+      accessorFn: (row) => {
+        const category = row.category?.name || ''
+        const subCategory = row.subCategory?.name || ''
+        return `${category} / ${subCategory}`
+      },
       header: ({ column }) => {
         return (
           <Button
@@ -500,7 +554,7 @@ function TrashPageContent() {
       cell: ({ row }) => (
         <div>
           {row.original.status ? (
-            <Badge variant="outline">{row.original.status}</Badge>
+            getStatusBadge(row.original.status)
           ) : (
             '-'
           )}
@@ -639,6 +693,18 @@ function TrashPageContent() {
     },
   ], [handleRestore, handleDelete])
 
+  // Track initial mount for animations - only animate stagger on first load
+  useEffect(() => {
+    if (isInitialMount.current && data && deletedAssets.length > 0) {
+      // Disable staggered animations after first data load
+      // Use a short delay to allow first animation to start
+      const timer = setTimeout(() => {
+        isInitialMount.current = false
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [data, deletedAssets.length])
+
   // Create table instance
   const table = useReactTable({
     data: deletedAssets,
@@ -731,7 +797,12 @@ function TrashPageContent() {
   }
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
       <div>
         <h1 className="text-3xl font-bold">Trash</h1>
         <p className="text-muted-foreground">
@@ -868,7 +939,7 @@ function TrashPageContent() {
         </CardHeader>
 
         <CardContent className="flex-1 px-0 relative">
-          {isFetching && data && isManualRefresh && (
+          {isFetching && data && deletedAssets.length > 0 && (
             <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
               <Spinner variant="default" size={24} className="text-muted-foreground" />
             </div>
@@ -925,12 +996,21 @@ function TrashPageContent() {
                       ))}
                     </TableHeader>
                     <TableBody>
+                      <AnimatePresence mode='popLayout'>
                       {table.getRowModel().rows?.length ? (
-                        table.getRowModel().rows.map((row) => (
-                          <TableRow
+                        table.getRowModel().rows.map((row, index) => (
+                          <motion.tr
                             key={row.id}
+                            layout
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -20 }}
+                            transition={{ 
+                              duration: 0.2, 
+                              delay: isInitialMount.current ? index * 0.05 : 0 
+                            }}
                             data-state={row.getIsSelected() && 'selected'}
-                            className="group relative"
+                            className="group relative hover:bg-muted/90 data-[state=selected]:bg-muted border-b transition-colors"
                           >
                             {row.getVisibleCells().map((cell) => {
                               const isActionsColumn = cell.column.id === 'actions'
@@ -948,7 +1028,7 @@ function TrashPageContent() {
                                 </TableCell>
                               )
                             })}
-                          </TableRow>
+                          </motion.tr>
                         ))
                       ) : (
                         <TableRow>
@@ -960,6 +1040,7 @@ function TrashPageContent() {
                           </TableCell>
                         </TableRow>
                       )}
+                      </AnimatePresence>
                     </TableBody>
                   </Table>
                 </div>
@@ -1108,7 +1189,7 @@ function TrashPageContent() {
         confirmLabel="Empty Trash"
         loadingLabel="Emptying trash..."
       />
-    </div>
+    </motion.div>
   )
 }
 

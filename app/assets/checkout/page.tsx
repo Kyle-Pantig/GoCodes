@@ -5,8 +5,10 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { useForm, useWatch, type Control } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { XIcon, Package, CheckCircle2, Users, History, QrCode } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { QRScannerDialog } from '@/components/qr-scanner-dialog'
 import { QRCodeDisplayDialog } from '@/components/qr-code-display-dialog'
@@ -103,6 +105,7 @@ function CheckoutPageContent() {
   const hasProcessedUrlParams = useRef(false)
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
+  const isMobile = useIsMobile()
   const canViewAssets = hasPermission('canViewAssets')
   const canCheckout = hasPermission('canCheckout')
   const canManageSetup = hasPermission('canManageSetup')
@@ -116,6 +119,7 @@ function CheckoutPageContent() {
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
+  const isInitialMount = useRef(true)
 
   const form = useForm<CheckoutFormData>({
     resolver: zodResolver(checkoutSchema),
@@ -637,8 +641,23 @@ function CheckoutPageContent() {
 
   const recentCheckouts = checkoutStats?.recentCheckouts || []
 
+  // Track initial mount for animations
+  useEffect(() => {
+    if (isInitialMount.current && recentCheckouts.length > 0) {
+      const timer = setTimeout(() => {
+        isInitialMount.current = false
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [recentCheckouts.length])
+
   return (
-    <div className={isFormDirty ? "pb-16" : ""}>
+    <motion.div 
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className={isFormDirty ? "pb-16" : ""}
+    >
       <div>
         <h1 className="text-3xl font-bold">Check Out Asset</h1>
         <p className="text-muted-foreground">
@@ -647,7 +666,12 @@ function CheckoutPageContent() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 mt-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+        className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 mt-6"
+      >
         {/* Total Available Assets */}
         <Card className="flex flex-col py-0 gap-2">
           <CardHeader className="p-4 pb-2">
@@ -730,7 +754,13 @@ function CheckoutPageContent() {
         </Card>
 
         {/* Recent History - Always visible to show access denied message if needed */}
-        <Card className="flex flex-col py-0 gap-2 col-span-1 md:col-span-2 lg:col-span-3">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.15 }}
+          className="col-span-1 md:col-span-2 lg:col-span-3"
+        >
+          <Card className="flex flex-col py-0 gap-2">
           <CardHeader className="p-4 pb-2">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-md bg-purple-100 text-purple-500">
@@ -774,8 +804,24 @@ function CheckoutPageContent() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentCheckouts.map((checkout) => (
-                      <TableRow key={checkout.id} className="h-10">
+                    <AnimatePresence mode='popLayout'>
+                      {recentCheckouts.map((checkout, index) => (
+                        <motion.tr
+                          key={checkout.id}
+                          layout
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -20 }}
+                          transition={{ 
+                            duration: 0.2, 
+                            delay: isInitialMount.current ? index * 0.05 : 0,
+                            layout: {
+                              duration: 0.15,
+                              ease: [0.4, 0, 0.2, 1]
+                            }
+                          }}
+                          className="h-10 border-b"
+                        >
                         <TableCell className="py-1.5">
                           <Badge 
                             variant="outline" 
@@ -805,8 +851,9 @@ function CheckoutPageContent() {
                         <TableCell className="py-1.5 text-xs text-muted-foreground text-right">
                           {getTimeAgo(checkout.createdAt)}
                         </TableCell>
-                      </TableRow>
+                        </motion.tr>
                     ))}
+                    </AnimatePresence>
                   </TableBody>
                   </Table>
               </div>
@@ -820,10 +867,16 @@ function CheckoutPageContent() {
             )}
           </CardContent>
         </Card>
-      </div>
+        </motion.div>
+      </motion.div>
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 mt-6">
         {/* Asset Selection Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+        >
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Asset Selection</CardTitle>
@@ -861,8 +914,11 @@ function CheckoutPageContent() {
                     </div>
                   ) : assetSuggestions.length > 0 ? (
                     assetSuggestions.map((asset, index) => (
-                      <div
+                      <motion.div
                         key={asset.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.2, delay: index * 0.05 }}
                         onClick={() => handleSelectSuggestion(asset)}
                         onMouseEnter={() => setSelectedSuggestionIndex(index)}
                         className={cn(
@@ -881,7 +937,7 @@ function CheckoutPageContent() {
                           </div>
                           {getStatusBadge(asset.status || 'Available')}
                         </div>
-                      </div>
+                      </motion.div>
                     ))
                   ) : (
                     <div className="px-3 py-2 text-sm text-muted-foreground">
@@ -904,6 +960,7 @@ function CheckoutPageContent() {
               )}
             </div>
 
+            <AnimatePresence>
             {(selectedAssets.length > 0 || loadingAssets.size > 0) && (
               <div className="space-y-2">
                 <p className="text-sm font-medium">
@@ -912,8 +969,12 @@ function CheckoutPageContent() {
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {/* Loading placeholders */}
                   {Array.from(loadingAssets).map((code) => (
-                    <div
+                      <motion.div
                       key={`loading-${code}`}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        transition={{ duration: 0.2 }}
                       className="flex items-center justify-between gap-2 p-3 border rounded-md bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"
                     >
                       <div className="flex-1 min-w-0">
@@ -942,12 +1003,16 @@ function CheckoutPageContent() {
                       >
                         <XIcon className="h-4 w-4" />
                       </Button>
-                    </div>
+                      </motion.div>
                   ))}
                   {/* Actual selected assets */}
-                  {selectedAssets.map((asset) => (
-                    <div
+                    {selectedAssets.map((asset, index) => (
+                      <motion.div
                       key={asset.id}
+                        initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: 20, scale: 0.95 }}
+                        transition={{ duration: 0.3, delay: index * 0.05 }}
                       className="flex items-center justify-between gap-2 p-3 border rounded-md bg-muted/50"
                     >
                       <div className="flex-1 min-w-0">
@@ -971,15 +1036,22 @@ function CheckoutPageContent() {
                         <XIcon className="h-4 w-4" />
                       </Button>
                       </div>
-                    </div>
+                      </motion.div>
                   ))}
                 </div>
               </div>
             )}
+            </AnimatePresence>
           </CardContent>
         </Card>
+        </motion.div>
 
         {/* Assignment & Checkout Details */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.3 }}
+        >
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Assignment & Checkout Details</CardTitle>
@@ -995,7 +1067,7 @@ function CheckoutPageContent() {
                 error={form.formState.errors.employeeId}
                 label="Assign To"
                 required
-                    disabled={!canViewAssets || !canCheckout}
+                    disabled={!canViewAssets || !canCheckout || selectedAssets.length === 0}
                 queryKey={["employees", "checkout"]}
               />
 
@@ -1010,7 +1082,7 @@ function CheckoutPageContent() {
                     type="date"
                       {...form.register("checkoutDate")}
                       aria-invalid={form.formState.errors.checkoutDate ? "true" : "false"}
-                    disabled={!canViewAssets || !canCheckout}
+                    disabled={!canViewAssets || !canCheckout || selectedAssets.length === 0}
                   />
                     {form.formState.errors.checkoutDate && (
                       <FieldError>{form.formState.errors.checkoutDate.message}</FieldError>
@@ -1029,7 +1101,7 @@ function CheckoutPageContent() {
                       {...form.register("expectedReturnDate")}
                     min={checkoutDate}
                       aria-invalid={form.formState.errors.expectedReturnDate ? "true" : "false"}
-                    disabled={!canViewAssets || !canCheckout}
+                    disabled={!canViewAssets || !canCheckout || selectedAssets.length === 0}
                   />
                     {form.formState.errors.expectedReturnDate && (
                       <FieldError>{form.formState.errors.expectedReturnDate.message}</FieldError>
@@ -1040,9 +1112,17 @@ function CheckoutPageContent() {
             </div>
           </CardContent>
         </Card>
+        </motion.div>
 
         {/* Additional Information */}
+        <AnimatePresence>
         {selectedAssets.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.4, delay: 0.35 }}
+            >
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Additional Information</CardTitle>
@@ -1129,20 +1209,28 @@ function CheckoutPageContent() {
               </div>
             </CardContent>
           </Card>
+            </motion.div>
         )}
+        </AnimatePresence>
       </form>
 
       {/* Floating Action Buttons - Only show when form has changes */}
+      <AnimatePresence>
       {isFormDirty && canViewAssets && canCheckout && (
-        <div 
+          <motion.div 
+            initial={{ opacity: 0, y: 20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 20, x: '-50%' }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
           className="fixed bottom-6 z-50 flex items-center justify-center gap-3"
           style={{
-            left: !sidebarOpen 
+              left: isMobile 
+                ? '50%'
+                : !sidebarOpen 
               ? '50%'
               : sidebarState === 'collapsed' 
                 ? 'calc(var(--sidebar-width-icon, 3rem) + ((100vw - var(--sidebar-width-icon, 3rem)) / 2))'
-                : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))',
-            transform: 'translateX(-50%)'
+                    : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))'
           }}
         >
           <Button
@@ -1175,8 +1263,9 @@ function CheckoutPageContent() {
               'Save'
             )}
           </Button>
-        </div>
+          </motion.div>
       )}
+      </AnimatePresence>
 
       {/* QR Code Scanner Dialog */}
       <QRScannerDialog
@@ -1196,7 +1285,7 @@ function CheckoutPageContent() {
         onOpenChange={setQrDisplayDialogOpen}
         assetTagId={selectedAssetTagForQR}
       />
-    </div>
+    </motion.div>
   )
 }
 

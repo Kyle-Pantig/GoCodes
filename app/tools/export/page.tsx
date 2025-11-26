@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { usePermissions } from '@/hooks/use-permissions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Download, History, FileDown, Trash2, MoreHorizontal, Package } from 'lucide-react'
+import { Download, History, FileDown, Trash2, MoreHorizontal, Package, RefreshCw, FileSpreadsheet, Layers, Database, CheckCircle2, XCircle, AlertCircle } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -231,6 +231,8 @@ export default function ExportPage() {
   const [historyPage, setHistoryPage] = useState(1)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedHistory, setSelectedHistory] = useState<FileHistory | null>(null)
+  const [isManualRefresh, setIsManualRefresh] = useState(false)
+  const isInitialMount = useRef(true)
 
   interface FileHistory {
     id: string
@@ -253,14 +255,32 @@ export default function ExportPage() {
   }
 
   // Fetch export history
-  const { data: historyData, isLoading: historyLoading } = useQuery({
+  const { data: historyData, isLoading: historyLoading, isFetching: isHistoryFetching, refetch: refetchHistory } = useQuery({
     queryKey: ['exportHistory', historyPage],
     queryFn: () => fetchExportHistory(historyPage),
     enabled: !permissionsLoading && canViewAssets,
     staleTime: 30000, // Cache for 30 seconds
     refetchOnWindowFocus: false, // Don't refetch on window focus
     refetchOnMount: false, // Don't refetch on mount if data exists
+    placeholderData: (previousData) => previousData,
   })
+
+  // Reset manual refresh flag after successful fetch
+  useEffect(() => {
+    if (!isHistoryFetching && isManualRefresh) {
+      setIsManualRefresh(false)
+    }
+  }, [isHistoryFetching, isManualRefresh])
+
+  // Track initial mount for animations
+  useEffect(() => {
+    if (isInitialMount.current && historyData?.fileHistory && historyData.fileHistory.length > 0) {
+      const timer = setTimeout(() => {
+        isInitialMount.current = false
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [historyData])
 
   const queryClient = useQueryClient()
 
@@ -484,28 +504,27 @@ export default function ExportPage() {
 
   if (!canViewAssets && !permissionsLoading) {
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Export Assets</h1>
-          <p className="text-muted-foreground">
-            Export asset data to Excel format with custom field selection
-          </p>
-        </div>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="flex flex-col items-center gap-3 text-center">
+      <div className="space-y-6 h-[60vh] flex flex-col items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-center max-w-md">
+          <div className="p-4 rounded-full bg-muted/50">
             <Package className="h-12 w-12 text-muted-foreground opacity-50" />
-            <p className="text-lg font-medium">Access Denied</p>
-            <p className="text-sm text-muted-foreground">
-              You do not have permission to view export history. Please contact your administrator.
-            </p>
           </div>
+          <h1 className="text-2xl font-bold">Access Denied</h1>
+          <p className="text-muted-foreground">
+            You do not have permission to view export history. Please contact your administrator.
+          </p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
       <div>
         <h1 className="text-3xl font-bold">Export Assets</h1>
         <p className="text-muted-foreground">
@@ -513,47 +532,73 @@ export default function ExportPage() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Export Assets</CardTitle>
-          <CardDescription>
-            Select which fields to include in your export and download the data as an Excel file
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              {permissionsLoading || assetsLoading ? (
-                <div className="flex items-center gap-2">
-                  <Spinner className="h-4 w-4" />
-                  <p className="text-sm text-muted-foreground">Loading assets...</p>
+      <div className="grid gap-6 md:grid-cols-3">
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5 text-primary" />
+              Export Configuration
+            </CardTitle>
+            <CardDescription>
+              Select which fields to include in your export and download the data as an Excel file
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div className="p-4 rounded-lg border bg-card text-card-foreground shadow-sm flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Database className="h-4 w-4 shrink-0" />
+                  <span className="text-xs font-medium uppercase">Available Assets</span>
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {data?.assets.length || 0} asset(s) available for export
-                </p>
-              )}
-              <p className="text-sm text-muted-foreground">
-                {selectedExportFields.size} field(s) selected
-              </p>
+                <div className="text-2xl font-bold">
+                  {permissionsLoading || assetsLoading ? (
+                    <Spinner className="h-6 w-6" />
+                  ) : (
+                    data?.assets.length || 0
+                  )}
+                </div>
+              </div>
+              
+              <div className="p-4 rounded-lg border bg-card text-card-foreground shadow-sm flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Layers className="h-4 w-4 shrink-0" />
+                  <span className="text-xs font-medium uppercase">Selected Fields</span>
+                </div>
+                <div className="text-2xl font-bold">
+                  {selectedExportFields.size}
+                </div>
+              </div>
+
+              <div className="p-3 sm:p-4 md:col-span-2 xl:col-span-1 rounded-lg border bg-muted/30 flex items-center justify-center">
+                <Button 
+                  onClick={() => {
+                    if (!canManageExport) {
+                      toast.error('You do not have permission to export assets')
+                      return
+                    }
+                    setIsExportDialogOpen(true)
+                  }}
+                  className="w-full h-full min-h-[60px] sm:min-h-[80px] text-xs sm:text-sm md:text-base px-2 sm:px-3 md:px-4 py-2 sm:py-3 flex items-center justify-center gap-1.5 sm:gap-2 whitespace-normal!"
+                  disabled={permissionsLoading || !canViewAssets || assetsLoading}
+                >
+                  <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4 md:h-5 md:w-5 shrink-0" />
+                  <span className="text-center leading-tight">Configure & Export</span>
+                </Button>
+              </div>
             </div>
-            <Button 
-              onClick={() => {
-                if (!canManageExport) {
-                  toast.error('You do not have permission to export assets')
-                  return
-                }
-                setIsExportDialogOpen(true)
-              }}
-              size='sm'
-              disabled={permissionsLoading || !canViewAssets}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Select Fields & Export
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+
+        <Card className="md:col-span-1 flex flex-col">
+          <CardHeader>
+            <CardTitle className="text-lg">Quick Tips</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 text-sm text-muted-foreground space-y-3">
+            <p>• Exports include all currently filtered assets.</p>
+            <p>• Large exports may take a few moments to generate.</p>
+          </CardContent>
+        </Card>
+      </div>
 
       <ExportFieldsDialog
         open={isExportDialogOpen}
@@ -568,144 +613,209 @@ export default function ExportPage() {
       />
 
       {/* Export History */}
-      <Card>
+      <Card className='pb-0'>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <History className="h-5 w-5" />
-            Export History
-          </CardTitle>
-          <CardDescription>
-            Recent export operations
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5 text-primary" />
+                Export History
+              </CardTitle>
+              <CardDescription className="mt-1.5">
+                Recent export operations and their status
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                setIsManualRefresh(true)
+                refetchHistory()
+              }}
+              disabled={isHistoryFetching || historyLoading}
+              className="h-8 w-8"
+              title="Refresh history"
+            >
+              <RefreshCw className={`h-4 w-4 ${isHistoryFetching ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 relative">
+          {/* Glass effect overlay when fetching */}
+          {isHistoryFetching && historyData?.fileHistory && historyData.fileHistory.length > 0 && (
+            <div className="absolute left-0 right-[10px] top-0 bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+              <Spinner variant="default" size={24} className="text-muted-foreground" />
+            </div>
+          )}
+
           {permissionsLoading || historyLoading ? (
-            <div className="flex flex-col items-center justify-center h-[400px] text-center">
-              <Spinner className="h-6 w-6" />
-              <p className="text-muted-foreground mt-2">Loading...</p>
+            <div className="flex flex-col items-center justify-center h-[400px] text-center gap-3">
+              <Spinner className="h-8 w-8" />
+              <p className="text-sm text-muted-foreground animate-pulse">Loading history...</p>
             </div>
           ) : !historyData?.fileHistory || historyData.fileHistory.length === 0 ? (
-            <div className="flex items-center justify-center h-[400px] text-center text-muted-foreground">
-              No export history found
+            <div className="flex flex-col items-center justify-center h-[400px] text-center text-muted-foreground gap-2">
+              <div className="p-4 rounded-full bg-muted/50 mb-2">
+                <History className="h-8 w-8 opacity-50" />
+              </div>
+              <p className="font-medium">No export history found</p>
+              <p className="text-sm">Your recent exports will appear here</p>
             </div>
           ) : (
             <>
               <ScrollArea className="h-[400px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>File Name</TableHead>
-                      <TableHead>Records</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Exported By</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className={cn("text-right sticky right-0 bg-card z-10")}>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
+                <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
+                <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
+                  <Table className="border-b">
+                    <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-2.5">
+                      <TableRow className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-[1.5px] after:h-px after:bg-border after:z-30">
+                        <TableHead className="w-[250px] bg-card transition-colors group-hover:bg-muted/50">File Name</TableHead>
+                        <TableHead className="bg-card transition-colors group-hover:bg-muted/50">Records</TableHead>
+                        <TableHead className="bg-card transition-colors group-hover:bg-muted/50">Status</TableHead>
+                        <TableHead className="bg-card transition-colors group-hover:bg-muted/50">Exported By</TableHead>
+                        <TableHead className="bg-card transition-colors group-hover:bg-muted/50">Date</TableHead>
+                        <TableHead className="text-center sticky z-10 right-0 bg-card group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
                   <TableBody>
-                    {historyData.fileHistory.map((history: FileHistory) => (
-                      <TableRow key={history.id}>
-                        <TableCell className="font-medium">{history.fileName}</TableCell>
-                        <TableCell>
-                          <div className="text-sm space-y-1">
-                            {history.recordsExported !== null && (
-                              <div>Exported: {history.recordsExported}</div>
-                            )}
-                            {history.fieldsExported !== null && (
-                              <div className="text-muted-foreground">
-                                Fields: {history.fieldsExported}
+                    <AnimatePresence mode='popLayout'>
+                      {historyData.fileHistory.map((history: FileHistory, index: number) => (
+                        <motion.tr
+                          key={history.id}
+                          layout
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -20 }}
+                          transition={{ 
+                            duration: 0.2, 
+                            delay: isInitialMount.current ? index * 0.05 : 0 
+                          }}
+                          className="group hover:bg-muted/50 border-b transition-colors"
+                        >
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <div className="p-2 rounded-md bg-primary/10 text-primary">
+                                <FileDown className="h-4 w-4" />
+                              </div>
+                              {history.fileName}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium">{history.recordsExported || 0} rows</span>
+                              <span className="text-xs text-muted-foreground">{history.fieldsExported || 0} fields</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {history.status === 'success' ? (
+                              <div className="flex items-center gap-1.5 text-green-600">
+                                <CheckCircle2 className="h-4 w-4" />
+                              </div>
+                            ) : history.status === 'partial' ? (
+                              <div className="flex items-center gap-1.5 text-yellow-600">
+                                <AlertCircle className="h-4 w-4" />
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 text-red-600">
+                                <XCircle className="h-4 w-4" />
                               </div>
                             )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {history.status === 'success' ? (
-                            <Badge variant="default" className="bg-green-600">Success</Badge>
-                          ) : history.status === 'partial' ? (
-                            <Badge variant="default" className="bg-yellow-600">Partial</Badge>
-                          ) : (
-                            <Badge variant="destructive">Failed</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {history.userEmail || 'Unknown'}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {format(new Date(history.createdAt), 'MMM dd, yyyy HH:mm')}
-                        </TableCell>
-                        <TableCell className={cn("text-right sticky right-0 bg-card z-10")}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              {history.status === 'success' && (
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            <div className="flex items-center gap-2 text-sm">
+                              <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
+                                {(history.userEmail || '?')[0].toUpperCase()}
+                              </div>
+                              <span className="truncate max-w-[150px]" title={history.userEmail || 'Unknown'}>
+                                {history.userEmail || 'Unknown'}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {format(new Date(history.createdAt), 'MMM dd, yyyy HH:mm')}
+                          </TableCell>
+                          <TableCell className={cn("sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50")}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {history.status === 'success' && (
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      if (!canManageExport) {
+                                        toast.error('You do not have permission to download export files')
+                                        return
+                                      }
+                                      const link = document.createElement('a')
+                                      link.href = `/api/file-history/${history.id}/download`
+                                      link.download = history.fileName
+                                      document.body.appendChild(link)
+                                      link.click()
+                                      document.body.removeChild(link)
+                                    }}
+                                    className="cursor-pointer"
+                                  >
+                                    <Download className="mr-2 h-4 w-4" />
+                                    Download
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem
                                   onClick={() => {
                                     if (!canManageExport) {
-                                      toast.error('You do not have permission to download export files')
+                                      toast.error('You do not have permission to delete export history')
                                       return
                                     }
-                                    const link = document.createElement('a')
-                                    link.href = `/api/file-history/${history.id}/download`
-                                    link.download = history.fileName
-                                    document.body.appendChild(link)
-                                    link.click()
-                                    document.body.removeChild(link)
+                                    handleDelete(history)
                                   }}
+                                  disabled={deleteMutation.isPending}
+                                  className="text-destructive focus:text-destructive cursor-pointer"
                                 >
-                                  <FileDown className="mr-2 h-4 w-4" />
-                                  Download
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
                                 </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  if (!canManageExport) {
-                                    toast.error('You do not have permission to delete export history')
-                                    return
-                                  }
-                                  handleDelete(history)
-                                }}
-                                disabled={deleteMutation.isPending}
-                                className="text-destructive focus:text-destructive"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </motion.tr>
+                      ))}
+                    </AnimatePresence>
                   </TableBody>
                 </Table>
+                </div>
                 <ScrollBar orientation="horizontal" />
-                <ScrollBar orientation="vertical" className='z-10' />
+                <ScrollBar orientation="vertical" className='z-50' />
               </ScrollArea>
+              
+              {/* Pagination */}
               {historyData?.pagination && historyData.pagination.totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <div className="text-sm text-muted-foreground">
-                    Page {historyData.pagination.page} of {historyData.pagination.totalPages}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
-                      disabled={historyPage === 1}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setHistoryPage(p => Math.min(historyData.pagination.totalPages, p + 1))}
-                      disabled={historyPage === historyData.pagination.totalPages}
-                    >
-                      Next
-                    </Button>
+                <div className="border-t bg-card/50 backdrop-blur-sm py-3 px-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="text-sm text-muted-foreground">
+                      Page {historyData.pagination.page} of {historyData.pagination.totalPages}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                        disabled={historyPage === 1 || isHistoryFetching}
+                        className="h-8"
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setHistoryPage(p => Math.min(historyData.pagination.totalPages, p + 1))}
+                        disabled={historyPage === historyData.pagination.totalPages || isHistoryFetching}
+                        className="h-8"
+                      >
+                        Next
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -727,7 +837,7 @@ export default function ExportPage() {
         }
         isLoading={deleteMutation.isPending}
       />
-    </div>
+    </motion.div>
   )
 }
 

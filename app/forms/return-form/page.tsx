@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { XIcon, QrCode, RefreshCw, Download } from "lucide-react"
+import { XIcon, QrCode, RefreshCw, Download, ChevronDown } from "lucide-react"
 import Image from "next/image"
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
@@ -9,6 +9,7 @@ import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { QRScannerDialog } from '@/components/qr-scanner-dialog'
 import { toast } from 'sonner'
 import { useQuery } from "@tanstack/react-query"
+import { motion, AnimatePresence } from "framer-motion"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +24,12 @@ import {
 import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
 import { EmployeeSelectField } from "@/components/employee-select-field"
 import { cn } from "@/lib/utils"
+import ReturnFormLoading from "./loading"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 
 interface Asset {
   id: string
@@ -145,7 +152,7 @@ async function fetchCompanyInfo(): Promise<{ companyInfo: { primaryLogoUrl: stri
 }
 
 export default function ReturnFormPage() {
-  const { hasPermission } = usePermissions()
+  const { hasPermission, isLoading: isLoadingPermissions } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const canViewReturnForms = hasPermission('canViewReturnForms')
   const canManageReturnForms = hasPermission('canManageReturnForms')
@@ -180,6 +187,7 @@ export default function ReturnFormPage() {
   const [returnerDate, setReturnerDate] = useState("")
   const [itSignature, setItSignature] = useState("")
   const [itDate, setItDate] = useState("")
+  const [isFormOpen, setIsFormOpen] = useState(false)
 
   // Fetch selected employee details
   const { data: selectedEmployee, isLoading: isLoadingEmployee } = useQuery<EmployeeUser | null>({
@@ -503,6 +511,12 @@ export default function ReturnFormPage() {
       toast.error('Please select an employee first')
       return
     }
+
+    // Ensure the form is open before generating PDF
+    setIsFormOpen(true)
+    
+    // Wait a bit for the collapsible to open and render
+    await new Promise(resolve => setTimeout(resolve, 100))
 
     const formElementIT = document.getElementById('return-form-it')
     
@@ -1079,14 +1093,25 @@ export default function ReturnFormPage() {
   }, [selectedAssets, resignedStaff])
 
   // Show toast notification if user doesn't have view permission
+  // Only show after permissions are loaded to avoid showing during initial load
   useEffect(() => {
-    if (!canViewReturnForms) {
+    if (!isLoadingPermissions && !canViewReturnForms) {
       toast.error('You do not have permission to view return forms')
     }
-  }, [canViewReturnForms])
+  }, [canViewReturnForms, isLoadingPermissions])
+
+  // Show loading state while permissions are loading
+  if (isLoadingPermissions) {
+    return <ReturnFormLoading />
+  }
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="w-full max-w-full overflow-x-hidden"
+    >
       <div className="mb-4 md:mb-6">
         <h1 className="text-2xl md:text-3xl font-bold">Return of Assets Form</h1>
         <p className="text-sm md:text-base text-muted-foreground">
@@ -1095,6 +1120,11 @@ export default function ReturnFormPage() {
       </div>
 
       {/* Employee Selection Card */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+      >
       <Card className="mb-6">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Employee Selection</CardTitle>
@@ -1113,11 +1143,23 @@ export default function ReturnFormPage() {
           />
         </CardContent>
       </Card>
+      </motion.div>
 
       {/* Form Details - Show when employee is selected or loading */}
+      <AnimatePresence>
       {(selectedEmployeeId && (selectedEmployee || isLoadingEmployee)) && (
-        <>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.4 }}
+          >
           {/* Form Details Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+            >
           <Card className="mb-6">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Form Details</CardTitle>
@@ -1236,8 +1278,14 @@ export default function ReturnFormPage() {
               )}
             </CardContent>
           </Card>
+            </motion.div>
 
           {/* Asset Selection Card */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
+          >
           <Card className="mb-6">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Asset Selection</CardTitle>
@@ -1284,8 +1332,11 @@ export default function ReturnFormPage() {
                         </div>
                       ) : assetSuggestions.length > 0 ? (
                         assetSuggestions.map((asset, index) => (
-                          <div
+                          <motion.div
                             key={asset.id}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.2, delay: index * 0.05 }}
                             onClick={() => handleSelectSuggestion(asset)}
                             onMouseEnter={() => setSelectedSuggestionIndex(index)}
                             className={cn(
@@ -1304,7 +1355,7 @@ export default function ReturnFormPage() {
                               </div>
                               {getStatusBadge(asset.status || 'Checked out')}
                             </div>
-                          </div>
+                          </motion.div>
                         ))
                       ) : (
                         <div className="px-3 py-2 text-sm text-muted-foreground">
@@ -1334,9 +1385,14 @@ export default function ReturnFormPage() {
                   </p>
                   <div className="space-y-2 max-h-60 overflow-y-auto">
                     {/* Loading placeholders */}
+                    <AnimatePresence>
                     {Array.from(loadingAssets).map((code) => (
-                      <div
+                        <motion.div
                         key={`loading-${code}`}
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          transition={{ duration: 0.2 }}
                         className="flex items-center justify-between gap-2 p-3 border rounded-md bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"
                       >
                         <div className="flex-1 min-w-0">
@@ -1365,12 +1421,18 @@ export default function ReturnFormPage() {
                         >
                           <XIcon className="h-4 w-4" />
                         </Button>
-                      </div>
+                        </motion.div>
                     ))}
+                    </AnimatePresence>
                     {/* Actual selected assets */}
-                    {selectedAssets.map((asset) => (
-                      <div
+                    <AnimatePresence>
+                      {selectedAssets.map((asset, index) => (
+                        <motion.div
                         key={asset.id}
+                          initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                          animate={{ opacity: 1, x: 0, scale: 1 }}
+                          exit={{ opacity: 0, x: 20, scale: 0.95 }}
+                          transition={{ duration: 0.3, delay: index * 0.05 }}
                         className="flex items-center justify-between gap-2 p-3 border rounded-md bg-muted/50"
                       >
                         <div className="flex-1 min-w-0">
@@ -1399,8 +1461,9 @@ export default function ReturnFormPage() {
                             <XIcon className="h-4 w-4" />
                           </Button>
                         </div>
-                      </div>
+                        </motion.div>
                     ))}
+                    </AnimatePresence>
                   </div>
                 </div>
               )}
@@ -1408,19 +1471,30 @@ export default function ReturnFormPage() {
               )}
             </CardContent>
           </Card>
+          </motion.div>
 
           {/* Printable Forms - IT Department Copy and Admin Copy */}
-          <Card className="mb-6 print:shadow-none print:border-0">
-            <CardHeader className="pb-3 print:hidden">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.3 }}
+          >
+            <Collapsible open={isFormOpen} onOpenChange={setIsFormOpen} className="mb-6">
+              <Card className="print:shadow-none print:border-0">
+                <CollapsibleTrigger asChild>
+                  <CardHeader className="pb-3 print:hidden cursor-pointer hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
                   <CardTitle className="text-base">Return of Assets Form</CardTitle>
                   <CardDescription className="text-xs">
                     Review the forms (IT Department Copy & Admin Copy)
                   </CardDescription>
                 </div>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
               </div>
             </CardHeader>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
             <CardContent className="pt-2 pb-4 print:p-0 space-y-8 print:space-y-0">
               {/* IT Department Copy */}
               <div className="bg-card text-card-foreground p-4 sm:p-6 md:p-8 print:p-8 print:bg-white print:text-black relative print:break-after-page" id="return-form-it">
@@ -2183,12 +2257,18 @@ export default function ReturnFormPage() {
                 </div>
               </div>
             </CardContent>
+                </CollapsibleContent>
           </Card>
-          </>
-        )}
+            </Collapsible>
+          </motion.div>
 
           {/* Signature Inputs - Only visible when not printing */}
           {selectedEmployeeId && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.4 }}
+            >
           <Card className="print:hidden">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Signatures</CardTitle>
@@ -2249,7 +2329,13 @@ export default function ReturnFormPage() {
               </div>
             </CardContent>
           </Card>
+            </motion.div>
       )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* QR Code Scanner Dialog */}
 
       {/* QR Code Scanner Dialog */}
       <QRScannerDialog
@@ -2296,7 +2382,7 @@ export default function ReturnFormPage() {
           </Button>
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }
 

@@ -1961,7 +1961,7 @@ function ListOfAssetsPageContent() {
           </div>
         </CardHeader>
         <CardContent className="flex-1 px-0 relative">
-          {isFetching && data && isManualRefresh && (
+          {isFetching && data && assets.length > 0 && (
             <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
               <Spinner variant="default" size={24} className="text-muted-foreground" />
             </div>

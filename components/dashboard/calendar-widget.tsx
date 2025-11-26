@@ -1,26 +1,160 @@
 'use client'
 
 import { useState } from 'react'
-import { format } from 'date-fns'
+import { format, startOfMonth, endOfMonth } from 'date-fns'
 import Link from 'next/link'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Wrench, Clock } from 'lucide-react'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Wrench, Clock, Plus, CheckCircle2, XCircle, List } from 'lucide-react'
 import { DashboardStats } from '@/types/dashboard'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { useTheme } from 'next-themes'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
+import { ScheduleDialog, scheduleTypeLabels } from '@/components/schedule-dialog'
+import { type ScheduleFormData } from '@/lib/validations/schedule'
+import { cn } from '@/lib/utils'
 
 interface CalendarWidgetProps {
   data: DashboardStats['calendar'] | undefined
   isLoading: boolean
 }
 
+interface Schedule {
+  id: string
+  assetId: string
+  scheduleType: string
+  scheduledDate: string
+  scheduledTime: string | null
+  title: string
+  notes: string | null
+  status: string
+  assignedTo: string | null
+  location: string | null
+  asset: {
+    id: string
+    assetTagId: string
+    description: string
+  }
+}
+
+
+// All scheduled events use purple color to match the legend
+const getScheduleTypeColor = (): string => {
+  return 'bg-purple-100 text-purple-800 dark:bg-purple-900/80 dark:text-purple-100'
+}
+
+async function fetchSchedules(startDate: Date, endDate: Date): Promise<Schedule[]> {
+  const startDateStr = format(startDate, 'yyyy-MM-dd')
+  const endDateStr = format(endDate, 'yyyy-MM-dd')
+  
+  const response = await fetch(
+    `/api/assets/schedules?startDate=${startDateStr}&endDate=${endDateStr}`
+  )
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch schedules')
+  }
+  
+  const data = await response.json()
+  return data.schedules || []
+}
+
+async function createSchedule(data: ScheduleFormData): Promise<Schedule> {
+  const response = await fetch('/api/assets/schedules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...data,
+      scheduledDate: format(data.scheduledDate, 'yyyy-MM-dd'),
+    }),
+  })
+  
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.error || 'Failed to create schedule')
+  }
+  
+  const result = await response.json()
+  return result.schedule
+}
+
 export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
   const { resolvedTheme } = useTheme()
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false)
+  const [scheduleDate, setScheduleDate] = useState<Date | null>(null)
+  const [eventsPopoverOpen, setEventsPopoverOpen] = useState(false)
+  const queryClient = useQueryClient()
+
+  const monthStart = startOfMonth(currentMonth)
+  const monthEnd = endOfMonth(currentMonth)
+
+  // Fetch schedules for the current month
+  const { data: schedules = [] } = useQuery({
+    queryKey: ['schedules', monthStart.toISOString(), monthEnd.toISOString()],
+    queryFn: () => fetchSchedules(monthStart, monthEnd),
+  })
+
+  const createScheduleMutation = useMutation({
+    mutationFn: createSchedule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['schedules'] })
+      toast.success('Schedule created successfully')
+      setIsScheduleDialogOpen(false)
+      setScheduleDate(null)
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to create schedule')
+    },
+  })
+
+  // Update schedule status mutation
+  const updateScheduleStatusMutation = useMutation({
+    mutationFn: async ({ scheduleId, status }: { scheduleId: string; status: 'completed' | 'cancelled' }) => {
+      const response = await fetch(`/api/assets/schedules/${scheduleId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to update schedule')
+      }
+      
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['schedules'] })
+      toast.success('Schedule updated successfully')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to update schedule')
+    },
+  })
+
+  const handleDateClick = (date: Date) => {
+    setSelectedDate(date)
+  }
+
+  const handleAddSchedule = (date: Date) => {
+    setScheduleDate(date)
+    setIsScheduleDialogOpen(true)
+  }
+
+  const handleSubmitSchedule = async (data: ScheduleFormData) => {
+    await createScheduleMutation.mutateAsync(data)
+  }
 
   if (isLoading) {
     return (
@@ -38,7 +172,15 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
 
   const leaseDates = new Set<string>()
   const maintenanceDates = new Set<string>()
-  const eventsByDate = new Map<string, Array<{ type: 'lease' | 'maintenance'; assetId: string; assetTagId: string }>>()
+  const eventsByDate = new Map<string, Array<{ 
+    type: 'lease' | 'maintenance' | 'schedule'
+    assetId: string
+    assetTagId: string
+    scheduleId?: string
+    scheduleType?: string
+    title?: string
+    status?: string
+  }>>()
 
   data?.leasesExpiring.forEach((lease) => {
     if (lease.leaseEndDate) {
@@ -66,6 +208,23 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
     }
   })
 
+  // Add schedules to events
+  schedules.forEach((schedule) => {
+    // Format the scheduledDate to match the date format used in the calendar (yyyy-MM-dd)
+    const scheduleDate = new Date(schedule.scheduledDate)
+    const dateStr = format(scheduleDate, 'yyyy-MM-dd')
+    if (!eventsByDate.has(dateStr)) eventsByDate.set(dateStr, [])
+    eventsByDate.get(dateStr)!.push({
+      type: 'schedule',
+      assetId: schedule.assetId,
+      assetTagId: schedule.asset.assetTagId,
+      scheduleId: schedule.id,
+      scheduleType: schedule.scheduleType,
+      title: schedule.title,
+      status: schedule.status,
+    })
+  })
+
   const today = new Date()
 
   // Render Day View
@@ -77,6 +236,7 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
     const dayEvents = eventsByDate.get(dateStr) || []
 
     return (
+      <>
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -137,6 +297,18 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-8 gap-2"
+                    onClick={() => {
+                      setScheduleDate(selectedDate)
+                      setIsScheduleDialogOpen(true)
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Schedule
+                </Button>
               </div>
             </div>
           </CardHeader>
@@ -144,38 +316,133 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
             {dayEvents.length > 0 ? (
               <div className="space-y-3">
                 {dayEvents.map((event, idx) => (
-                  <Link
+                    <div
                     key={idx}
-                    href={`/assets?search=${encodeURIComponent(event.assetTagId)}`}
                     className="block"
                   >
                     <motion.div 
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: idx * 0.05 }}
-                      className="flex items-center gap-4 p-4 border rounded-lg hover:bg-accent/50 transition-all hover:shadow-sm hover:border-primary/50 group"
+                        className={cn(
+                          "flex items-center gap-4 p-4 border rounded-lg transition-all hover:shadow-sm group",
+                          event.type === 'schedule' && event.status === 'completed'
+                            ? "bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-900/50 opacity-75 hover:bg-green-50 dark:hover:bg-green-950/30"
+                            : event.type === 'schedule' && event.status === 'cancelled'
+                            ? "bg-gray-50/50 dark:bg-gray-950/20 border-gray-200 dark:border-gray-900/50 opacity-60 hover:bg-gray-50 dark:hover:bg-gray-950/30"
+                            : "hover:bg-accent/50 hover:border-primary/50"
+                        )}
                     >
-                      <div className={`p-2 rounded-full ${
+                        <div className={cn(
+                          "p-2 rounded-full",
                         event.type === 'maintenance'
                           ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
+                            : event.type === 'schedule'
+                            ? event.status === 'completed'
+                              ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                              : event.status === 'cancelled'
+                              ? 'bg-gray-100 text-gray-500 dark:bg-gray-900/30 dark:text-gray-500'
+                              : 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
                           : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
-                      }`}>
+                        )}>
                         {event.type === 'maintenance' ? <Wrench className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
                       </div>
                       <div className="flex-1">
-                        <div className="font-medium flex items-center gap-2">
+                          <div className={cn(
+                            "font-medium flex items-center gap-2",
+                            event.type === 'schedule' && (event.status === 'completed' || event.status === 'cancelled')
+                              ? "line-through opacity-70"
+                              : ""
+                          )}>
                           {event.assetTagId}
-                          <Badge variant="outline" className="text-[10px] h-5">
-                             {event.type === 'maintenance' ? 'Maintenance' : 'Lease Expiring'}
+                            <Badge 
+                              variant="outline" 
+                              className={cn(
+                                "text-[10px] h-5",
+                                event.type === 'schedule' && event.status === 'completed'
+                                  ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800"
+                                  : event.type === 'schedule' && event.status === 'cancelled'
+                                  ? "bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-900/30 dark:text-gray-500 dark:border-gray-800"
+                                  : event.type === 'schedule'
+                                  ? 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800'
+                                  : ""
+                              )}
+                            >
+                              {event.type === 'maintenance' 
+                                ? 'Maintenance' 
+                                : event.type === 'schedule'
+                                ? event.status === 'completed'
+                                  ? '✓ Completed'
+                                  : event.status === 'cancelled'
+                                  ? '✕ Cancelled'
+                                  : scheduleTypeLabels[event.scheduleType || ''] || 'Scheduled'
+                                : 'Lease Expiring'}
                           </Badge>
+                          </div>
+                          <div className={cn(
+                            "text-sm mt-1",
+                            event.type === 'schedule' && (event.status === 'completed' || event.status === 'cancelled')
+                              ? "text-muted-foreground opacity-60"
+                              : "text-muted-foreground"
+                          )}>
+                            {event.type === 'maintenance' 
+                              ? 'Scheduled maintenance due' 
+                              : event.type === 'schedule'
+                              ? event.title || 'Scheduled operation'
+                              : 'Lease contract expires'}
+                          </div>
                         </div>
-                        <div className="text-sm text-muted-foreground mt-1">
-                          {event.type === 'maintenance' ? 'Scheduled maintenance due' : 'Lease contract expires'}
+                        <div className="flex items-center gap-2">
+                          {event.type === 'schedule' && event.scheduleId && (!event.status || event.status === 'pending') && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-100 dark:hover:bg-green-900/30"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  if (event.scheduleId) {
+                                    updateScheduleStatusMutation.mutate({ scheduleId: event.scheduleId, status: 'completed' })
+                                  }
+                                }}
+                                disabled={updateScheduleStatusMutation.isPending}
+                                title="Mark as completed"
+                              >
+                                <CheckCircle2 className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-900/30"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  if (event.scheduleId) {
+                                    updateScheduleStatusMutation.mutate({ scheduleId: event.scheduleId, status: 'cancelled' })
+                                  }
+                                }}
+                                disabled={updateScheduleStatusMutation.isPending}
+                                title="Cancel schedule"
+                              >
+                                <XCircle className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
+                          <Link
+                            href={`/assets?search=${encodeURIComponent(event.assetTagId)}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <ChevronRight className={cn(
+                              "h-4 w-4 transition-transform",
+                              event.type === 'schedule' && (event.status === 'completed' || event.status === 'cancelled')
+                                ? "text-muted-foreground opacity-50"
+                                : "text-muted-foreground group-hover:translate-x-1"
+                            )} />
+                          </Link>
                         </div>
+                      </motion.div>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
-                    </motion.div>
-                  </Link>
                 ))}
               </div>
             ) : (
@@ -183,13 +450,34 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                 <CalendarIcon className="h-12 w-12 mb-4 opacity-20" />
                 <p className="font-medium">No events scheduled</p>
                 <p className="text-sm opacity-70 mt-1">
-                  No maintenance or lease events for this date
+                    No maintenance, lease, or scheduled events for this date
                 </p>
+                  <Button
+                    variant="outline"
+                    className="mt-4 gap-2"
+                    onClick={() => {
+                      setScheduleDate(selectedDate)
+                      setIsScheduleDialogOpen(true)
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Schedule
+                  </Button>
               </div>
             )}
           </CardContent>
         </Card>
       </motion.div>
+
+        {/* Schedule Dialog - Included in Day View */}
+        <ScheduleDialog
+          open={isScheduleDialogOpen}
+          onOpenChange={setIsScheduleDialogOpen}
+          onSubmit={handleSubmitSchedule}
+          isLoading={createScheduleMutation.isPending}
+          defaultDate={scheduleDate}
+        />
+      </>
     )
   }
 
@@ -221,7 +509,50 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
   
   const allDays = [...trailingDays, ...currentMonthDays, ...nextMonthDays]
 
+  // Collect all events for the current month view
+  const allEventsList: Array<{
+    date: string
+    dateObj: Date
+    events: Array<{
+      type: 'lease' | 'maintenance' | 'schedule'
+      assetId: string
+      assetTagId: string
+      scheduleId?: string
+      scheduleType?: string
+      title?: string
+      status?: string
+    }>
+  }> = []
+  
+  allDays.forEach((date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const dateStr = `${year}-${month}-${day}`
+    const events = eventsByDate.get(dateStr) || []
+    
+    if (events.length > 0) {
+      allEventsList.push({
+        date: dateStr,
+        dateObj: date,
+        events,
+      })
+    }
+  })
+
+  // Sort events by date
+  allEventsList.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime())
+
+  // Filter events for current month only (for badge count)
+  const currentMonthEvents = allEventsList.filter((item) => {
+    return item.dateObj.getMonth() === currentMonth.getMonth() &&
+           item.dateObj.getFullYear() === currentMonth.getFullYear()
+  })
+
+  const currentMonthEventCount = currentMonthEvents.reduce((sum, item) => sum + item.events.length, 0)
+
   return (
+    <>
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
@@ -237,10 +568,11 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                 Calendar
               </CardTitle>
               <CardDescription>
-                Lease expiries and maintenance
+                  Lease expiries, maintenance, and scheduled operations
               </CardDescription>
             </div>
-            <div className="flex items-center gap-1 bg-muted/30 p-1 rounded-lg">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 bg-muted/30 p-0.5">
               <Button
                 variant="ghost"
                 size="icon"
@@ -260,6 +592,124 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
+              </div>
+              <Popover open={eventsPopoverOpen} onOpenChange={setEventsPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-2"
+                  >
+                    <List className="h-4 w-4" />
+                    <span className="hidden sm:inline">Events</span>
+                    {currentMonthEventCount > 0 && (
+                      <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1.5 text-[10px]">
+                        {currentMonthEventCount}
+                      </Badge>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-0" align="end">
+                  <div className="p-4 border-b">
+                    <h4 className="font-semibold text-sm">All Events - {format(currentMonth, 'MMMM yyyy')}</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {currentMonthEventCount} total events
+                    </p>
+                  </div>
+                  <ScrollArea className="h-[400px]">
+                    <div className="p-2">
+                      {currentMonthEvents.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground text-sm">
+                          <CalendarIcon className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                          <p>No events scheduled</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {currentMonthEvents.map((item) => (
+                            <div key={item.date} className="space-y-1">
+                              <div className="flex items-center gap-2 px-2 py-1">
+                                <span className="text-xs font-semibold text-muted-foreground">
+                                  {format(item.dateObj, 'MMM d, yyyy')}
+                                </span>
+                                <Badge variant="outline" className="h-4 text-[9px] px-1.5">
+                                  {item.events.length} {item.events.length === 1 ? 'event' : 'events'}
+                                </Badge>
+                              </div>
+                              <div className="space-y-1">
+                                {item.events.map((event, idx) => (
+                                  <Link
+                                    key={`${item.date}-${idx}`}
+                                    href={`/assets?search=${encodeURIComponent(event.assetTagId)}`}
+                                    onClick={() => setEventsPopoverOpen(false)}
+                                  >
+                                    <div className="flex items-center gap-2 p-2 rounded-md hover:bg-accent/50 transition-colors cursor-pointer">
+                                      <div className={cn(
+                                        "p-1.5 rounded-full",
+                                        event.type === 'maintenance'
+                                          ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
+                                          : event.type === 'schedule'
+                                          ? event.status === 'completed'
+                                            ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                                            : event.status === 'cancelled'
+                                            ? 'bg-gray-100 text-gray-500 dark:bg-gray-900/30 dark:text-gray-500'
+                                            : 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
+                                          : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+                                      )}>
+                                        {event.type === 'maintenance' ? (
+                                          <Wrench className="h-3 w-3" />
+                                        ) : event.type === 'schedule' ? (
+                                          <Clock className="h-3 w-3" />
+                                        ) : (
+                                          <CalendarIcon className="h-3 w-3" />
+                                        )}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-sm font-medium truncate">
+                                            {event.assetTagId}
+                                          </span>
+                                          <Badge
+                                            variant="outline"
+                                            className={cn(
+                                              "text-[9px] h-4",
+                                              event.type === 'schedule' && event.status === 'completed'
+                                                ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800"
+                                                : event.type === 'schedule' && event.status === 'cancelled'
+                                                ? "bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-900/30 dark:text-gray-500 dark:border-gray-800"
+                                                : event.type === 'schedule'
+                                                ? 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800'
+                                                : ""
+                                            )}
+                                          >
+                                            {event.type === 'maintenance'
+                                              ? 'Maintenance'
+                                              : event.type === 'schedule'
+                                              ? event.status === 'completed'
+                                                ? '✓ Completed'
+                                                : event.status === 'cancelled'
+                                                ? '✕ Cancelled'
+                                                : scheduleTypeLabels[event.scheduleType || ''] || 'Scheduled'
+                                              : 'Lease Expiring'}
+                                          </Badge>
+                                        </div>
+                                        {event.type === 'schedule' && event.title && (
+                                          <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                            {event.title}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </Link>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </CardHeader>
@@ -286,18 +736,31 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                 <motion.div
                   key={`${dateStr}-${idx}-${resolvedTheme}`}
                   whileHover={{ scale: 0.98, backgroundColor: "var(--accent)" }}
-                  onClick={() => setSelectedDate(date)}
-                  className={`
-                    relative border rounded-md p-1 flex flex-col cursor-pointer transition-colors min-h-[80px]
-                    ${isCurrentMonth ? 'bg-card hover:bg-accent/50' : 'bg-muted/20 opacity-50'}
-                    ${isToday ? 'ring-2 ring-primary ring-inset' : ''}
-                  `}
+                    onClick={() => handleDateClick(date)}
+                    className={cn(
+                      "relative border rounded-md p-1 flex flex-col cursor-pointer transition-colors min-h-[80px]",
+                      isCurrentMonth ? 'bg-card hover:bg-accent/50' : 'bg-muted/20 opacity-50',
+                      isToday && 'ring-2 ring-primary ring-inset'
+                    )}
                 >
-                  <span className={`text-[10px] font-medium mb-1 w-fit px-1 rounded ${
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={cn(
+                        "text-[10px] font-medium w-fit px-1 rounded",
                     isToday ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
-                  }`}>
+                      )}>
                     {date.getDate()}
                   </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleAddSchedule(date)
+                        }}
+                        className="opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity p-0.5 hover:bg-primary/10 rounded"
+                        title="Add schedule"
+                      >
+                        <Plus className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                    </div>
                   
                   <div className="flex flex-col gap-0.5 overflow-hidden">
                     {events.slice(0, 2).map((event, eventIdx) => (
@@ -305,17 +768,34 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                         key={eventIdx}
                         onClick={(e) => {
                           e.stopPropagation()
-                          // Navigate to search results for this asset
                         }}
                       >
                         <div
-                          className={`text-[10px] h-4 px-1 py-0.5 w-full flex items-center rounded-sm ${
+                            className={cn(
+                              "text-[10px] h-4 px-1 py-0.5 w-full flex items-center rounded-sm",
                             event.type === 'maintenance'
                               ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/80 dark:text-orange-100'
+                                : event.type === 'schedule'
+                                ? event.status === 'completed'
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300 opacity-70 line-through'
+                                  : event.status === 'cancelled'
+                                  ? 'bg-gray-100 text-gray-500 dark:bg-gray-900/50 dark:text-gray-500 opacity-60 line-through'
+                                  : getScheduleTypeColor()
                               : 'bg-blue-100 text-blue-800 dark:bg-blue-900/80 dark:text-blue-100'
-                          }`}
+                            )}
                         >
-                          <span className="truncate font-medium">{event.assetTagId}</span>
+                            <span className={cn(
+                              "truncate font-medium",
+                              event.type === 'schedule' && (event.status === 'completed' || event.status === 'cancelled')
+                                ? "line-through"
+                                : ""
+                            )}>
+                              {event.type === 'schedule' && event.status === 'completed'
+                                ? `✓ ${event.assetTagId}`
+                                : event.type === 'schedule' && event.status === 'cancelled'
+                                ? `✕ ${event.assetTagId}`
+                                : event.assetTagId}
+                            </span>
                         </div>
                       </div>
                     ))}
@@ -339,9 +819,23 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                 <div className="h-3 w-3 shrink-0 rounded-full bg-blue-400" />
                 Lease Expiring
              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-3 shrink-0 rounded-full bg-purple-400" />
+                Scheduled
+             </div>
           </div>
         </CardContent>
       </Card>
     </motion.div>
+
+      {/* Schedule Dialog */}
+      <ScheduleDialog
+        open={isScheduleDialogOpen}
+        onOpenChange={setIsScheduleDialogOpen}
+        onSubmit={handleSubmitSchedule}
+        isLoading={createScheduleMutation.isPending}
+        defaultDate={scheduleDate}
+      />
+    </>
   )
 }

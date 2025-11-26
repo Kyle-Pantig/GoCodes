@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useRef, useTransition, Suspense, useCallb
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   useReactTable,
   getCoreRowModel,
@@ -1566,6 +1567,7 @@ function AssetsPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
+  const isInitialMount = useRef(true)
   
   // Initialize state from URL params
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '')
@@ -2462,8 +2464,22 @@ function AssetsPageContent() {
   // Summary loading state is now tied to main assets query
   const isLoadingSummary = isLoading
 
+  // Track initial mount for animations
+  useEffect(() => {
+    if (isInitialMount.current && assets.length > 0) {
+      const timer = setTimeout(() => {
+        isInitialMount.current = false
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [assets.length])
+
   return (
-    <>
+    <motion.div
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
       <div className="flex items-center justify-between ">
         <div>
           <h1 className="text-3xl font-bold">All Assets</h1>
@@ -2487,7 +2503,12 @@ function AssetsPageContent() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mt-6 ">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+        className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mt-6"
+      >
         {/* Total Assets */}
         <Card className="flex flex-col py-0 gap-2">
           <CardHeader className="p-4 pb-2">
@@ -2589,8 +2610,14 @@ function AssetsPageContent() {
             )}
           </CardContent>
         </Card>
-      </div>
-        <Card className="mt-6 pb-0">
+      </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+          className="mt-6"
+        >
+          <Card className="pb-0">
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
@@ -2884,12 +2911,25 @@ function AssetsPageContent() {
                   ))}
                 </TableHeader>
                 <TableBody>
+                  <AnimatePresence mode='popLayout'>
                   {table.getRowModel().rows?.length ? (
-                    table.getRowModel().rows.map((row) => (
-                      <TableRow
+                      table.getRowModel().rows.map((row, index) => (
+                        <motion.tr
                         key={row.id}
+                          layout
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -20 }}
+                          transition={{ 
+                            duration: 0.2, 
+                            delay: isInitialMount.current ? index * 0.05 : 0,
+                            layout: {
+                              duration: 0.15,
+                              ease: [0.4, 0, 0.2, 1]
+                            }
+                          }}
                         data-state={row.getIsSelected() && 'selected'}
-                        className="group"
+                          className="group border-b"
                       >
                         {row.getVisibleCells().map((cell) => {
                           const isActionsColumn = cell.column.id === 'actions'
@@ -2904,7 +2944,7 @@ function AssetsPageContent() {
                           </TableCell>
                           )
                         })}
-                      </TableRow>
+                        </motion.tr>
                     ))
                   ) : (
                     <TableRow>
@@ -2913,6 +2953,7 @@ function AssetsPageContent() {
                       </TableCell>
                     </TableRow>
                   )}
+                  </AnimatePresence>
                 </TableBody>
               </Table>
               <ScrollBar orientation="horizontal" className='z-10' />
@@ -3000,6 +3041,7 @@ function AssetsPageContent() {
           </div>
         </CardContent>
         </Card>
+        </motion.div>
       {/* Export Fields Selection Dialog */}
       <ExportFieldsDialog
         open={isExportDialogOpen}
@@ -3023,7 +3065,7 @@ function AssetsPageContent() {
         isDeleting={isDeleting}
         progress={isDeleting ? { current: deletingProgress.current, total: deletingProgress.total } : undefined}
       />
-    </>
+    </motion.div>
   )
 }
 

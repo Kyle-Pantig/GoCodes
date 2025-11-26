@@ -1,14 +1,14 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Upload, FileSpreadsheet, History, Package, Download, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Upload, History, Download, MoreHorizontal, Trash2, RefreshCw, CheckCircle2, XCircle, AlertCircle, FileUp, FileType, Info, Package } from 'lucide-react'
 import { toast } from 'sonner'
+import { motion, AnimatePresence } from 'framer-motion'
 // Use xlsx-js-style for styling support (drop-in replacement for xlsx)
 import * as XLSX from 'xlsx-js-style'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
@@ -38,6 +38,16 @@ interface FileHistory {
   userId: string
   userEmail: string | null
   createdAt: string
+}
+
+interface ImportHistoryResponse {
+  fileHistory: FileHistory[]
+  pagination: {
+    page: number
+    pageSize: number
+    total: number
+    totalPages: number
+  }
 }
 
 const ALL_COLUMNS = [
@@ -96,6 +106,7 @@ export default function ImportPage() {
   const canViewAssets = hasPermission('canViewAssets')
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const isInitialMount = useRef(true)
   const [historyPage, setHistoryPage] = useState(1)
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false)
   const [selectedTemplateFields, setSelectedTemplateFields] = useState<Set<string>>(
@@ -105,14 +116,19 @@ export default function ImportPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedHistory, setSelectedHistory] = useState<FileHistory | null>(null)
 
+  useEffect(() => {
+    isInitialMount.current = false
+  }, [])
+
   // Fetch import history
-  const { data: historyData, isLoading: historyLoading } = useQuery({
+  const { data: historyData, isLoading: historyLoading, isFetching: isHistoryFetching, refetch: refetchHistory } = useQuery<ImportHistoryResponse>({
     queryKey: ['importHistory', historyPage],
     queryFn: () => fetchImportHistory(historyPage),
     enabled: !permissionsLoading && canViewAssets,
     staleTime: 30000, // Cache for 30 seconds
     refetchOnWindowFocus: false, // Don't refetch on window focus
     refetchOnMount: false, // Don't refetch on mount if data exists
+    placeholderData: (previousData) => previousData,
   })
 
   // Delete file history mutation
@@ -696,268 +712,377 @@ export default function ImportPage() {
 
   if (!canViewAssets && !permissionsLoading) {
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Import Assets</h1>
-          <p className="text-muted-foreground">
-            Import asset data from Excel or CSV files
-          </p>
-        </div>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="flex flex-col items-center gap-3 text-center">
+      <div className="space-y-6 h-[60vh] flex flex-col items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-center max-w-md">
+          <div className="h-24 w-24 rounded-full bg-muted flex items-center justify-center mb-4">
             <Package className="h-12 w-12 text-muted-foreground opacity-50" />
-            <p className="text-lg font-medium">Access Denied</p>
-            <p className="text-sm text-muted-foreground">
-              You do not have permission to view import history. Please contact your administrator.
-            </p>
           </div>
+          <h1 className="text-2xl font-bold">Access Denied</h1>
+          <p className="text-muted-foreground">
+            You do not have permission to view import history. Please contact your administrator.
+          </p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Import Assets</h1>
-        <p className="text-muted-foreground">
-          Import asset data from Excel or CSV files
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-8 max-w-[1600px] mx-auto"
+    >
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold tracking-tight">Import Assets</h1>
+        <p className="text-muted-foreground text-lg">
+          Bulk import asset data from Excel or CSV files
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card >
-        <CardHeader className="shrink-0 pb-3">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
-            <div>
-              <CardTitle>Import Assets</CardTitle>
-              <CardDescription className="text-xs sm:text-sm">
-                Upload an Excel (.xlsx, .xls) or CSV file to import assets into the system
-              </CardDescription>
-            </div>
-            <div className="flex gap-2 sm:gap-3 items-center">
-              <Button
-                variant="outline"
-                onClick={() => setIsTemplateDialogOpen(true)}
-                size='sm'
-                disabled={permissionsLoading}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="overflow-hidden border-primary/10 shadow-md gap-0">
+            <CardHeader className='pb-1'>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-xl">
+                    <FileUp className="h-5 w-5 text-primary" />
+                    Upload File
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    Drag and drop or select a file to begin import
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsTemplateDialogOpen(true)}
+                  size="sm"
+                  disabled={permissionsLoading}
+                  className="shrink-0 gap-2 border-primary/20 hover:bg-primary/5 hover:text-primary"
+                >
+                  <Download className="h-4 w-4" />
+                  Download Template
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 sm:p-10">
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => {
+                  if (!canManageImport) {
+                    e.preventDefault()
+                    toast.error('You do not have permission to import assets')
+                    return
+                  }
+                  handleDrop(e)
+                }}
+                className={cn(
+                  "relative flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 transition-all duration-200 ease-in-out min-h-[300px] group cursor-pointer",
+                  isDragging
+                    ? 'border-primary bg-primary/5 scale-[1.01]'
+                    : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30'
+                )}
+                onClick={() => {
+                  if (!canManageImport) {
+                    toast.error('You do not have permission to import assets')
+                    return
+                  }
+                  fileInputRef.current?.click()
+                }}
               >
-                <Download className="mr-2 h-4 w-4" />
-                Download Template
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="flex flex-col h-full min-h-[400px]">
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => {
-              if (!canManageImport) {
-                e.preventDefault()
-                toast.error('You do not have permission to import assets')
-                return
-              }
-              handleDrop(e)
-            }}
-            className={`flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-8 space-y-4 transition-colors flex-1 ${
-              isDragging
-                ? 'border-primary bg-primary/5'
-                : 'border-gray-300 dark:border-gray-700 hover:border-primary/50'
-            }`}
-          >
-            <FileSpreadsheet className={`h-12 w-12 transition-colors ${
-              isDragging ? 'text-primary' : 'text-muted-foreground'
-            }`} />
-            <div className="text-center space-y-2">
-              {isDragging ? (
-                <>
-                  <p className="text-sm font-medium text-primary">Drop your file here</p>
-                  <p className="text-xs text-muted-foreground">
+                <div className={cn(
+                  "p-4 rounded-full mb-6 transition-colors duration-200",
+                  isDragging ? "bg-primary/10" : "bg-muted group-hover:bg-primary/5"
+                )}>
+                  <Upload className={cn(
+                    "h-10 w-10 transition-colors duration-200",
+                    isDragging ? "text-primary" : "text-muted-foreground group-hover:text-primary"
+                  )} />
+                </div>
+                
+                <div className="text-center space-y-2 max-w-sm mx-auto">
+                  <h3 className="font-semibold text-lg">
+                    {isDragging ? 'Drop file to upload' : 'Click or drag file here'}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
                     Supported formats: .xlsx, .xls, .csv
                   </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm font-medium">Drag and drop your file here</p>
-                  <p className="text-xs text-muted-foreground">
-                    or click the button below to browse
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Supported formats: .xlsx, .xls, .csv
-                  </p>
-                </>
-              )}
-            </div>
-            <Button
-              onClick={() => {
-                if (!canManageImport) {
-                  toast.error('You do not have permission to import assets')
-                  return
-                }
-                fileInputRef.current?.click()
-              }}
-              className="w-full sm:w-auto"
-              size='sm'
-              disabled={permissionsLoading || !canViewAssets}
-            >
-              <Upload className="mr-2 h-4 w-4" />
-              Choose File
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              className="hidden"
-              onChange={handleImport}
-            />
-          </div>
-        </CardContent>
-      </Card>
+                </div>
 
-        {/* Import History */}
-        <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <History className="h-5 w-5" />
-            Import History
-          </CardTitle>
-          <CardDescription>
-            Recent import operations
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {permissionsLoading || historyLoading ? (
-            <div className="flex flex-col items-center justify-center h-[400px] text-center">
-              <Spinner className="h-6 w-6" />
-              <p className="text-muted-foreground mt-2">Loading...</p>
-            </div>
-          ) : !historyData?.fileHistory || historyData.fileHistory.length === 0 ? (
-            <div className="flex items-center justify-center h-[400px] text-center text-muted-foreground">
-              No import history found
-            </div>
-          ) : (
-            <>
-              <ScrollArea className="h-[400px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>File Name</TableHead>
-                      <TableHead>Records</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Imported By</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className={cn("text-right sticky right-0 bg-card z-10")}>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {historyData?.fileHistory?.map((history: FileHistory) => (
-                      <TableRow key={history.id}>
-                        <TableCell className="font-medium">{history.fileName}</TableCell>
-                        <TableCell>
-                          <div className="text-sm space-y-1">
-                            {history.recordsProcessed !== null && (
-                              <div>Processed: {history.recordsProcessed}</div>
-                            )}
-                            {history.recordsCreated !== null && (
-                              <div className="text-green-600">Created: {history.recordsCreated}</div>
-                            )}
-                            {history.recordsSkipped !== null && history.recordsSkipped > 0 && (
-                              <div className="text-yellow-600">Skipped: {history.recordsSkipped}</div>
-                            )}
-                            {history.recordsFailed !== null && history.recordsFailed > 0 && (
-                              <div className="text-red-600">Failed: {history.recordsFailed}</div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {history.status === 'success' ? (
-                            <Badge variant="default" className="bg-green-600">Success</Badge>
-                          ) : history.status === 'partial' ? (
-                            <Badge variant="default" className="bg-yellow-600">Partial</Badge>
-                          ) : (
-                            <Badge variant="destructive">Failed</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {history.userEmail || 'Unknown'}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {format(new Date(history.createdAt), 'MMM dd, yyyy HH:mm')}
-                        </TableCell>
-                        <TableCell className={cn("text-right sticky right-0 bg-card z-10")}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => handleDelete(history)}
-                                disabled={deleteMutation.isPending}
-                                className="text-destructive focus:text-destructive"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                <ScrollBar orientation="horizontal" />
-                <ScrollBar orientation="vertical" className='z-10' />
-              </ScrollArea>
-              {historyData?.pagination && historyData.pagination.totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <div className="text-sm text-muted-foreground">
-                    Page {historyData.pagination.page} of {historyData.pagination.totalPages}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
-                      disabled={historyPage === 1}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setHistoryPage(p => Math.min(historyData.pagination.totalPages, p + 1))}
-                      disabled={historyPage === historyData.pagination.totalPages}
-                    >
-                      Next
-                    </Button>
-                  </div>
+                <Button
+                  variant="default"
+                  className="mt-8 w-full sm:w-auto min-w-[140px]"
+                  disabled={permissionsLoading || !canViewAssets}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!canManageImport) {
+                      toast.error('You do not have permission to import assets')
+                      return
+                    }
+                    fileInputRef.current?.click()
+                  }}
+                >
+                  Select File
+                </Button>
+                
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={handleImport}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Import Instructions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="h-full gap-0 pb-8">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Info className="h-4 w-4 text-primary" />
+                  Requirements
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground space-y-2">
+                <p className="flex items-start gap-2">
+                  <span className="mt-1.5 h-1 w-1 rounded-full bg-primary shrink-0" />
+                  First row must contain column headers
+                </p>
+                <p className="flex items-start gap-2">
+                  <span className="mt-1.5 h-1 w-1 rounded-full bg-primary shrink-0" />
+                  &quot;Asset Tag ID&quot; column is required
+                </p>
+                <p className="flex items-start gap-2">
+                  <span className="mt-1.5 h-1 w-1 rounded-full bg-primary shrink-0" />
+                  Use the template for best results
+                </p>
+              </CardContent>
+            </Card>
+            
+            <Card className="h-full gap-0 pb-8">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FileType className="h-4 w-4 text-primary" />
+                  Data Handling
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground space-y-2">
+                <p className="flex items-start gap-2">
+                  <span className="mt-1.5 h-1 w-1 rounded-full bg-primary shrink-0" />
+                  Existing asset tags will be skipped
+                </p>
+                <p className="flex items-start gap-2">
+                  <span className="mt-1.5 h-1 w-1 rounded-full bg-primary shrink-0" />
+                  Duplicates in file are automatically removed
+                </p>
+                <p className="flex items-start gap-2">
+                  <span className="mt-1.5 h-1 w-1 rounded-full bg-primary shrink-0" />
+                  Large files are processed in batches
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          {/* Import History */}
+          <Card className="h-full flex flex-col pb-0 gap-0">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <History className="h-5 w-5 text-primary" />
+                    Import History
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    Recent import operations
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    refetchHistory()
+                  }}
+                  disabled={isHistoryFetching || historyLoading}
+                  className="h-8 w-8 shrink-0"
+                  title="Refresh history"
+                >
+                  <RefreshCw className={cn("h-4 w-4", isHistoryFetching && "animate-spin")} />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 relative flex-1 min-h-[400px]">
+              {/* Glass effect overlay when fetching */}
+              {isHistoryFetching && historyData?.fileHistory && historyData.fileHistory.length > 0 && (
+                <div className="absolute left-0 right-[10px] top-0 bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center rounded-b-lg">
+                  <Spinner variant="default" size={24} className="text-muted-foreground" />
                 </div>
               )}
-            </>
-          )}
-        </CardContent>
-      </Card>
 
-        {/* Import Instructions */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Import Instructions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <ul className="list-disc list-inside space-y-1 ml-2">
-                <li>First row should contain column headers</li>
-                <li>Required field: Asset Tag ID</li>
-                <li>Duplicate asset tags within the file will be skipped</li>
-                <li>Assets with existing asset tags will be skipped</li>
-                <li>Supported column names include: Asset Tag ID, Description, Category, Status, Location, etc.</li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
+              {permissionsLoading || (historyLoading && !historyData) ? (
+                <div className="flex flex-col items-center justify-center h-[400px] text-center gap-3">
+                  <Spinner className="h-8 w-8 text-primary" />
+                  <p className="text-sm text-muted-foreground animate-pulse">Loading history...</p>
+                </div>
+              ) : !historyData?.fileHistory || historyData.fileHistory.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-[400px] text-center text-muted-foreground gap-2 p-6">
+                  <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-2">
+                    <History className="h-6 w-6 opacity-50" />
+                  </div>
+                  <p className="font-medium">No import history found</p>
+                  <p className="text-sm max-w-[200px]">Your recent imports will appear here</p>
+                </div>
+              ) : (
+                <>
+                  <ScrollArea className="h-[600px]">
+                    <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
+                    <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
+                      <Table className="border-b">
+                        <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-2.5">
+                          <TableRow className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-[1.5px] after:h-px after:bg-border after:z-30">
+                            <TableHead className="w-[180px] bg-card transition-colors group-hover:bg-muted/50 pl-6">File Name</TableHead>
+                            <TableHead className="bg-card transition-colors group-hover:bg-muted/50">Records</TableHead>
+                            <TableHead className="bg-card transition-colors group-hover:bg-muted/50">Status</TableHead>
+                            <TableHead className="bg-card transition-colors group-hover:bg-muted/50">Imported By</TableHead>
+                            <TableHead className="bg-card transition-colors group-hover:bg-muted/50">Date</TableHead>
+                            <TableHead className="text-center sticky z-10 right-0 bg-card group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          <AnimatePresence mode='popLayout'>
+                            {historyData?.fileHistory?.map((history: FileHistory, index: number) => (
+                              <motion.tr
+                                key={history.id}
+                                layout
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -20 }}
+                                transition={{ 
+                                  duration: 0.2, 
+                                  delay: isInitialMount.current ? index * 0.05 : 0 
+                                }}
+                                className="group hover:bg-muted/50 border-b transition-colors"
+                              >
+                                <TableCell className="font-medium pl-6">
+                                  <span className="truncate font-medium" title={history.fileName}>
+                                    {history.fileName}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="text-xs space-y-1">
+                                    {history.recordsProcessed !== null && (
+                                      <div>Processed: {history.recordsProcessed}</div>
+                                    )}
+                                    {history.recordsCreated !== null && (
+                                      <div className="text-green-600">Created: {history.recordsCreated}</div>
+                                    )}
+                                    {history.recordsSkipped !== null && history.recordsSkipped > 0 && (
+                                      <div className="text-yellow-600">Skipped: {history.recordsSkipped}</div>
+                                    )}
+                                    {history.recordsFailed !== null && history.recordsFailed > 0 && (
+                                      <div className="text-red-600">Failed: {history.recordsFailed}</div>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center pl-2">
+                                    {history.status === 'success' ? (
+                                      <div className="flex items-center justify-center h-8 w-8 text-green-600" title="Success">
+                                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                                      </div>
+                                    ) : history.status === 'partial' ? (
+                                      <div className="flex items-center justify-center h-8 w-8 text-yellow-600" title="Partial">
+                                        <AlertCircle className="h-4 w-4 shrink-0" />
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-center h-8 w-8 text-red-600" title="Failed">
+                                        <XCircle className="h-4 w-4 shrink-0" />
+                                      </div>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-muted-foreground text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium shrink-0">
+                                      {(history.userEmail || '?')[0].toUpperCase()}
+                                    </div>
+                                    <span className="truncate max-w-[120px]" title={history.userEmail || 'Unknown'}>
+                                      {history.userEmail || 'Unknown'}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-muted-foreground text-xs">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span>{format(new Date(history.createdAt), 'MMM dd')}</span>
+                                    <span className="text-[10px] opacity-70">{format(new Date(history.createdAt), 'HH:mm')}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className={cn("sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50")}>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem
+                                        onClick={() => handleDelete(history)}
+                                        disabled={deleteMutation.isPending}
+                                        className="text-destructive focus:text-destructive cursor-pointer"
+                                      >
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Delete
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </TableCell>
+                              </motion.tr>
+                            ))}
+                          </AnimatePresence>
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <ScrollBar orientation="horizontal" />
+                    <ScrollBar orientation="vertical" className='z-50' />
+                  </ScrollArea>
+                  
+                  {historyData?.pagination && historyData.pagination.totalPages > 1 && (
+                    <div className="flex items-center justify-between p-4 border-t bg-card">
+                      <div className="text-xs text-muted-foreground">
+                        Page {historyData.pagination.page} of {historyData.pagination.totalPages}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                          disabled={historyPage === 1 || isHistoryFetching}
+                          className="h-8 px-2 text-xs"
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setHistoryPage(p => Math.min(historyData.pagination.totalPages, p + 1))}
+                          disabled={historyPage === historyData.pagination.totalPages || isHistoryFetching}
+                          className="h-8 px-2 text-xs"
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Template Download Dialog */}
@@ -988,7 +1113,7 @@ export default function ImportPage() {
         }
         isLoading={deleteMutation.isPending}
       />
-    </div>
+    </motion.div>
   )
 }
 

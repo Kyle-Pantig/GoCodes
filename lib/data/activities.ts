@@ -42,7 +42,7 @@ export async function getActivities(params: GetActivitiesParams = {}): Promise<A
   const pageSize = Math.min(Math.max(params.pageSize || 50, 25), 500) // Clamp between 25-500
   const activityType = params.activityType
   
-  // Check cache first (10 second TTL for activities - Redis cached)
+  // Check cache first (30 second TTL for activities - Redis cached, same as dashboard)
   // Cache key includes pagination and filter params for correct cache hits
   const cacheKey = `activities-v2-${activityType || 'all'}-${page}-${pageSize}`
   const cached = await getCached<ActivitiesResult>(cacheKey)
@@ -114,7 +114,7 @@ export async function getActivities(params: GetActivitiesParams = {}): Promise<A
             }
           }
           
-          await setCached(cacheKey, result, 10000)
+          await setCached(cacheKey, result, 30000)
           return result
         }
         case 'checkin': {
@@ -173,7 +173,7 @@ export async function getActivities(params: GetActivitiesParams = {}): Promise<A
             }
           }
           
-          await setCached(cacheKey, result, 10000)
+          await setCached(cacheKey, result, 30000)
           return result
         }
         case 'move': {
@@ -232,7 +232,7 @@ export async function getActivities(params: GetActivitiesParams = {}): Promise<A
             }
           }
           
-          await setCached(cacheKey, result, 10000)
+          await setCached(cacheKey, result, 30000)
           return result
         }
         case 'reserve': {
@@ -292,7 +292,7 @@ export async function getActivities(params: GetActivitiesParams = {}): Promise<A
             }
           }
           
-          await setCached(cacheKey, result, 10000)
+          await setCached(cacheKey, result, 30000)
           return result
         }
         case 'lease': {
@@ -343,7 +343,7 @@ export async function getActivities(params: GetActivitiesParams = {}): Promise<A
             }
           }
           
-          await setCached(cacheKey, result, 10000)
+          await setCached(cacheKey, result, 30000)
           return result
         }
         case 'leaseReturn': {
@@ -399,7 +399,7 @@ export async function getActivities(params: GetActivitiesParams = {}): Promise<A
             }
           }
           
-          await setCached(cacheKey, result, 10000)
+          await setCached(cacheKey, result, 30000)
           return result
         }
         case 'dispose': {
@@ -451,7 +451,7 @@ export async function getActivities(params: GetActivitiesParams = {}): Promise<A
             }
           }
           
-          await setCached(cacheKey, result, 10000)
+          await setCached(cacheKey, result, 30000)
           return result
         }
         case 'maintenance': {
@@ -505,15 +505,18 @@ export async function getActivities(params: GetActivitiesParams = {}): Promise<A
             }
           }
           
-          await setCached(cacheKey, result, 10000)
+          await setCached(cacheKey, result, 30000)
           return result
         }
       }
     }
     
     // For all activity types, use a single transaction to avoid connection pool exhaustion
-    // Fetch a reasonable amount from each type (enough to cover pagination, but not excessive)
-    const itemsPerType = Math.min(pageSize, 100) // Cap at 100 per type to avoid fetching too much
+    // Fetch enough items to cover the current page - calculate based on page number and pageSize
+    // For page 3 with 50 per page, we need at least 150 items total (3 * 50)
+    // We fetch (page * pageSize) items per type to ensure we have enough after sorting/merging
+    // Cap at 200 per type to avoid fetching too much data unnecessarily
+    const itemsPerType = Math.min(Math.max(page * pageSize, pageSize * 2), 200) // Fetch enough to cover current page, cap at 200
     
     // Use a single transaction for all queries to minimize connection usage
     const [
@@ -885,8 +888,8 @@ export async function getActivities(params: GetActivitiesParams = {}): Promise<A
       }
     }
     
-    // Cache for 2 minutes
-    setCached(cacheKey, result, 120000)
+    // Cache for 30 seconds (same as dashboard) - Redis cached for fast access
+    await setCached(cacheKey, result, 30000)
     
     return result
   } catch (error) {

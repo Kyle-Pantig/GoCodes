@@ -5,8 +5,10 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { XIcon, History, QrCode } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { QRScannerDialog } from '@/components/qr-scanner-dialog'
 import { QRCodeDisplayDialog } from '@/components/qr-code-display-dialog'
@@ -85,6 +87,7 @@ function LeaseReturnPageContent() {
   const router = useRouter()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
+  const isMobile = useIsMobile()
   const canViewAssets = hasPermission('canViewAssets')
   const canLease = hasPermission('canLease')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -98,6 +101,7 @@ function LeaseReturnPageContent() {
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
+  const isInitialMount = useRef(true)
 
   const form = useForm({
     resolver: zodResolver(leaseReturnSchema),
@@ -701,8 +705,23 @@ function LeaseReturnPageContent() {
 
   const recentReturns = returnStats?.recentReturns || []
 
+  // Track initial mount for animations
+  useEffect(() => {
+    if (isInitialMount.current && recentReturns.length > 0) {
+      const timer = setTimeout(() => {
+        isInitialMount.current = false
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [recentReturns.length])
+
   return (
-    <div className={isFormDirty ? "pb-16" : ""}>
+    <motion.div 
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className={isFormDirty ? "pb-16" : ""}
+    >
       <div>
         <h1 className="text-3xl font-bold">Lease Return</h1>
         <p className="text-muted-foreground">
@@ -711,7 +730,12 @@ function LeaseReturnPageContent() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 grid-cols-1 mt-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+        className="grid gap-4 grid-cols-1 mt-6"
+      >
         {/* Recent History */}
         <Card className="flex flex-col py-0 gap-2">
           <CardHeader className="p-4 pb-2">
@@ -756,8 +780,24 @@ function LeaseReturnPageContent() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentReturns.map((returnRecord) => (
-                      <TableRow key={returnRecord.id} className="h-10">
+                    <AnimatePresence mode='popLayout'>
+                      {recentReturns.map((returnRecord, index) => (
+                        <motion.tr
+                          key={returnRecord.id}
+                          layout
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -20 }}
+                          transition={{ 
+                            duration: 0.2, 
+                            delay: isInitialMount.current ? index * 0.05 : 0,
+                            layout: {
+                              duration: 0.15,
+                              ease: [0.4, 0, 0.2, 1]
+                            }
+                          }}
+                          className="h-10 border-b"
+                        >
                         <TableCell className="py-1.5">
                           <Badge 
                             variant="outline" 
@@ -782,8 +822,9 @@ function LeaseReturnPageContent() {
                         <TableCell className="py-1.5 text-xs text-muted-foreground text-right">
                           {getTimeAgo(returnRecord.createdAt)}
                         </TableCell>
-                      </TableRow>
+                        </motion.tr>
                     ))}
+                    </AnimatePresence>
                   </TableBody>
                   </Table>
               </div>
@@ -797,10 +838,15 @@ function LeaseReturnPageContent() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </motion.div>
 
       <form onSubmit={handleSubmit} className="space-y-6 mt-6">
         {/* Asset Selection */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+        >
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Asset Selection</CardTitle>
@@ -838,8 +884,11 @@ function LeaseReturnPageContent() {
                     </div>
                   ) : assetSuggestions.length > 0 ? (
                     assetSuggestions.map((asset, index) => (
-                      <div
+                      <motion.div
                         key={asset.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.2, delay: index * 0.05 }}
                         onClick={() => handleSelectSuggestion(asset)}
                         onMouseEnter={() => setSelectedSuggestionIndex(index)}
                         className={cn(
@@ -858,7 +907,7 @@ function LeaseReturnPageContent() {
                           </div>
                           <Badge variant="secondary" className="bg-yellow-500">{asset.status || 'Leased'}</Badge>
                         </div>
-                      </div>
+                      </motion.div>
                     ))
                   ) : (
                       <div className="px-3 py-2 text-sm text-muted-foreground">
@@ -882,8 +931,14 @@ function LeaseReturnPageContent() {
             </div>
           </CardContent>
         </Card>
+        </motion.div>
 
         {/* Selected Assets and Return Details */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.3 }}
+        >
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Selected Assets for Return</CardTitle>
@@ -921,9 +976,14 @@ function LeaseReturnPageContent() {
             </Field>
 
                 {/* Loading placeholders */}
+                <AnimatePresence>
                 {Array.from(loadingAssets).map((code) => (
-                  <div
+                    <motion.div
                     key={`loading-${code}`}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      transition={{ duration: 0.2 }}
                     className="flex items-center justify-between gap-2 p-3 border rounded-md bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"
                   >
                     <div className="flex-1 min-w-0">
@@ -952,12 +1012,21 @@ function LeaseReturnPageContent() {
                     >
                       <XIcon className="h-4 w-4" />
                     </Button>
-                  </div>
+                    </motion.div>
                 ))}
+                </AnimatePresence>
 
                 {/* Actual selected assets */}
-                {selectedAssets.map((asset) => (
-                  <div key={asset.id} className="p-4 border rounded-md space-y-3">
+                <AnimatePresence>
+                  {selectedAssets.map((asset, index) => (
+                    <motion.div
+                      key={asset.id}
+                      initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: 20, scale: 0.95 }}
+                      transition={{ duration: 0.3, delay: index * 0.05 }}
+                      className="p-4 border rounded-md space-y-3"
+                    >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2">
@@ -1032,23 +1101,31 @@ function LeaseReturnPageContent() {
                         </FieldContent>
                       </Field>
                     </div>
-                  </div>
+                    </motion.div>
                 ))}
+                </AnimatePresence>
               </CardContent>
             </Card>
+        </motion.div>
       </form>
 
       {/* Floating Action Buttons - Only show when form has changes */}
+      <AnimatePresence>
       {isFormDirty && canViewAssets && canLease && (
-        <div 
+          <motion.div 
+            initial={{ opacity: 0, y: 20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 20, x: '-50%' }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
           className="fixed bottom-6 z-50 flex items-center justify-center gap-3"
           style={{
-            left: !sidebarOpen 
+              left: isMobile 
+                ? '50%'
+                : !sidebarOpen 
               ? '50%'
               : sidebarState === 'collapsed' 
                 ? 'calc(var(--sidebar-width-icon, 3rem) + ((100vw - var(--sidebar-width-icon, 3rem)) / 2))'
-                : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))',
-            transform: 'translateX(-50%)'
+                    : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))'
           }}
         >
               <Button
@@ -1081,8 +1158,9 @@ function LeaseReturnPageContent() {
               'Save'
             )}
               </Button>
-            </div>
+          </motion.div>
         )}
+      </AnimatePresence>
 
       {/* QR Code Scanner Dialog */}
       <QRScannerDialog
@@ -1102,7 +1180,7 @@ function LeaseReturnPageContent() {
         onOpenChange={setQrDisplayDialogOpen}
         assetTagId={selectedAssetTagForQR}
       />
-    </div>
+    </motion.div>
   )
 }
 

@@ -47,10 +47,79 @@ export type DashboardStats = {
       description: string
     }
   }>
+  recentMoves: Array<{
+    id: string
+    moveDate: string
+    newLocation: string | null
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+    employeeUser: {
+      id: string
+      name: string
+      email: string
+    } | null
+  }>
+  recentReserves: Array<{
+    id: string
+    reservationDate: string
+    reservationType: string
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+    employeeUser: {
+      id: string
+      name: string
+      email: string
+    } | null
+  }>
+  recentLeases: Array<{
+    id: string
+    leaseStartDate: string
+    leaseEndDate: string | null
+    lessee: string
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+  }>
+  recentReturns: Array<{
+    id: string
+    returnDate: string
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+    lease: {
+      id: string
+      lessee: string
+    }
+  }>
+  recentDisposes: Array<{
+    id: string
+    disposeDate: string
+    disposalMethod: string | null
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+  }>
   feedCounts: {
     totalActiveCheckouts: number
     totalCheckins: number
     totalAssetsUnderRepair: number
+    totalMoves: number
+    totalReserves: number
+    totalLeases: number
+    totalReturns: number
+    totalDisposes: number
   }
   summary: {
     totalActiveAssets: number
@@ -125,6 +194,16 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       assetsUnderRepair,
       leasesExpiring,
       maintenanceDue,
+      totalMoves,
+      recentMoves,
+      totalReserves,
+      recentReserves,
+      totalLeases,
+      recentLeases,
+      totalReturns,
+      recentReturns,
+      totalDisposes,
+      recentDisposes,
     ] = await retryDbOperation(() =>
       prisma.$transaction([
         // Get asset value by category using Prisma groupBy for efficient database-level aggregation
@@ -308,6 +387,102 @@ export async function getDashboardStats(): Promise<DashboardStats> {
           },
           orderBy: { dueDate: 'asc' },
         }),
+
+        // Feed data - Move, Reserve, Lease, Return, Dispose
+        prisma.assetsMove.count(),
+        prisma.assetsMove.findMany({
+          include: {
+            asset: {
+              select: {
+                id: true,
+                assetTagId: true,
+                description: true,
+              },
+            },
+            employeeUser: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+        }),
+        prisma.assetsReserve.count(),
+        prisma.assetsReserve.findMany({
+          include: {
+            asset: {
+              select: {
+                id: true,
+                assetTagId: true,
+                description: true,
+              },
+            },
+            employeeUser: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+        }),
+        prisma.assetsLease.count(),
+        prisma.assetsLease.findMany({
+          select: {
+            id: true,
+            leaseStartDate: true,
+            leaseEndDate: true,
+            lessee: true,
+            asset: {
+              select: {
+                id: true,
+                assetTagId: true,
+                description: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+        }),
+        prisma.assetsLeaseReturn.count(),
+        prisma.assetsLeaseReturn.findMany({
+          include: {
+            asset: {
+              select: {
+                id: true,
+                assetTagId: true,
+                description: true,
+              },
+            },
+            lease: {
+              select: {
+                id: true,
+                lessee: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+        }),
+        prisma.assetsDispose.count(),
+        prisma.assetsDispose.findMany({
+          include: {
+            asset: {
+              select: {
+                id: true,
+                assetTagId: true,
+                description: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+        }),
       ])
     )
 
@@ -343,10 +518,51 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         maintenanceBy: maintenance.maintenanceBy || null,
         asset: maintenance.asset,
       })),
+      recentMoves: recentMoves.map((move) => ({
+        id: move.id,
+        moveDate: move.moveDate.toISOString(),
+        newLocation: move.newLocation || null,
+        asset: move.asset,
+        employeeUser: move.employeeUser || null,
+      })),
+      recentReserves: recentReserves.map((reserve) => ({
+        id: reserve.id,
+        reservationDate: reserve.reservationDate.toISOString(),
+        reservationType: reserve.reservationType,
+        asset: reserve.asset,
+        employeeUser: reserve.employeeUser || null,
+      })),
+      recentLeases: recentLeases.map((lease) => ({
+        id: lease.id,
+        leaseStartDate: lease.leaseStartDate.toISOString(),
+        leaseEndDate: lease.leaseEndDate ? formatDateOnly(lease.leaseEndDate) : null,
+        lessee: lease.lessee,
+        asset: lease.asset,
+      })),
+      recentReturns: recentReturns.map((returnItem) => ({
+        id: returnItem.id,
+        returnDate: returnItem.returnDate.toISOString(),
+        asset: returnItem.asset,
+        lease: {
+          id: returnItem.lease.id,
+          lessee: returnItem.lease.lessee,
+        },
+      })),
+      recentDisposes: recentDisposes.map((dispose) => ({
+        id: dispose.id,
+        disposeDate: dispose.disposeDate.toISOString(),
+        disposalMethod: dispose.disposalMethod || null,
+        asset: dispose.asset,
+      })),
       feedCounts: {
         totalActiveCheckouts,
         totalCheckins,
         totalAssetsUnderRepair,
+        totalMoves,
+        totalReserves,
+        totalLeases,
+        totalReturns,
+        totalDisposes,
       },
       summary: {
         totalActiveAssets,

@@ -6,6 +6,7 @@ import { FileText, ClipboardList, Search, X, RefreshCw, ArrowLeft, ArrowRight, E
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { usePermissions } from "@/hooks/use-permissions"
 import { Spinner } from "@/components/ui/shadcn-io/spinner"
+import { motion, AnimatePresence } from "framer-motion"
 import {
   Table,
   TableBody,
@@ -143,6 +144,11 @@ function FormsHistoryPageContent() {
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSearchQueryRef = useRef<string>(searchParams.get("search") || "")
   const previousSearchInputRef = useRef<string>(searchParams.get("search") || "")
+  const isInitialMount = useRef(true)
+
+  useEffect(() => {
+    isInitialMount.current = false
+  }, [])
 
   // Update URL parameters
   const updateURL = useCallback(
@@ -334,7 +340,12 @@ function FormsHistoryPageContent() {
   )
 
   return (
-    <div className="space-y-6 max-h-screen">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6 max-h-screen"
+    >
       <div>
         <h1 className="text-3xl font-bold">Forms History</h1>
         <p className="text-muted-foreground">
@@ -343,32 +354,46 @@ function FormsHistoryPageContent() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b">
+      <div className="flex items-center gap-2 border-b relative">
         <button
           onClick={() => handleTabChange("accountability")}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+          className={`px-4 py-2 text-sm font-medium transition-colors relative z-10 ${
             activeTab === "accountability"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground"
+              ? "text-primary"
+              : "text-muted-foreground hover:text-foreground"
           } ${!canViewAccountabilityForms ? "opacity-50" : ""}`}
         >
           <div className="flex items-center gap-2">
             <ClipboardList className="h-4 w-4" />
             Accountability Forms ({counts.accountabilityForms})
           </div>
+          {activeTab === "accountability" && (
+            <motion.div
+              layoutId="activeTab"
+              className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
+              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+            />
+          )}
         </button>
         <button
           onClick={() => handleTabChange("return")}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+          className={`px-4 py-2 text-sm font-medium transition-colors relative z-10 ${
             activeTab === "return"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground"
+              ? "text-primary"
+              : "text-muted-foreground hover:text-foreground"
           } ${!canViewReturnForms ? "opacity-50" : ""}`}
         >
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
             Return Forms ({counts.returnForms})
           </div>
+          {activeTab === "return" && (
+            <motion.div
+              layoutId="activeTab"
+              className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
+              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+            />
+          )}
         </button>
       </div>
 
@@ -448,23 +473,38 @@ function FormsHistoryPageContent() {
         </CardHeader>
 
         <CardContent className="flex-1 px-0 relative">
-          {isFetching && data && isManualRefresh && (
+          {isFetching && data && currentForms.length > 0 && (
             <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
               <Spinner variant="default" size={24} className="text-muted-foreground" />
             </div>
           )}
           <div className="h-140 pt-8">
+            <AnimatePresence mode="wait">
             {/* Show loading spinner if permissions are loading OR data is loading OR fetching current tab */}
             {(permissionsLoading || (isLoading && !data) || (isFetchingCurrentTab && currentForms.length === 0)) ? (
-              <div className="flex items-center justify-center py-12">
+                <motion.div
+                  key="loading"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex items-center justify-center py-12"
+                >
                 <div className="flex flex-col items-center gap-3">
                   <Spinner className="h-8 w-8" />
                   <p className="text-sm text-muted-foreground">Loading...</p>
                 </div>
-              </div>
+                </motion.div>
             ) : /* Check if user doesn't have permission for active tab - only show after permissions are loaded */
             (activeTab === "accountability" && !canViewAccountabilityForms) || (activeTab === "return" && !canViewReturnForms) ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <motion.div
+                  key="access-denied"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex flex-col items-center justify-center py-12 text-center"
+                >
                 {activeTab === "accountability" ? (
                   <ClipboardList className="h-12 w-12 text-muted-foreground opacity-50 mb-4" />
                 ) : (
@@ -474,9 +514,16 @@ function FormsHistoryPageContent() {
                 <p className="text-sm text-muted-foreground">
                   You do not have permission to view {activeTab === "accountability" ? "accountability forms" : "return forms"}.
                 </p>
-              </div>
+                </motion.div>
             ) : currentForms.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.2 }}
+                className="text-center py-8 text-muted-foreground"
+              >
                 {activeTab === "accountability" ? (
                   <ClipboardList className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 ) : (
@@ -492,7 +539,7 @@ function FormsHistoryPageContent() {
                     ? "Accountability forms will appear here once submitted"
                     : "Return forms will appear here once submitted"}
                 </p>
-              </div>
+              </motion.div>
             ) : (
               <div className="min-w-full">
                 <ScrollArea className="h-132 relative">
@@ -544,8 +591,21 @@ function FormsHistoryPageContent() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {currentForms.map((form) => (
-                          <TableRow key={form.id} className="group relative">
+                        <AnimatePresence mode="popLayout">
+                          {currentForms.map((form, index) => (
+                            <motion.tr
+                              key={form.id}
+                              layout
+                              initial={{ opacity: 0, y: 20 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -20 }}
+                              transition={{ 
+                                duration: 0.4, 
+                                delay: isInitialMount.current ? index * 0.08 : 0,
+                                ease: "easeOut"
+                              }}
+                              className="group relative hover:bg-muted/50 border-b transition-colors"
+                            >
                             {activeTab === "accountability" ? (
                               <>
                                 <TableCell className="text-sm">
@@ -693,8 +753,9 @@ function FormsHistoryPageContent() {
                                 </TableCell>
                               </>
                             )}
-                          </TableRow>
+                          </motion.tr>
                         ))}
+                        </AnimatePresence>
                       </TableBody>
                     </Table>
                   </div>
@@ -703,6 +764,7 @@ function FormsHistoryPageContent() {
                 </ScrollArea>
               </div>
             )}
+            </AnimatePresence>
           </div>
         </CardContent>
 
@@ -790,7 +852,7 @@ function FormsHistoryPageContent() {
         cancelLabel="Cancel"
         loadingLabel="Deleting..."
       />
-    </div>
+    </motion.div>
   )
 }
 

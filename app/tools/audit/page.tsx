@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { QrCode, CheckCircle2, X, FileText, History, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -100,6 +101,11 @@ export default function AuditPage() {
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionRef = useRef<HTMLDivElement>(null)
   const lastScannedCodeRef = useRef<string | null>(null)
+  const isInitialMount = useRef(true)
+
+  useEffect(() => {
+    isInitialMount.current = false
+  }, [])
 
 
   // Fetch recent audit history
@@ -513,8 +519,13 @@ export default function AuditPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Asset Audit</h1>
           <p className="text-muted-foreground mt-1">
@@ -530,7 +541,7 @@ export default function AuditPage() {
             setIsScannerOpen(true)
           }}
           size="sm"
-          className="gap-2"
+          className="gap-2 shrink-0"
         >
           <QrCode className="h-5 w-5" />
           Scan QR Code
@@ -592,8 +603,20 @@ export default function AuditPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentAudits.map((audit) => (
-                      <TableRow key={audit.id} className="h-10">
+                    <AnimatePresence mode="popLayout">
+                      {recentAudits.map((audit, index) => (
+                        <motion.tr
+                          key={audit.id}
+                          layout
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -20 }}
+                          transition={{ 
+                            duration: 0.2, 
+                            delay: isInitialMount.current ? index * 0.05 : 0 
+                          }}
+                          className="h-10"
+                        >
                         <TableCell className="py-1.5">
                           <Badge variant="outline" className="text-xs">
                             {audit.asset.assetTagId}
@@ -650,8 +673,9 @@ export default function AuditPage() {
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </TableCell>
-                      </TableRow>
+                        </motion.tr>
                     ))}
+                    </AnimatePresence>
                   </TableBody>
                 </Table>
               </div>
@@ -709,9 +733,14 @@ export default function AuditPage() {
                   </div>
                 </div>
               ) : assetSuggestions.length > 0 ? (
-                assetSuggestions.map((asset, index) => (
-                  <div
+                <AnimatePresence>
+                  {assetSuggestions.map((asset, index) => (
+                    <motion.div
                     key={asset.id}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -10 }}
+                      transition={{ duration: 0.15, delay: index * 0.03 }}
                     onClick={() => handleSelectSuggestion(asset)}
                     onMouseEnter={() => setSelectedSuggestionIndex(index)}
                     className={cn(
@@ -730,8 +759,9 @@ export default function AuditPage() {
                       </div>
                       {getStatusBadge(asset.status || 'Available')}
                     </div>
-                  </div>
-                ))
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               ) : (
                 <div className="px-3 py-2 text-sm text-muted-foreground">
                   No assets found. Start typing to search...
@@ -795,11 +825,16 @@ export default function AuditPage() {
                 <ScrollArea className="flex-1">
                   <div className="space-y-2">
                     {/* Show loading placeholders for assets being fetched */}
+                    <AnimatePresence>
                     {Array.from(loadingAssets).map((code) => (
-                      <Card
+                        <motion.div
                         key={`loading-${code}`}
-                        className="border py-0 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          transition={{ duration: 0.2 }}
                       >
+                          <Card className="border py-0 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
                         <CardContent className="p-4">
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex-1 min-w-0 space-y-2.5">
@@ -817,11 +852,24 @@ export default function AuditPage() {
                           </div>
                         </CardContent>
                       </Card>
+                        </motion.div>
                     ))}
+                    </AnimatePresence>
                     {/* Show actual scanned assets */}
-                    {scannedAssets.map((asset) => (
-                      <Card
+                    <AnimatePresence mode="popLayout">
+                      {scannedAssets.map((asset, index) => (
+                        <motion.div
                         key={asset.assetTagId}
+                          layout
+                          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                          transition={{ 
+                            duration: 0.2, 
+                            delay: isInitialMount.current ? index * 0.05 : 0 
+                          }}
+                        >
+                          <Card
                         className={`cursor-pointer transition-all border py-0 ${
                           selectedAsset?.assetTagId === asset.assetTagId
                             ? 'border-primary bg-primary/5 shadow-sm'
@@ -896,7 +944,9 @@ export default function AuditPage() {
                           </div>
                         </CardContent>
                       </Card>
+                        </motion.div>
                     ))}
+                    </AnimatePresence>
                   </div>
                 </ScrollArea>
               )}
@@ -907,7 +957,16 @@ export default function AuditPage() {
         {/* Asset Details */}
         <div className="flex flex-col min-h-0 h-full">
           {/* Selected Asset Details */}
+          <AnimatePresence mode="wait">
           {selectedAsset ? (
+              <motion.div
+                key={selectedAsset.id}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="w-full"
+              >
             <Card className="flex flex-col flex-1 min-h-0">
               <CardHeader>
                 <CardTitle>Asset Details</CardTitle>
@@ -1019,7 +1078,16 @@ export default function AuditPage() {
                 </Button>
               </CardContent>
             </Card>
+              </motion.div>
           ) : (
+              <motion.div
+                key="no-selection"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="w-full"
+              >
             <Card className="flex flex-col flex-1 min-h-0">
               <CardContent className="flex flex-col items-center justify-center flex-1 py-12 text-center">
                 <div className="rounded-full bg-muted p-4 mb-4">
@@ -1033,7 +1101,9 @@ export default function AuditPage() {
                 </p>
               </CardContent>
             </Card>
+              </motion.div>
           )}
+          </AnimatePresence>
         </div>
       </div>
       {/* QR Scanner Dialog */}
@@ -1083,7 +1153,7 @@ export default function AuditPage() {
         confirmLabel="Delete"
         cancelLabel="Cancel"
       />
-    </div>
+    </motion.div>
   )
 }
 

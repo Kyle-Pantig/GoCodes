@@ -1004,8 +1004,8 @@ function UsersPageContent() {
         </p>
       </div>
 
-      <Card className="relative flex flex-col flex-1 min-h-0 pb-0 gap-0">
-        <CardHeader>
+      <Card className="pb-0 gap-0">
+        <CardHeader className='shrink-0 pb-3' >
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div className="flex items-center w-full md:flex-1 md:max-w-md border rounded-md overflow-hidden">
               <Select
@@ -1088,14 +1088,13 @@ function UsersPageContent() {
         </CardHeader>
 
         <CardContent className="flex-1 px-0 relative">
-          {isFetching && data && isManualRefresh && (
+          {isFetching && data && users.length > 0 && (
             <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
               <Spinner variant="default" size={24} className="text-muted-foreground" />
             </div>
           )}
-           <div className="h-140 pt-8">
            {isLoading && !data ? (
-              <div className="flex items-center justify-center py-12">
+              <div className="h-140 pt-12 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
                   <Spinner className="h-8 w-8" />
                   <p className="text-sm text-muted-foreground">Loading...</p>
@@ -1185,7 +1184,6 @@ function UsersPageContent() {
                 </ScrollArea>
               </div>
             )}
-           </div>
         </CardContent>
         
         {/* Pagination Bar - Fixed at Bottom */}

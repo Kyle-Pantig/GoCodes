@@ -42,10 +42,79 @@ export type DashboardStats = {
       description: string
     }
   }>
+  recentMoves: Array<{
+    id: string
+    moveDate: string
+    newLocation: string | null
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+    employeeUser: {
+      id: string
+      name: string
+      email: string
+    } | null
+  }>
+  recentReserves: Array<{
+    id: string
+    reservationDate: string
+    reservationType: string
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+    employeeUser: {
+      id: string
+      name: string
+      email: string
+    } | null
+  }>
+  recentLeases: Array<{
+    id: string
+    leaseStartDate: string
+    leaseEndDate: string | null
+    lessee: string
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+  }>
+  recentReturns: Array<{
+    id: string
+    returnDate: string
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+    lease: {
+      id: string
+      lessee: string
+    }
+  }>
+  recentDisposes: Array<{
+    id: string
+    disposeDate: string
+    disposalMethod: string | null
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+  }>
   feedCounts: {
     totalActiveCheckouts: number
     totalCheckins: number
     totalAssetsUnderRepair: number
+    totalMoves: number
+    totalReserves: number
+    totalLeases: number
+    totalReturns: number
+    totalDisposes: number
   }
   summary: {
     totalActiveAssets: number

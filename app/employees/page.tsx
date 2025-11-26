@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useMemo, useCallback, useEffect, useRef, useTransition, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   useReactTable,
   getCoreRowModel,
@@ -393,6 +394,7 @@ function EmployeesPageContent() {
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null) // Ref for debounce timeout
   const lastSearchQueryRef = useRef<string>(searchParams.get('search') || '') // Track last searchQuery to avoid sync loops
   const previousSearchInputRef = useRef<string>(searchParams.get('search') || '') // Track previous search input to prevent unnecessary updates
+  const isInitialMount = useRef(true)
 
   // Update URL parameters
   const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string; searchType?: string }) => {
@@ -658,7 +660,12 @@ function EmployeesPageContent() {
   }
 
   return (
-    <div className="space-y-6 max-h-screen">
+    <motion.div 
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6 max-h-screen"
+    >
       <div>
         <h1 className="text-3xl font-bold">Employee Users</h1>
         <p className="text-muted-foreground">
@@ -799,17 +806,30 @@ function EmployeesPageContent() {
                     ))}
                   </TableHeader>
                   <TableBody>
+                    <AnimatePresence mode='popLayout'>
                     {table.getRowModel().rows?.length ? (
-                      table.getRowModel().rows.map((row) => {
+                        table.getRowModel().rows.map((row, index) => {
                         const checkouts = row.original.checkouts || []
                         const hasCheckouts = checkouts.length > 0
                         return (
-                          <TableRow 
+                            <motion.tr
                             key={row.id} 
+                              layout
+                              initial={{ opacity: 0, y: 20 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -20 }}
+                              transition={{ 
+                                duration: 0.2, 
+                                delay: isInitialMount.current ? index * 0.05 : 0,
+                                layout: {
+                                  duration: 0.15,
+                                  ease: [0.4, 0, 0.2, 1]
+                                }
+                              }}
                             data-state={row.getIsSelected() && 'selected'}
                             className={cn(
                               hasCheckouts ? 'cursor-pointer hover:bg-muted/50' : '',
-                              "group relative"
+                                "group relative border-b transition-colors"
                             )}
                             onClick={() => {
                               if (hasCheckouts) {
@@ -830,7 +850,7 @@ function EmployeesPageContent() {
                                 </TableCell>
                               )
                             })}
-                          </TableRow>
+                            </motion.tr>
                         )
                       })
                     ) : (
@@ -840,6 +860,7 @@ function EmployeesPageContent() {
                         </TableCell>
                       </TableRow>
                     )}
+                    </AnimatePresence>
                   </TableBody>
                 </Table>
                 </div>
@@ -1266,7 +1287,7 @@ function EmployeesPageContent() {
         onOpenChange={setIsQRDialogOpen}
         assetTagId={selectedAssetTagId}
       />
-    </div>
+    </motion.div>
   )
 }
 

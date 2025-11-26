@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { XIcon, QrCode, RefreshCw, Download } from "lucide-react"
+import { XIcon, QrCode, RefreshCw, Download, ChevronDown } from "lucide-react"
 import Image from "next/image"
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
@@ -9,6 +9,7 @@ import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { QRScannerDialog } from '@/components/qr-scanner-dialog'
 import { toast } from 'sonner'
 import { useQuery } from "@tanstack/react-query"
+import { motion, AnimatePresence } from "framer-motion"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +24,12 @@ import { Field, FieldLabel, FieldContent } from "@/components/ui/field"
 import { EmployeeSelectField } from "@/components/employee-select-field"
 import { DepartmentSelectField } from "@/components/department-select-field"
 import { cn } from "@/lib/utils"
+import AccountabilityFormLoading from "./loading"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 
 interface Asset {
   id: string
@@ -143,7 +150,7 @@ async function fetchCompanyInfo(): Promise<{ companyInfo: { primaryLogoUrl: stri
 }
 
 export default function AccountabilityFormPage() {
-  const { hasPermission } = usePermissions()
+  const { hasPermission, isLoading: isLoadingPermissions } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const canViewAccountabilityForms = hasPermission('canViewAccountabilityForms')
   const canManageAccountabilityForms = hasPermission('canManageAccountabilityForms')
@@ -196,6 +203,7 @@ export default function AccountabilityFormPage() {
   const [assetCustodianDate, setAssetCustodianDate] = useState("")
   const [financeSignature, setFinanceSignature] = useState("")
   const [financeDate, setFinanceDate] = useState("")
+  const [isFormOpen, setIsFormOpen] = useState(false)
 
   // Fetch selected employee details
   const { data: selectedEmployee, isLoading: isLoadingEmployee } = useQuery<EmployeeUser | null>({
@@ -603,6 +611,12 @@ export default function AccountabilityFormPage() {
       return
     }
 
+    // Ensure the form is open before generating PDF
+    setIsFormOpen(true)
+    
+    // Wait a bit for the collapsible to open and render
+    await new Promise(resolve => setTimeout(resolve, 100))
+
     const formElement = document.getElementById('accountability-form')
     const rulesElement = document.getElementById('accountability-form-rules')
     
@@ -829,7 +843,7 @@ export default function AccountabilityFormPage() {
             }
           })
 
-          xhr.addEventListener('load', () => {
+          xhr.addEventListener('load', async () => {
             // Clear progress interval if still running
             if (progressInterval) {
               clearInterval(progressInterval)
@@ -851,6 +865,63 @@ export default function AccountabilityFormPage() {
                 window.URL.revokeObjectURL(url)
 
                 toast.success('PDF downloaded successfully', { id: 'pdf-generation' })
+
+                // Save form data to database after PDF is successfully downloaded
+                try {
+                  const formData = {
+                    dateIssued,
+                    position,
+                    clientDepartment,
+                    ticketNo,
+                    accountabilityFormNo,
+                    mobileBrand,
+                    mobileModel,
+                    imeiNo,
+                    simNo,
+                    networkProvider,
+                    planAmount,
+                    selectedAssets: selectedAssets.map(asset => ({
+                      id: asset.id,
+                      assetTagId: asset.assetTagId,
+                      description: asset.description,
+                      remarks: asset.remarks,
+                    })),
+                    replacementItems,
+                    staffSignature,
+                    staffDate,
+                    itSignature,
+                    itDate,
+                    assetCustodianSignature,
+                    assetCustodianDate,
+                    financeSignature,
+                    financeDate,
+                  }
+
+                  const saveResponse = await fetch('/api/forms/accountability-form', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      employeeUserId: selectedEmployeeId,
+                      dateIssued,
+                      department: clientDepartment || selectedEmployee?.department || null,
+                      accountabilityFormNo: accountabilityFormNo || null,
+                      formData,
+                    }),
+                  })
+
+                  if (!saveResponse.ok) {
+                    const error = await saveResponse.json()
+                    console.error('Failed to save accountability form:', error)
+                    toast.error('PDF downloaded but failed to save form history', { id: 'form-save' })
+                  } else {
+                    toast.success('Form saved successfully', { id: 'form-save' })
+                  }
+                } catch (saveError) {
+                  console.error('Error saving accountability form:', saveError)
+                  toast.error('PDF downloaded but failed to save form history', { id: 'form-save' })
+                }
 
                 resolve()
               } catch (error) {
@@ -922,72 +993,6 @@ export default function AccountabilityFormPage() {
           reject(error)
         }
       })
-      
-      // Save form data to database after PDF is downloaded
-      try {
-        await new Promise<void>((resolve) => {
-          // Wait a bit to ensure PDF download completes
-          setTimeout(async () => {
-            try {
-              const formData = {
-                dateIssued,
-                position,
-                clientDepartment,
-                ticketNo,
-                accountabilityFormNo,
-                mobileBrand,
-                mobileModel,
-                imeiNo,
-                simNo,
-                networkProvider,
-                planAmount,
-                selectedAssets: selectedAssets.map(asset => ({
-                  id: asset.id,
-                  assetTagId: asset.assetTagId,
-                  description: asset.description,
-                  remarks: asset.remarks,
-                })),
-                replacementItems,
-                staffSignature,
-                staffDate,
-                itSignature,
-                itDate,
-                assetCustodianSignature,
-                assetCustodianDate,
-                financeSignature,
-                financeDate,
-              }
-
-              const saveResponse = await fetch('/api/forms/accountability-form', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  employeeUserId: selectedEmployeeId,
-                  dateIssued,
-                  department: clientDepartment || selectedEmployee?.department || null,
-                  accountabilityFormNo: accountabilityFormNo || null,
-                  formData,
-                }),
-              })
-
-              if (!saveResponse.ok) {
-                const error = await saveResponse.json()
-                console.error('Failed to save accountability form:', error)
-                // Don't show error to user since PDF was already downloaded successfully
-              }
-            } catch (saveError) {
-              console.error('Error saving accountability form:', saveError)
-              // Don't show error to user since PDF was already downloaded successfully
-            }
-            resolve()
-          }, 100)
-        })
-      } catch (saveError) {
-        console.error('Error saving accountability form:', saveError)
-        // Don't show error to user since PDF was already downloaded successfully
-      }
     } catch (error) {
       console.error('Error generating PDF:', error)
       toast.error(`Failed to generate PDF: ${error instanceof Error ? error.message : 'Unknown error'}`, { id: 'pdf-generation' })
@@ -995,14 +1000,25 @@ export default function AccountabilityFormPage() {
   }
 
   // Show toast notification if user doesn't have view permission
+  // Only show after permissions are loaded to avoid showing during initial load
   useEffect(() => {
-    if (!canViewAccountabilityForms) {
+    if (!isLoadingPermissions && !canViewAccountabilityForms) {
       toast.error('You do not have permission to view accountability forms')
     }
-  }, [canViewAccountabilityForms])
+  }, [canViewAccountabilityForms, isLoadingPermissions])
+
+  // Show loading state while permissions are loading
+  if (isLoadingPermissions) {
+    return <AccountabilityFormLoading />
+  }
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="w-full max-w-full overflow-x-hidden"
+    >
       <div className="mb-4 md:mb-6">
         <h1 className="text-2xl md:text-3xl font-bold">Accountability Form</h1>
         <p className="text-sm md:text-base text-muted-foreground">
@@ -1031,9 +1047,20 @@ export default function AccountabilityFormPage() {
       </Card>
 
       {/* Form Details - Show when employee is selected or loading */}
+      <AnimatePresence>
       {(selectedEmployeeId && (selectedEmployee || isLoadingEmployee)) && (
-        <>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.4 }}
+          >
           {/* Form Details Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+            >
           <Card className="mb-6">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Form Details</CardTitle>
@@ -1279,9 +1306,14 @@ export default function AccountabilityFormPage() {
                 </div>
               ) : replacementItems.length > 0 ? (
                 <div className="space-y-3">
-                  {replacementItems.map((item) => (
-                    <div
+                  <AnimatePresence>
+                    {replacementItems.map((item, index) => (
+                      <motion.div
                       key={item.id}
+                        initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: 20, scale: 0.95 }}
+                        transition={{ duration: 0.3, delay: index * 0.05 }}
                       className="grid grid-cols-1 md:grid-cols-5 gap-2 p-3 border rounded-md bg-muted/50"
                     >
                       <Input
@@ -1325,8 +1357,9 @@ export default function AccountabilityFormPage() {
                           <XIcon className="h-4 w-4" />
                         </Button>
                       </div>
-                    </div>
+                      </motion.div>
                   ))}
+                  </AnimatePresence>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground text-center py-4">
@@ -1383,8 +1416,11 @@ export default function AccountabilityFormPage() {
                         </div>
                       ) : assetSuggestions.length > 0 ? (
                         assetSuggestions.map((asset, index) => (
-                          <div
+                          <motion.div
                             key={asset.id}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.2, delay: index * 0.05 }}
                             onClick={() => handleSelectSuggestion(asset)}
                             onMouseEnter={() => setSelectedSuggestionIndex(index)}
                             className={cn(
@@ -1403,7 +1439,7 @@ export default function AccountabilityFormPage() {
                               </div>
                               {getStatusBadge(asset.status || null)}
                             </div>
-                          </div>
+                          </motion.div>
                         ))
                       ) : (
                         <div className="px-3 py-2 text-sm text-muted-foreground">
@@ -1433,9 +1469,14 @@ export default function AccountabilityFormPage() {
                   </p>
                   <div className="space-y-2 max-h-60 overflow-y-auto">
                     {/* Loading placeholders */}
+                    <AnimatePresence>
                     {Array.from(loadingAssets).map((code) => (
-                      <div
+                        <motion.div
                         key={`loading-${code}`}
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          transition={{ duration: 0.2 }}
                         className="flex items-center justify-between gap-2 p-3 border rounded-md bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"
                       >
                         <div className="flex-1 min-w-0">
@@ -1464,12 +1505,18 @@ export default function AccountabilityFormPage() {
                         >
                           <XIcon className="h-4 w-4" />
                         </Button>
-                      </div>
+                        </motion.div>
                     ))}
+                    </AnimatePresence>
                     {/* Actual selected assets */}
-                    {selectedAssets.map((asset) => (
-                      <div
+                    <AnimatePresence>
+                      {selectedAssets.map((asset, index) => (
+                        <motion.div
                         key={asset.id}
+                          initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                          animate={{ opacity: 1, x: 0, scale: 1 }}
+                          exit={{ opacity: 0, x: 20, scale: 0.95 }}
+                          transition={{ duration: 0.3, delay: index * 0.05 }}
                         className="flex items-center justify-between gap-2 p-3 border rounded-md bg-muted/50"
                       >
                         <div className="flex-1 min-w-0">
@@ -1489,8 +1536,9 @@ export default function AccountabilityFormPage() {
                         >
                           <XIcon className="h-4 w-4" />
                         </Button>
-                      </div>
+                      </motion.div>
                     ))}
+                    </AnimatePresence>
                   </div>
                 </div>
               )}
@@ -1498,19 +1546,30 @@ export default function AccountabilityFormPage() {
               )}
             </CardContent>
           </Card>
+          </motion.div>
 
           {/* Printable Form */}
-          <Card className="mb-6 print:shadow-none print:border-0">
-            <CardHeader className="pb-3 print:hidden">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.4 }}
+          >
+            <Collapsible open={isFormOpen} onOpenChange={setIsFormOpen} className="mb-6">
+              <Card className="print:shadow-none print:border-0">
+                <CollapsibleTrigger asChild>
+                  <CardHeader className="pb-3 print:hidden cursor-pointer hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
                   <CardTitle className="text-base">Accountability Form</CardTitle>
                   <CardDescription className="text-xs">
                     Review the accountability form
                   </CardDescription>
                 </div>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
               </div>
             </CardHeader>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
             <CardContent className="pt-2 pb-4 print:p-0">
               <div className="bg-card text-card-foreground p-4 sm:p-6 md:p-8 print:p-8 print:bg-white print:text-black relative" id="accountability-form">
                 {/* Background Logo */}
@@ -2002,12 +2061,17 @@ export default function AccountabilityFormPage() {
                 </div>
               </div>
             </CardContent>
+                </CollapsibleContent>
           </Card>
-          </>
-        )}
+            </Collapsible>
+          </motion.div>
 
           {/* Signature Inputs Card - Only visible when not printing */}
-          {selectedEmployeeId && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.5 }}
+          >
             <Card className="print:hidden">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Rules and Regulations Signatures</CardTitle>
@@ -2112,7 +2176,10 @@ export default function AccountabilityFormPage() {
                 </div>
               </CardContent>
             </Card>
+          </motion.div>
+          </motion.div>
           )}
+      </AnimatePresence>
 
       {/* QR Code Scanner Dialog */}
       <QRScannerDialog
@@ -2158,7 +2225,7 @@ export default function AccountabilityFormPage() {
           </Button>
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }
 

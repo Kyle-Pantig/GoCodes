@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { PlusIcon, Sparkles, ImageIcon, Upload, ChevronDown, Info, FileText } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { toast } from 'sonner'
 import { useCategories, useSubCategories, useCreateCategory, useCreateSubCategory, useCreateAsset } from "@/hooks/use-categories"
@@ -51,6 +53,7 @@ export default function AddAssetPage() {
   const router = useRouter()
   const { hasPermission, isLoading } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
+  const isMobile = useIsMobile()
   const canCreateAssets = hasPermission('canCreateAssets')
   const canManageSetup = hasPermission('canManageSetup')
   
@@ -532,7 +535,12 @@ export default function AddAssetPage() {
   }
 
   return (
-    <div className={isFormDirty ? "pb-16" : ""}>
+    <motion.div 
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className={isFormDirty ? "pb-16" : ""}
+    >
       <div>
         <h1 className="text-3xl font-bold">Add Asset</h1>
         <p className="text-muted-foreground">
@@ -543,7 +551,13 @@ export default function AddAssetPage() {
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
         <div className="grid gap-2.5 md:grid-cols-2 mt-6">
           {/* Basic Information & Asset Details */}
-          <Card className="md:col-span-2">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            className="md:col-span-2"
+          >
+            <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Basic Information & Asset Details</CardTitle>
               <CardDescription className="text-xs">
@@ -1163,9 +1177,16 @@ export default function AddAssetPage() {
               </div>
             </CardContent>
           </Card>
+          </motion.div>
 
           {/* Purchase & Additional Information */}
-          <Card className="md:col-span-2">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
+            className="md:col-span-2"
+          >
+            <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Purchase & Additional Information</CardTitle>
               <CardDescription className="text-xs">
@@ -1343,9 +1364,16 @@ export default function AddAssetPage() {
               </div>
             </CardContent>
           </Card>
+          </motion.div>
 
           {/* Depreciation Information */}
-          <Card className="md:col-span-2">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.3 }}
+            className="md:col-span-2"
+          >
+            <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Depreciation Information</CardTitle>
               <CardDescription className="text-xs">
@@ -1485,54 +1513,62 @@ export default function AddAssetPage() {
               </div>
             </CardContent>
           </Card>
+          </motion.div>
         </div>
       </form>
 
       {/* Floating Action Buttons - Only show when form has changes */}
-      {isFormDirty && (
-        <div 
-          className="fixed bottom-6 z-50 flex items-center justify-center gap-3"
-          style={{
-            left: !sidebarOpen 
-              ? '50%'
-              : sidebarState === 'collapsed' 
-                ? 'calc(var(--sidebar-width-icon, 3rem) + ((100vw - var(--sidebar-width-icon, 3rem)) / 2))'
-                : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))',
-            transform: 'translateX(-50%)'
-          }}
-        >
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            onClick={clearForm}
-            className="min-w-[120px] bg-accent!"
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            size="lg"
-            onClick={() => {
-              const form = document.querySelector('form') as HTMLFormElement
-              if (form) {
-                form.requestSubmit()
-              }
+      <AnimatePresence>
+        {isFormDirty && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 20, x: '-50%' }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="fixed bottom-6 z-50 flex items-center justify-center gap-3"
+            style={{
+              left: isMobile 
+                ? '50%'
+                : !sidebarOpen 
+                  ? '50%'
+                  : sidebarState === 'collapsed' 
+                    ? 'calc(var(--sidebar-width-icon, 3rem) + ((100vw - var(--sidebar-width-icon, 3rem)) / 2))'
+                    : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))'
             }}
-            disabled={loading || uploadingImages || uploadingDocuments}
-            className="min-w-[120px]"
           >
-            {loading || uploadingImages || uploadingDocuments ? (
-              <>
-                <Spinner className="mr-2 h-4 w-4" />
-                Saving...
-              </>
-            ) : (
-              'Save'
-            )}
-          </Button>
-      </div>
-      )}
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={clearForm}
+              className="min-w-[120px] bg-accent!"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="lg"
+              onClick={() => {
+                const form = document.querySelector('form') as HTMLFormElement
+                if (form) {
+                  form.requestSubmit()
+                }
+              }}
+              disabled={loading || uploadingImages || uploadingDocuments}
+              className="min-w-[120px]"
+            >
+              {loading || uploadingImages || uploadingDocuments ? (
+                <>
+                  <Spinner className="mr-2 h-4 w-4" />
+                  Saving...
+                </>
+              ) : (
+                'Save'
+              )}
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Media Browser Dialog */}
       <MediaBrowserDialog
@@ -1584,6 +1620,7 @@ export default function AddAssetPage() {
         description="Preview and manage your selected documents. Click the remove button to remove a document from the list."
       />
 
-    </div>
+    </motion.div>
   )
 }
+

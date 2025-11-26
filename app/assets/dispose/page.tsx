@@ -5,8 +5,10 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { useForm, Controller, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { XIcon, History, QrCode } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { QRScannerDialog } from '@/components/qr-scanner-dialog'
 import { QRCodeDisplayDialog } from '@/components/qr-code-display-dialog'
@@ -124,6 +126,7 @@ function DisposeAssetPageContent() {
   const router = useRouter()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
+  const isMobile = useIsMobile()
   const hasProcessedUrlParams = useRef(false)
   const canViewAssets = hasPermission('canViewAssets')
   const canDispose = hasPermission('canDispose')
@@ -137,6 +140,7 @@ function DisposeAssetPageContent() {
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrDisplayDialogOpen, setQrDisplayDialogOpen] = useState(false)
   const [selectedAssetTagForQR, setSelectedAssetTagForQR] = useState<string>("")
+  const isInitialMount = useRef(true)
 
   const form = useForm<DisposeFormData>({
     // @ts-expect-error - Zod resolver type mismatch with optional field that has default
@@ -707,8 +711,23 @@ function DisposeAssetPageContent() {
     })
   })
 
+  // Track initial mount for animations
+  useEffect(() => {
+    if (isInitialMount.current && disposeStats?.recentDisposals && disposeStats.recentDisposals.length > 0) {
+      const timer = setTimeout(() => {
+        isInitialMount.current = false
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [disposeStats?.recentDisposals])
+
   return (
-    <div className={isFormDirty ? "pb-16" : ""}>
+    <motion.div 
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className={isFormDirty ? "pb-16" : ""}
+    >
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Dispose Asset</h1>
         <p className="text-muted-foreground">
@@ -717,7 +736,12 @@ function DisposeAssetPageContent() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 grid-cols-1 mt-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+        className="grid gap-4 grid-cols-1 mt-6"
+      >
         {/* Recent History */}
         <Card className="flex flex-col py-0 gap-2">
           <CardHeader className="p-4 pb-2">
@@ -767,8 +791,24 @@ function DisposeAssetPageContent() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {disposeStats.recentDisposals.map((disposal) => (
-                      <TableRow key={disposal.id} className="h-10">
+                    <AnimatePresence mode='popLayout'>
+                      {disposeStats.recentDisposals.map((disposal, index) => (
+                        <motion.tr
+                          key={disposal.id}
+                          layout
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -20 }}
+                          transition={{ 
+                            duration: 0.2, 
+                            delay: isInitialMount.current ? index * 0.05 : 0,
+                            layout: {
+                              duration: 0.15,
+                              ease: [0.4, 0, 0.2, 1]
+                            }
+                          }}
+                          className="h-10 border-b"
+                        >
                         <TableCell className="py-1.5">
                           <Badge 
                             variant="outline" 
@@ -799,8 +839,9 @@ function DisposeAssetPageContent() {
                         <TableCell className="py-1.5 text-xs text-muted-foreground text-right">
                           {getTimeAgo(disposal.createdAt)}
                         </TableCell>
-                      </TableRow>
+                        </motion.tr>
                     ))}
+                    </AnimatePresence>
                   </TableBody>
                   </Table>
               </div>
@@ -810,10 +851,15 @@ function DisposeAssetPageContent() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </motion.div>
 
       <form onSubmit={handleSubmit} className="space-y-6 mt-6">
         {/* Disposal Details */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+        >
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Asset Selection</CardTitle>
@@ -867,8 +913,11 @@ function DisposeAssetPageContent() {
                     </div>
                   ) : (
                     assetSuggestions.map((asset, index) => (
-                      <div
+                      <motion.div
                         key={asset.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.2, delay: index * 0.05 }}
                         className={cn(
                           "px-4 py-3 cursor-pointer hover:bg-accent",
                           index === selectedSuggestionIndex && "bg-accent"
@@ -885,7 +934,7 @@ function DisposeAssetPageContent() {
                           </div>
                           {getStatusBadge(asset.status || 'Available')}
                         </div>
-                      </div>
+                      </motion.div>
                     ))
                   )}
                 </div>
@@ -905,6 +954,7 @@ function DisposeAssetPageContent() {
             </div>
 
             {/* Selected Assets List */}
+            <AnimatePresence>
             {(selectedAssets.length > 0 || loadingAssets.size > 0) && (
               <div className="space-y-2">
                 <p className="text-sm font-medium">
@@ -913,8 +963,12 @@ function DisposeAssetPageContent() {
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {/* Loading placeholders */}
                   {Array.from(loadingAssets).map((code) => (
-                    <div
+                      <motion.div
                       key={`loading-${code}`}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        transition={{ duration: 0.2 }}
                       className="flex items-start justify-between gap-2 p-3 border rounded-md bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"
                     >
                       <div className="flex-1 min-w-0">
@@ -943,12 +997,16 @@ function DisposeAssetPageContent() {
                       >
                         <XIcon className="h-4 w-4" />
                       </Button>
-                    </div>
+                      </motion.div>
                   ))}
                   {/* Actual selected assets */}
-                  {selectedAssets.map((asset) => (
-                    <div
+                    {selectedAssets.map((asset, index) => (
+                      <motion.div
                       key={asset.id}
+                        initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: 20, scale: 0.95 }}
+                        transition={{ duration: 0.3, delay: index * 0.05 }}
                       className="flex items-start justify-between gap-2 p-3 border rounded-md bg-muted/50"
                     >
                       <div className="flex-1 min-w-0">
@@ -972,17 +1030,22 @@ function DisposeAssetPageContent() {
                           <XIcon className="h-4 w-4" />
                         </Button>
                       </div>
-                    </div>
+                      </motion.div>
                   ))}
                 </div>
-
-                
               </div>
             )}
+            </AnimatePresence>
           </CardContent>
         </Card>
+        </motion.div>
 
         {/* Disposal Details */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.3 }}
+        >
         <Card>
           <CardHeader>
             <CardTitle>Disposal Details</CardTitle>
@@ -1167,20 +1230,27 @@ function DisposeAssetPageContent() {
                 </div>
           </CardContent>
         </Card>
+        </motion.div>
 
       </form>
 
       {/* Floating Action Buttons - Only show when form has changes */}
+      <AnimatePresence>
       {isFormDirty && canViewAssets && canDispose && (
-        <div 
+          <motion.div 
+            initial={{ opacity: 0, y: 20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 20, x: '-50%' }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
           className="fixed bottom-6 z-50 flex items-center justify-center gap-3"
           style={{
-            left: !sidebarOpen 
+              left: isMobile 
+                ? '50%'
+                : !sidebarOpen 
               ? '50%'
               : sidebarState === 'collapsed' 
                 ? 'calc(var(--sidebar-width-icon, 3rem) + ((100vw - var(--sidebar-width-icon, 3rem)) / 2))'
-                : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))',
-            transform: 'translateX(-50%)'
+                    : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))'
           }}
         >
           <Button
@@ -1213,8 +1283,9 @@ function DisposeAssetPageContent() {
               'Save'
             )}
           </Button>
-        </div>
+          </motion.div>
       )}
+      </AnimatePresence>
 
       {/* QR Code Scanner Dialog */}
       <QRScannerDialog
@@ -1234,7 +1305,7 @@ function DisposeAssetPageContent() {
         onOpenChange={setQrDisplayDialogOpen}
         assetTagId={selectedAssetTagForQR}
       />
-    </div>
+    </motion.div>
   )
 }
 

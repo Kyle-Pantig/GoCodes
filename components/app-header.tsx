@@ -53,7 +53,6 @@ import Image from "next/image"
 const routeLabels: Record<string, string> = {
   '/': 'Home',
   '/dashboard': 'Dashboard',
-  '/dashboard/activity': 'Recent Activity',
   '/assets': 'Assets',
   '/assets/add': 'Add Asset',
   '/assets/checkout': 'Check Out',

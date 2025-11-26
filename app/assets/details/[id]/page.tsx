@@ -3,6 +3,7 @@
 import { useState, use, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ImageIcon, FileText, Edit, CheckCircle2, ArrowRight, Trash2, Move, Package, FileText as FileTextIcon, Wrench, ChevronDown, Download } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -489,19 +490,19 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     }
   }, [thumbnailImage?.imageUrl])
 
-  const { data: historyData } = useQuery({
+  const { data: historyData, isLoading: isLoadingHistory } = useQuery({
     queryKey: ['asset-history', resolvedParams.id],
     queryFn: () => fetchHistoryLogs(resolvedParams.id),
     enabled: !!resolvedParams.id && activeTab === 'history',
   })
 
-  const { data: maintenanceData } = useQuery({
+  const { data: maintenanceData, isLoading: isLoadingMaintenance } = useQuery({
     queryKey: ['asset-maintenance', resolvedParams.id],
     queryFn: () => fetchMaintenance(resolvedParams.id),
     enabled: !!resolvedParams.id && activeTab === 'maintenance',
   })
 
-  const { data: reserveData } = useQuery({
+  const { data: reserveData, isLoading: isLoadingReserve } = useQuery({
     queryKey: ['asset-reserve', resolvedParams.id],
     queryFn: () => fetchReserve(resolvedParams.id),
     enabled: !!resolvedParams.id && activeTab === 'reserve',
@@ -725,7 +726,14 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   }
 
   return (
-    <div key={assetId} id="asset-details-content" className="space-y-6 pb-16">
+    <motion.div 
+      key={assetId} 
+      id="asset-details-content" 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="space-y-6 pb-16"
+    >
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl sm:text-3xl font-bold truncate">{asset.assetTagId}</h1>
@@ -1151,7 +1159,15 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
 
       {/* Tab Content */}
       <div className="min-h-[400px]">
+        <AnimatePresence mode="wait">
         {activeTab === 'details' && (
+        <motion.div
+          key="details"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-1">Serial No</p>
@@ -1250,17 +1266,41 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               </div>
             )}
           </div>
+        </motion.div>
         )}
 
         {activeTab === 'photos' && asset && (
+          <motion.div
+            key="photos"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+          >
           <PhotosTabContent assetTagId={asset.assetTagId} isActive={activeTab === 'photos'} />
+          </motion.div>
         )}
 
         {activeTab === 'docs' && asset && (
+          <motion.div
+            key="docs"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+          >
           <DocsTabContent assetTagId={asset.assetTagId} isActive={activeTab === 'docs'} />
+          </motion.div>
         )}
 
         {activeTab === 'depreciation' && (
+        <motion.div
+          key="depreciation"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -1296,11 +1336,29 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               <p className="text-sm text-muted-foreground">This asset is not marked as depreciable.</p>
             )}
           </div>
+        </motion.div>
         )}
+        </AnimatePresence>
 
+        {/* Maintenance Tab */}
+        <AnimatePresence mode="wait">
         {activeTab === 'maintenance' && (
+        <motion.div
+          key="maintenance"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
           <div className="space-y-4">
-            {maintenances.length === 0 ? (
+            {isLoadingMaintenance ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex flex-col items-center gap-3">
+                  <Spinner className="h-8 w-8" />
+                  <p className="text-sm text-muted-foreground">Loading maintenance records...</p>
+                </div>
+              </div>
+            ) : maintenances.length === 0 ? (
               <p className="text-sm text-muted-foreground">No maintenance records found.</p>
             ) : (
               <div className="border rounded-lg overflow-hidden">
@@ -1372,11 +1430,29 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               </div>
             )}
           </div>
+        </motion.div>
         )}
+        </AnimatePresence>
 
+        {/* Reserve Tab */}
+        <AnimatePresence mode="wait">
         {activeTab === 'reserve' && (
+        <motion.div
+          key="reserve"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
           <div className="space-y-4">
-            {reservations.length === 0 ? (
+            {isLoadingReserve ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex flex-col items-center gap-3">
+                  <Spinner className="h-8 w-8" />
+                  <p className="text-sm text-muted-foreground">Loading reservations...</p>
+                </div>
+              </div>
+            ) : reservations.length === 0 ? (
               <p className="text-sm text-muted-foreground">No reservations found.</p>
             ) : (
               <div className="border rounded-lg overflow-hidden">
@@ -1448,11 +1524,29 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               </div>
             )}
           </div>
+        </motion.div>
         )}
+        </AnimatePresence>
 
+        {/* Audit Tab */}
+        <AnimatePresence mode="wait">
         {activeTab === 'audit' && (
+        <motion.div
+          key="audit"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
           <div className="space-y-4">
-            {!asset?.auditHistory || asset.auditHistory.length === 0 ? (
+            {assetLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex flex-col items-center gap-3">
+                  <Spinner className="h-8 w-8" />
+                  <p className="text-sm text-muted-foreground">Loading audit records...</p>
+                </div>
+              </div>
+            ) : !asset?.auditHistory || asset.auditHistory.length === 0 ? (
               <p className="text-sm text-muted-foreground">No audit records found.</p>
             ) : (
               <div className="border rounded-lg overflow-hidden">
@@ -1504,11 +1598,29 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               </div>
             )}
           </div>
+        </motion.div>
         )}
+        </AnimatePresence>
 
+        {/* History Tab */}
+        <AnimatePresence mode="wait">
         {activeTab === 'history' && (
+        <motion.div
+          key="history"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
           <div className="space-y-4">
-            {historyLogs.length === 0 ? (
+            {isLoadingHistory ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex flex-col items-center gap-3">
+                  <Spinner className="h-8 w-8" />
+                  <p className="text-sm text-muted-foreground">Loading history logs...</p>
+                </div>
+              </div>
+            ) : historyLogs.length === 0 ? (
               <p className="text-sm text-muted-foreground">No history logs found.</p>
             ) : (
               <div className="border rounded-lg overflow-hidden">
@@ -1575,9 +1687,11 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               </div>
             )}
           </div>
+        </motion.div>
         )}
+        </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
