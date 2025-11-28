@@ -84,7 +84,7 @@ export function SummaryCards({ data, isLoading }: SummaryCardsProps) {
       {cards.map((card, index) => (
         <motion.div key={index} variants={item}>
           <Card 
-            className="border-l-4 transition-all hover:shadow-md" 
+            className="border-l-4 transition-all hover:shadow-md hover:bg-white/15 dark:hover:bg-white/10 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150" 
             style={{ borderLeftColor: card.borderColor }}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

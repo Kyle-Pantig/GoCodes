@@ -106,6 +106,16 @@ export type DashboardStats = {
       description: string
     }
   }>
+  recentAssets: Array<{
+    id: string
+    createdAt: string
+    issuedTo: string | null
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+  }>
   feedCounts: {
     totalActiveCheckouts: number
     totalCheckins: number
@@ -115,6 +125,7 @@ export type DashboardStats = {
     totalLeases: number
     totalReturns: number
     totalDisposes: number
+    totalNewAssets: number
   }
   summary: {
     totalActiveAssets: number

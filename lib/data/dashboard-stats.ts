@@ -111,6 +111,16 @@ export type DashboardStats = {
       description: string
     }
   }>
+  recentAssets: Array<{
+    id: string
+    createdAt: string
+    issuedTo: string | null
+    asset: {
+      id: string
+      assetTagId: string
+      description: string
+    }
+  }>
   feedCounts: {
     totalActiveCheckouts: number
     totalCheckins: number
@@ -120,6 +130,7 @@ export type DashboardStats = {
     totalLeases: number
     totalReturns: number
     totalDisposes: number
+    totalNewAssets: number
   }
   summary: {
     totalActiveAssets: number
@@ -204,6 +215,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       recentReturns,
       totalDisposes,
       recentDisposes,
+      totalNewAssets,
+      recentAssets,
     ] = await retryDbOperation(() =>
       prisma.$transaction([
         // Get asset value by category using Prisma groupBy for efficient database-level aggregation
@@ -486,6 +499,32 @@ export async function getDashboardStats(): Promise<DashboardStats> {
           orderBy: { createdAt: 'desc' },
           take: 10,
         }),
+        // Recent new assets (created in the last 30 days)
+        prisma.assets.count({
+          where: {
+            isDeleted: false,
+            createdAt: {
+              gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Last 30 days
+            },
+          },
+        }),
+        prisma.assets.findMany({
+          where: {
+            isDeleted: false,
+            createdAt: {
+              gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Last 30 days
+            },
+          },
+          select: {
+            id: true,
+            assetTagId: true,
+            description: true,
+            createdAt: true,
+            issuedTo: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+        }),
       ])
     )
 
@@ -557,6 +596,16 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         disposalMethod: dispose.disposalMethod || null,
         asset: dispose.asset,
       })),
+      recentAssets: (recentAssets || []).map((asset) => ({
+        id: asset.id,
+        createdAt: asset.createdAt.toISOString(),
+        issuedTo: asset.issuedTo || null,
+        asset: {
+          id: asset.id,
+          assetTagId: asset.assetTagId,
+          description: asset.description,
+        },
+      })),
       feedCounts: {
         totalActiveCheckouts,
         totalCheckins,
@@ -566,6 +615,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         totalLeases,
         totalReturns,
         totalDisposes,
+        totalNewAssets,
       },
       summary: {
         totalActiveAssets,

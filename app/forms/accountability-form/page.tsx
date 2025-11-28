@@ -5,6 +5,7 @@ import { XIcon, QrCode, RefreshCw, Download, ChevronDown } from "lucide-react"
 import Image from "next/image"
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { QRScannerDialog } from '@/components/qr-scanner-dialog'
 import { toast } from 'sonner'
@@ -152,6 +153,7 @@ async function fetchCompanyInfo(): Promise<{ companyInfo: { primaryLogoUrl: stri
 export default function AccountabilityFormPage() {
   const { hasPermission, isLoading: isLoadingPermissions } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
+  const isMobile = useIsMobile()
   const canViewAccountabilityForms = hasPermission('canViewAccountabilityForms')
   const canManageAccountabilityForms = hasPermission('canManageAccountabilityForms')
   const canManageSetup = hasPermission('canManageSetup')
@@ -1405,7 +1407,7 @@ export default function AccountabilityFormPage() {
                   {showSuggestions && (
                     <div
                       ref={suggestionRef}
-                      className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-60 overflow-auto"
+                      className="absolute z-50 w-full mt-1 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 rounded-md shadow-2xl backdrop-saturate-150 max-h-60 overflow-auto"
                     >
                       {isLoadingSuggestions ? (
                         <div className="flex items-center justify-center py-4">
@@ -2202,29 +2204,36 @@ export default function AccountabilityFormPage() {
       />
 
       {/* Floating Download PDF Button */}
-      {selectedEmployee && !isLoadingEmployee && (
-        <div 
-          className="fixed bottom-6 z-50 flex items-center justify-center"
-          style={{
-            left: !sidebarOpen 
-              ? '50%'
-              : sidebarState === 'collapsed' 
-                ? 'calc(var(--sidebar-width-icon, 3rem) + ((100vw - var(--sidebar-width-icon, 3rem)) / 2))'
-                : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))',
-            transform: 'translateX(-50%)'
-          }}
-        >
-          <Button
-            type="button"
-            size="lg"
-            onClick={handleDownloadPDF}
-            className="min-w-[140px] shadow-lg"
+      <AnimatePresence>
+        {selectedEmployee && !isLoadingEmployee && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 20, x: '-50%' }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="fixed bottom-6 z-50 flex items-center justify-center"
+            style={{
+              left: isMobile 
+                ? '50%'
+                : !sidebarOpen 
+                ? '50%'
+                : sidebarState === 'collapsed' 
+                  ? 'calc(var(--sidebar-width-icon, 3rem) + ((100vw - var(--sidebar-width-icon, 3rem)) / 2))'
+                  : 'calc(var(--sidebar-width, 16rem) + ((100vw - var(--sidebar-width, 16rem)) / 2))'
+            }}
           >
-            <Download className="mr-2 h-4 w-4" />
-            Download PDF
-          </Button>
-        </div>
-      )}
+            <Button
+              type="button"
+              size="lg"
+              onClick={handleDownloadPDF}
+              className="min-w-[140px] shadow-lg"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download PDF
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }

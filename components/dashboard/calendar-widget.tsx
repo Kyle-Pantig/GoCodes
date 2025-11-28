@@ -609,7 +609,7 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-10 sm:h-8 gap-2 flex-1 sm:flex-initial"
+                    className="h-10 sm:h-8 gap-2 flex-1 sm:flex-initial bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150"
                   >
                     <List className="h-4 w-4" />
                     <span className="hidden sm:inline">Events</span>
@@ -620,8 +620,8 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                     )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-80 p-0" align="end">
-                  <div className="p-4 border-b">
+                <PopoverContent className="w-80 p-0 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-2xl backdrop-saturate-150" align="end">
+                  <div className="p-4 border-b border-white/20 dark:border-white/10">
                     <h4 className="font-semibold text-sm">All Events - {format(currentMonth, 'MMMM yyyy')}</h4>
                     <p className="text-xs text-muted-foreground mt-1">
                       {currentMonthEventCount} total events

@@ -107,7 +107,11 @@ export function DepartmentSelectField({
   }
 
   const renderCombobox = (currentValue: string | undefined, onChange: (value: string) => void) => {
-    const selected = departments.find((dept: Department) => dept.name === currentValue)
+    // Normalize values for comparison (trim and case-insensitive)
+    const normalizedCurrentValue = currentValue?.trim().toLowerCase()
+    const selected = departments.find((dept: Department) => 
+      dept.name.trim().toLowerCase() === normalizedCurrentValue
+    )
 
     return (
       <Popover open={open} onOpenChange={setOpen}>
@@ -122,6 +126,8 @@ export function DepartmentSelectField({
           >
             {selected ? (
               <span className="truncate">{selected.name}</span>
+            ) : currentValue ? (
+              <span className="truncate">{currentValue}</span>
             ) : (
               <span className="text-muted-foreground">{placeholder}</span>
             )}
@@ -164,7 +170,7 @@ export function DepartmentSelectField({
               <ScrollArea className="h-[300px]">
                 <CommandGroup>
                   {departments.map((department: Department) => {
-                    const isSelected = currentValue === department.name
+                    const isSelected = department.name.trim().toLowerCase() === normalizedCurrentValue
 
                     return (
                       <CommandItem

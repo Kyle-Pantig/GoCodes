@@ -2510,7 +2510,7 @@ function AssetsPageContent() {
         className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mt-6"
       >
         {/* Total Assets */}
-        <Card className="flex flex-col py-0 gap-2">
+        <Card className="flex flex-col py-0 gap-2 transition-all hover:shadow-md hover:bg-white/15 dark:hover:bg-white/10 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
           <CardHeader className="p-4 pb-2">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-md bg-green-100 text-green-500">
@@ -2537,7 +2537,7 @@ function AssetsPageContent() {
         </Card>
 
         {/* Available Assets */}
-        <Card className="flex flex-col py-0 gap-2">
+        <Card className="flex flex-col py-0 gap-2 transition-all hover:shadow-md hover:bg-white/15 dark:hover:bg-white/10 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
           <CardHeader className="p-4 pb-2">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-md bg-green-100 text-green-500">
@@ -2562,7 +2562,7 @@ function AssetsPageContent() {
         </Card>
 
         {/* Checked Out */}
-        <Card className="flex flex-col py-0 gap-2">
+        <Card className="flex flex-col py-0 gap-2 transition-all hover:shadow-md hover:bg-white/15 dark:hover:bg-white/10 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
           <CardHeader className="p-4 pb-2">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-100 text-blue-500">
@@ -2587,7 +2587,7 @@ function AssetsPageContent() {
         </Card>
 
         {/* Total Value */}
-        <Card className="flex flex-col py-0 gap-2">
+        <Card className="flex flex-col py-0 gap-2 transition-all hover:shadow-md hover:bg-white/15 dark:hover:bg-white/10 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
           <CardHeader className="p-4 pb-2">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-md bg-amber-100 text-amber-500">
@@ -2633,7 +2633,7 @@ function AssetsPageContent() {
                 onClick={() => {
                   queryClient.invalidateQueries({ queryKey: ['assets'] })
                 }}
-                className="h-8 w-8"
+                className="h-8 w-8 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150"
                 title="Refresh table"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -2648,7 +2648,7 @@ function AssetsPageContent() {
                 }}
                 variant="outline"
                 size="sm"
-                className="flex-1 sm:flex-initial"
+                className="flex-1 sm:flex-initial bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150"
               >
                 <Download className="mr-2 h-4 w-4" />
                 Export
@@ -2664,7 +2664,7 @@ function AssetsPageContent() {
                   }}
                 variant="outline"
                 size="sm"
-                className="flex-1 sm:flex-initial"
+                className="flex-1 sm:flex-initial bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150"
               >
                 <Upload className="mr-2 h-4 w-4" />
                 Import
@@ -2698,10 +2698,10 @@ function AssetsPageContent() {
               <Select value={table.getState().pagination.pageSize.toString()} onValueChange={(value) => {
                 table.setPageSize(Number(value))
               }}>
-                <SelectTrigger className="w-full sm:w-[120px]" size='sm'>
+                <SelectTrigger className="w-full sm:w-[120px] bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150" size='sm'>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 shadow-2xl backdrop-saturate-150">
                   <SelectItem value="10">10 rows</SelectItem>
                   <SelectItem value="25">25 rows</SelectItem>
                   <SelectItem value="50">50 rows</SelectItem>
@@ -2717,7 +2717,7 @@ function AssetsPageContent() {
                 toggleColumn(value)
               }}
             >
-              <SelectTrigger className="w-full sm:w-[200px]" size='sm'>
+              <SelectTrigger className="w-full sm:w-[200px] bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150 " size='sm'>
                 <span className="flex-1 text-left truncate">
                   {visibleColumns.length > 0 
                     ? `${visibleColumns.length} column${visibleColumns.length !== 1 ? 's' : ''} selected`
@@ -2725,7 +2725,7 @@ function AssetsPageContent() {
                   }
                 </span>
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 shadow-2xl backdrop-saturate-150">
                 <SelectItem
                   value={allSelected ? 'deselect-all' : 'select-all'}
                   className="font-semibold border-b"
@@ -2740,7 +2740,6 @@ function AssetsPageContent() {
                   <SelectItem
                     key={column.key}
                     value={column.key}
-                    className={isVisible ? 'bg-accent' : ''}
                     disabled={false}
                   >
                     <div className="flex items-center gap-2">
@@ -2760,12 +2759,12 @@ function AssetsPageContent() {
               <div className="p-4 sm:p-6 pb-4 border-b">
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-stretch sm:items-center">
                   <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground z-10" />
                     <Input
                       placeholder="Search assets by tag, description, category..."
                       value={searchInput}
                       onChange={(e) => setSearchInput(e.target.value)}
-                      className={cn("pl-10 h-8", searchInput && "pr-10")}
+                      className={cn("pl-10 h-8 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 focus-visible:border-white/40 dark:focus-visible:border-white/20 shadow-sm backdrop-saturate-150", searchInput && "pr-10")}
                     />
                     {searchInput && (
                       <Button
@@ -2797,12 +2796,12 @@ function AssetsPageContent() {
                       open={isCategoryDropdownOpen}
                       onOpenChange={setIsCategoryDropdownOpen}
                     >
-                      <SelectTrigger className="w-full sm:w-[180px]" size='sm'>
+                      <SelectTrigger className="w-full sm:w-[180px] bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150" size='sm'>
                         <span className="flex-1 text-left truncate">
                           {categoryFilter === 'all' || !categoryFilter ? 'All Categories' : categoryFilter}
                         </span>
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 shadow-2xl backdrop-saturate-150">
                         <SelectItem value="all">All Categories</SelectItem>
                         {categoriesData?.map(category => (
                           <SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>
@@ -2825,12 +2824,12 @@ function AssetsPageContent() {
                       open={isStatusDropdownOpen}
                       onOpenChange={setIsStatusDropdownOpen}
                     >
-                      <SelectTrigger className="w-full sm:w-[150px]" size='sm'>
+                      <SelectTrigger className="w-full sm:w-[150px] bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150" size='sm'>
                         <span className="flex-1 text-left truncate">
                           {statusFilter === 'all' || !statusFilter ? 'All Status' : statusFilter}
                         </span>
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 shadow-2xl backdrop-saturate-150">
                         <SelectItem value="all">All Status</SelectItem>
                         {allStatusesData?.map(status => (
                           <SelectItem key={status} value={status}>{status}</SelectItem>

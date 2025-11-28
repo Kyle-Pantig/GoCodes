@@ -801,7 +801,7 @@ function LeaseAssetPageContent() {
                 {showSuggestions && (
                   <div
                     ref={suggestionRef}
-                    className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-60 overflow-auto"
+                    className="absolute z-50 w-full mt-1 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 rounded-md shadow-2xl backdrop-saturate-150 max-h-60 overflow-auto"
                   >
                     {isLoadingSuggestions ? (
                       <div className="flex items-center justify-center py-4">

@@ -240,7 +240,7 @@ function ReserveAssetPageContent() {
         .slice(0, 10)
     },
     enabled: showSuggestions && canViewAssets && canReserve,
-    staleTime: 300,
+    staleTime: 0, // Always fetch fresh data for suggestions
   })
 
   // Close suggestions when clicking outside
@@ -265,7 +265,8 @@ function ReserveAssetPageContent() {
   // Find asset by ID without status check (for error messages)
   const findAssetById = async (assetTagId: string): Promise<Asset | null> => {
     try {
-      const response = await fetch(`/api/assets?search=${encodeURIComponent(assetTagId)}`)
+      // Use a cache-busting timestamp to ensure fresh data
+      const response = await fetch(`/api/assets?search=${encodeURIComponent(assetTagId)}&_t=${Date.now()}`)
       const data = await response.json()
       const assets = data.assets as Asset[]
       
@@ -305,18 +306,46 @@ function ReserveAssetPageContent() {
 
   // Handle asset selection
   const handleSelectAsset = async (asset?: Asset) => {
-    const assetToSelect = asset || await lookupAsset(assetIdInput.trim())
-    if (assetToSelect) {
-      setSelectedAsset(assetToSelect)
-      setAssetIdInput(assetToSelect.assetTagId)
-      form.setValue('assetId', assetToSelect.id)
-      setShowSuggestions(false)
-      toast.success('Asset selected')
-    } else {
+    let assetToSelect = asset || await lookupAsset(assetIdInput.trim())
+    if (!assetToSelect) {
       if (!asset) {
-      toast.error(`Asset with ID "${assetIdInput}" not found or not available for reservation`)
+        toast.error(`Asset with ID "${assetIdInput}" not found or not available for reservation`)
       }
+      return
     }
+
+    // Always fetch fresh asset data to ensure we have the latest values
+    try {
+      const response = await fetch(`/api/assets/${assetToSelect.id}`)
+      if (response.ok) {
+        const result = await response.json()
+        assetToSelect = result.asset as Asset
+      }
+    } catch (error) {
+      console.error('Error fetching fresh asset data:', error)
+      // Continue with the asset we have if fetch fails
+    }
+
+    setSelectedAsset(assetToSelect)
+    setAssetIdInput(assetToSelect.assetTagId)
+    form.setValue('assetId', assetToSelect.id)
+    setShowSuggestions(false)
+    setSelectedSuggestionIndex(-1)
+    
+    // Pre-populate fields based on reservationType and current asset values
+    if (reservationType === 'Employee') {
+      // For employee reservation, we don't pre-populate employeeUserId
+      // User needs to select the employee they want to reserve for
+      form.setValue('employeeUserId', '', { shouldValidate: false })
+      form.clearErrors('employeeUserId')
+    }
+    
+    if (reservationType === 'Department' && assetToSelect.department) {
+      form.setValue('department', assetToSelect.department, { shouldValidate: false })
+      form.clearErrors('department')
+    }
+    
+    toast.success('Asset selected')
   }
 
   // Handle keyboard navigation in suggestions
@@ -483,15 +512,24 @@ function ReserveAssetPageContent() {
   // Handle reservation type change - reset conditional fields
   const handleReservationTypeChange = (value: ReservationType) => {
     form.setValue('reservationType', value)
-    // Reset conditional fields when changing reservation type
-    form.setValue('employeeUserId', '')
-    form.setValue('department', '')
-    // Trigger validation for conditional fields
+    
+    // Reset and populate conditional fields based on selected asset
     if (value === 'Employee') {
-      form.trigger('employeeUserId')
+      form.setValue('employeeUserId', '', { shouldValidate: false })
+      form.setValue('department', '', { shouldValidate: false })
+      form.clearErrors(['employeeUserId', 'department'])
     } else if (value === 'Department') {
-      form.trigger('department')
+      form.setValue('department', selectedAsset?.department || '', { shouldValidate: false })
+      form.setValue('employeeUserId', '', { shouldValidate: false })
+      form.clearErrors(['employeeUserId', 'department'])
+    } else {
+      // Reset all when no reservation type selected
+      form.setValue('employeeUserId', '', { shouldValidate: false })
+      form.setValue('department', '', { shouldValidate: false })
+      form.clearErrors(['employeeUserId', 'department'])
     }
+    // Don't trigger validation immediately - let user interact first
+    // Validation will happen on submit
   }
 
   // Reserve mutation
@@ -518,9 +556,26 @@ function ReserveAssetPageContent() {
 
       return response.json()
     },
-    onSuccess: () => {
+    onSuccess: async (data, variables) => {
+      // Invalidate all asset-related queries to get fresh data
       queryClient.invalidateQueries({ queryKey: ["assets"] })
       queryClient.invalidateQueries({ queryKey: ["reserve-stats"] })
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "asset-reserve-suggestions" })
+      
+      // Fetch fresh asset data to update selectedAsset if it's still selected
+      if (selectedAsset && selectedAsset.id === variables.assetId) {
+        try {
+          const response = await fetch(`/api/assets/${variables.assetId}`)
+          if (response.ok) {
+            const result = await response.json()
+            const updatedAsset = result.asset as Asset
+            setSelectedAsset(updatedAsset)
+          }
+        } catch (error) {
+          console.error('Error fetching updated asset:', error)
+        }
+      }
+      
       toast.success('Asset reserved successfully')
       clearForm()
       clearUrlParams()
@@ -776,7 +831,7 @@ function ReserveAssetPageContent() {
                 {showSuggestions && (
                   <div
                     ref={suggestionRef}
-                    className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-60 overflow-auto"
+                    className="absolute z-50 w-full mt-1 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 rounded-md shadow-2xl backdrop-saturate-150 max-h-60 overflow-auto"
                   >
                     {isLoadingSuggestions ? (
                       <div className="flex items-center justify-center py-4">
@@ -971,20 +1026,21 @@ function ReserveAssetPageContent() {
                       value={field.value || ""}
                       onValueChange={(value) => {
                         field.onChange(value)
-                        // Trigger validation after value change to clear error
-                        // Since the refine validation checks the entire form, trigger both fields
-                        setTimeout(() => {
-                          form.trigger(['reservationType', 'department'])
-                        }, 0)
+                        form.clearErrors('department')
                       }}
                       label={
                         <>
                           Department <span className="text-destructive">*</span>
+                          {selectedAsset?.department && (
+                            <span className="text-xs text-muted-foreground font-normal ml-2">
+                              (Current: {selectedAsset.department})
+                            </span>
+                          )}
                         </>
                       }
                       required
                       disabled={!canViewAssets || !canReserve || !selectedAsset}
-                      placeholder="Select or search department"
+                      placeholder={selectedAsset?.department || "Select or search department"}
                       canCreate={canManageSetup}
                     />
                     {fieldState.error && (

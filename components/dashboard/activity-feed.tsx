@@ -12,23 +12,86 @@ import { parseDateOnlyString } from '@/lib/date-utils'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Badge } from '@/components/ui/badge'
-import { ArrowUpRight, CheckCircle2, AlertCircle, MapPin, Calendar, Archive, Trash2 } from 'lucide-react'
+import { ArrowUpRight, CheckCircle2, AlertCircle, MapPin, Calendar, Archive, Trash2, Settings2, Plus } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface ActivityFeedProps {
   data: DashboardStats | undefined
   isLoading: boolean
 }
 
-type TabType = 'checked-out' | 'checked-in' | 'under-repair' | 'move' | 'reserve' | 'lease' | 'return' | 'dispose'
+type TabType = 'checked-out' | 'checked-in' | 'under-repair' | 'move' | 'reserve' | 'lease' | 'return' | 'dispose' | 'new-assets'
 
 export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
   const [activeTab, setActiveTab] = useState<TabType>('checked-out')
   const [mounted, setMounted] = useState(false)
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  
+  // Initialize visible tabs from localStorage
+  const [visibleTabs, setVisibleTabs] = useState<Set<TabType>>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('activityFeed.visibleTabs')
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as TabType[]
+          return new Set(parsed)
+        } catch (error) {
+          console.error('Failed to parse visible tabs:', error)
+        }
+      }
+    }
+    // Default visible tabs
+    return new Set([
+      'checked-out',
+      'checked-in',
+      'under-repair',
+      'move',
+      'reserve',
+      'lease',
+      'return',
+      'dispose',
+      'new-assets',
+    ])
+  })
+
+  // Save visible tabs to localStorage when they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('activityFeed.visibleTabs', JSON.stringify(Array.from(visibleTabs)))
+    }
+  }, [visibleTabs])
 
   useEffect(() => {
     const timer = setTimeout(() => setMounted(true), 0)
     return () => clearTimeout(timer)
   }, [])
+
+  const toggleTabVisibility = (tabId: TabType, event: Event) => {
+    // Prevent dropdown from closing
+    event.preventDefault()
+    
+    setVisibleTabs(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(tabId)) {
+        // Don't allow hiding all tabs
+        if (newSet.size === 1) return prev
+        newSet.delete(tabId)
+        // If hiding the active tab, switch to the first visible tab
+        if (activeTab === tabId) {
+          const firstVisible = Array.from(newSet)[0]
+          setActiveTab(firstVisible)
+        }
+      } else {
+        newSet.add(tabId)
+      }
+      return newSet
+    })
+  }
 
   if (isLoading) {
     return (
@@ -46,7 +109,7 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
 
   if (!mounted) return null
 
-  const tabs = [
+  const allTabs = [
     { id: 'checked-out', label: 'Checked Out', count: data?.activeCheckouts.length || 0, icon: ArrowUpRight },
     { id: 'checked-in', label: 'Checked In', count: data?.recentCheckins.length || 0, icon: CheckCircle2 },
     { id: 'under-repair', label: 'Under Repair', count: data?.assetsUnderRepair.length || 0, icon: AlertCircle },
@@ -55,7 +118,10 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
     { id: 'lease', label: 'Lease', count: data?.recentLeases.length || 0, icon: Archive },
     { id: 'return', label: 'Return', count: data?.recentReturns.length || 0, icon: CheckCircle2 },
     { id: 'dispose', label: 'Dispose', count: data?.recentDisposes.length || 0, icon: Trash2 },
+    { id: 'new-assets', label: 'New Assets', count: data?.recentAssets.length || 0, icon: Plus },
   ]
+
+  const tabs = allTabs.filter(tab => visibleTabs.has(tab.id as TabType))
 
   return (
     <motion.div
@@ -72,6 +138,45 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
                 Recent asset movements and status updates
               </CardDescription>
             </div>
+            <DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-8 gap-2 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150"
+                >
+                  <Settings2 className="h-4 w-4" />
+                  <span className="hidden sm:inline">Customize</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent 
+                align="end" 
+                className="w-56 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-2xl backdrop-saturate-150"
+                onPointerDownOutside={() => {
+                  // Allow closing when clicking outside
+                  setIsDropdownOpen(false)
+                }}
+                onEscapeKeyDown={() => {
+                  // Allow closing with Escape key
+                  setIsDropdownOpen(false)
+                }}
+              >
+                {allTabs.map((tab) => (
+                  <DropdownMenuCheckboxItem
+                    key={tab.id}
+                    checked={visibleTabs.has(tab.id as TabType)}
+                    onSelect={(e) => toggleTabVisibility(tab.id as TabType, e)}
+                    disabled={visibleTabs.size === 1 && visibleTabs.has(tab.id as TabType)}
+                    className="hover:bg-white/15 dark:hover:bg-white/10 focus:bg-white/15 dark:focus:bg-white/10 data-[state=checked]:bg-white/20 dark:data-[state=checked]:bg-white/10 cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <tab.icon className="h-4 w-4" />
+                      <span>{tab.label}</span>
+                    </div>
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <div className="flex items-center gap-6 overflow-x-auto no-scrollbar">
             {tabs.map((tab) => (
@@ -666,6 +771,69 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
                       <Link href="/dashboard/activity?type=dispose">
                         <Button variant="link" className="text-sm">
                           View all {data.feedCounts.totalDisposes} disposed assets
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {activeTab === 'new-assets' && (
+                <motion.div
+                  key="new-assets"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <div className="rounded-md border-0">
+                    <ScrollArea className="h-[500px]">
+                      <Table>
+                        <TableHeader className="bg-muted/50">
+                          <TableRow>
+                            <TableHead className="w-[150px]">Asset Tag</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Created Date</TableHead>
+                            <TableHead>Issued To</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {data?.recentAssets && data.recentAssets.length > 0 ? (
+                            data.recentAssets.slice(0, 10).map((asset) => (
+                              <TableRow key={asset.id} className="hover:bg-muted/30">
+                                <TableCell className="font-medium text-primary">
+                                  <Link href={`/assets/details/${asset.asset.id}`} className="hover:underline">
+                                    {asset.asset.assetTagId}
+                                  </Link>
+                                </TableCell>
+                                <TableCell className="max-w-[200px] truncate" title={asset.asset.description}>
+                                  {asset.asset.description}
+                                </TableCell>
+                                <TableCell>
+                                  {format(new Date(asset.createdAt), 'MMM dd, yyyy')}
+                                </TableCell>
+                                <TableCell>
+                                  {asset.issuedTo || <span className="text-muted-foreground italic">Not assigned</span>}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          ) : (
+                            <TableRow>
+                              <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                                No new assets found.
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                      <ScrollBar orientation="horizontal" className="z-10" />
+                    </ScrollArea>
+                  </div>
+                  {data?.feedCounts && data.feedCounts.totalNewAssets > (data.recentAssets?.length || 0) && (
+                    <div className="p-4 text-center border-t bg-muted/10">
+                      <Link href="/assets">
+                        <Button variant="link" className="text-sm">
+                          View all {data.feedCounts.totalNewAssets} new assets
                         </Button>
                       </Link>
                     </div>

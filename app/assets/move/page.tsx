@@ -266,7 +266,7 @@ function MoveAssetPageContent() {
         .slice(0, 10)
     },
     enabled: showSuggestions && canViewAssets && canMove,
-    staleTime: 300,
+    staleTime: 0, // Always fetch fresh data for suggestions
   })
 
   // Close suggestions when clicking outside
@@ -288,10 +288,11 @@ function MoveAssetPageContent() {
     }
   }, [])
 
-  // Asset lookup by ID
+  // Asset lookup by ID - always fetch fresh data
   const lookupAsset = async (assetTagId: string): Promise<Asset | null> => {
     try {
-      const response = await fetch(`/api/assets?search=${encodeURIComponent(assetTagId)}`)
+      // Use a cache-busting timestamp to ensure fresh data
+      const response = await fetch(`/api/assets?search=${encodeURIComponent(assetTagId)}&_t=${Date.now()}`)
       const data = await response.json()
       const assets = data.assets as Asset[]
       
@@ -314,7 +315,7 @@ function MoveAssetPageContent() {
 
   // Handle asset selection
   const handleSelectAsset = async (asset?: Asset) => {
-    const assetToAdd = asset || await lookupAsset(assetIdInput.trim())
+    let assetToAdd = asset || await lookupAsset(assetIdInput.trim())
     
     if (!assetToAdd) {
       if (!asset) {
@@ -323,18 +324,41 @@ function MoveAssetPageContent() {
       return
     }
 
+    // Always fetch fresh asset data to ensure we have the latest values
+    try {
+      const response = await fetch(`/api/assets/${assetToAdd.id}`)
+      if (response.ok) {
+        const result = await response.json()
+        assetToAdd = result.asset as Asset
+      }
+    } catch (error) {
+      console.error('Error fetching fresh asset data:', error)
+      // Continue with the asset we have if fetch fails
+    }
+
     setSelectedAsset(assetToAdd)
     form.setValue('assetId', assetToAdd.id)
     setAssetIdInput("")
     setShowSuggestions(false)
     setSelectedSuggestionIndex(-1)
     
-    // If Employee Assignment is already selected, pre-select current employee
+    // Pre-populate fields based on moveType and current asset values
+    if (moveType === 'Location Transfer' && assetToAdd.location) {
+      form.setValue('location', assetToAdd.location, { shouldValidate: false })
+      form.clearErrors('location')
+    }
+    
     if (moveType === 'Employee Assignment') {
       const currentEmployeeId = assetToAdd.checkouts?.[0]?.employeeUser?.id
       if (currentEmployeeId) {
-        form.setValue('employeeUserId', currentEmployeeId)
+        form.setValue('employeeUserId', currentEmployeeId, { shouldValidate: false })
+        form.clearErrors('employeeUserId')
       }
+    }
+    
+    if (moveType === 'Department Transfer' && assetToAdd.department) {
+      form.setValue('department', assetToAdd.department, { shouldValidate: false })
+      form.clearErrors('department')
     }
     
     toast.success('Asset selected')
@@ -507,23 +531,33 @@ function MoveAssetPageContent() {
   // Handle move type change - reset conditional fields
   const handleMoveTypeChange = (value: MoveType) => {
     form.setValue('moveType', value as 'Location Transfer' | 'Employee Assignment' | 'Department Transfer')
-    // Reset conditional fields when changing move type
-    form.setValue('location', '')
-    form.setValue('department', '')
     
-    // For Employee Assignment, pre-select current employee if asset is checked out
-    if (value === 'Employee Assignment' && selectedAsset) {
-      const currentEmployeeId = selectedAsset.checkouts?.[0]?.employeeUser?.id
-      if (currentEmployeeId) {
-        form.setValue('employeeUserId', currentEmployeeId)
-      } else {
-        form.setValue('employeeUserId', '')
-      }
+    // Reset and populate conditional fields based on selected asset
+    if (value === 'Location Transfer') {
+      form.setValue('location', selectedAsset?.location || '', { shouldValidate: false })
+      form.setValue('employeeUserId', '', { shouldValidate: false })
+      form.setValue('department', '', { shouldValidate: false })
+      form.clearErrors(['location', 'employeeUserId', 'department'])
+    } else if (value === 'Employee Assignment') {
+      const currentEmployeeId = selectedAsset?.checkouts?.[0]?.employeeUser?.id
+      form.setValue('employeeUserId', currentEmployeeId || '', { shouldValidate: false })
+      form.setValue('location', '', { shouldValidate: false })
+      form.setValue('department', '', { shouldValidate: false })
+      form.clearErrors(['location', 'employeeUserId', 'department'])
+    } else if (value === 'Department Transfer') {
+      form.setValue('department', selectedAsset?.department || '', { shouldValidate: false })
+      form.setValue('location', '', { shouldValidate: false })
+      form.setValue('employeeUserId', '', { shouldValidate: false })
+      form.clearErrors(['location', 'employeeUserId', 'department'])
     } else {
-      form.setValue('employeeUserId', '')
+      // Reset all when no move type selected
+      form.setValue('location', '', { shouldValidate: false })
+      form.setValue('employeeUserId', '', { shouldValidate: false })
+      form.setValue('department', '', { shouldValidate: false })
+      form.clearErrors(['location', 'employeeUserId', 'department'])
     }
-    // Trigger validation for conditional fields
-    form.trigger(['location', 'employeeUserId', 'department'])
+    // Don't trigger validation immediately - let user interact first
+    // Validation will happen on submit
   }
 
   // Move mutation
@@ -551,9 +585,26 @@ function MoveAssetPageContent() {
 
       return response.json()
     },
-    onSuccess: () => {
+    onSuccess: async (data, variables) => {
+      // Invalidate all asset-related queries to get fresh data
       queryClient.invalidateQueries({ queryKey: ["assets"] })
       queryClient.invalidateQueries({ queryKey: ["move-stats"] })
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "asset-move-suggestions" })
+      
+      // Fetch fresh asset data to update selectedAsset if it's still selected
+      if (selectedAsset && selectedAsset.id === variables.assetId) {
+        try {
+          const response = await fetch(`/api/assets/${variables.assetId}`)
+          if (response.ok) {
+            const result = await response.json()
+            const updatedAsset = result.asset as Asset
+            setSelectedAsset(updatedAsset)
+          }
+        } catch (error) {
+          console.error('Error fetching updated asset:', error)
+        }
+      }
+      
       toast.success('Asset moved successfully')
       clearForm()
       clearUrlParams()
@@ -802,7 +853,7 @@ function MoveAssetPageContent() {
                 {showSuggestions && (
                   <div
                     ref={suggestionRef}
-                    className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-60 overflow-auto"
+                    className="absolute z-50 w-full mt-1 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 rounded-md shadow-2xl backdrop-saturate-150 max-h-60 overflow-auto"
                   >
                     {isLoadingSuggestions ? (
                       <div className="flex items-center justify-center py-4">
