@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -119,7 +119,7 @@ interface ReportFilters {
   endDate?: string
 }
 
-export default function MaintenanceReportsPage() {
+function MaintenanceReportsPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
@@ -1017,6 +1017,22 @@ export default function MaintenanceReportsPage() {
         </DialogContent>
       </Dialog>
     </motion.div>
+  )
+}
+
+export default function MaintenanceReportsPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6 p-6">
+        <div className="flex items-center justify-between">
+          <div className="h-8 w-48 bg-muted animate-pulse rounded" />
+          <div className="h-10 w-32 bg-muted animate-pulse rounded" />
+        </div>
+        <div className="h-96 bg-muted animate-pulse rounded" />
+      </div>
+    }>
+      <MaintenanceReportsPageContent />
+    </Suspense>
   )
 }
 
