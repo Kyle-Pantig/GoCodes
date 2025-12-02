@@ -47,11 +47,11 @@ import { cn } from '@/lib/utils'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { Checkbox } from '@/components/ui/checkbox'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
-import { ManagerDialog } from '@/components/manager-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
+import { ManagerDialog } from '@/components/dialogs/manager-dialog'
 import { AuditHistoryManager } from '@/components/audit-history-manager'
 import { CheckoutManager } from '@/components/checkout-manager'
-import { AssetMediaDialog } from '@/components/asset-media-dialog'
+import { AssetMediaDialog } from '@/components/dialogs/asset-media-dialog'
 
 interface Asset {
   id: string
@@ -1907,7 +1907,7 @@ function ListOfAssetsPageContent() {
                   toggleColumn(value)
                 }}
               >
-                <SelectTrigger className="w-full sm:w-[200px]" size='sm'>
+                <SelectTrigger className="w-full sm:w-[200px] " size='sm'>
                   <span className="flex-1 text-left truncate">
                     {visibleColumns.length > 0 
                       ? `${visibleColumns.length} column${visibleColumns.length !== 1 ? 's' : ''} selected`
@@ -1930,12 +1930,11 @@ function ListOfAssetsPageContent() {
                     <SelectItem
                       key={column.key}
                       value={column.key}
-                      className={isVisible ? 'bg-accent' : ''}
                       disabled={isAlwaysVisible}
                     >
                       <div className="flex items-center gap-2">
                         <Checkbox checked={isVisible} disabled={isAlwaysVisible} className={isAlwaysVisible ? 'opacity-50' : ''} />
-                        <span className={isAlwaysVisible ? 'opacity-50' : ''}>
+                        <span>
                           {column.label}
                           {isAlwaysVisible && ' (Always visible)'}
                         </span>

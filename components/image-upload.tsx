@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { Upload, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { ImagePreviewDialog } from './image-preview-dialog'
+import { ImagePreviewDialog } from './dialogs/image-preview-dialog'
 
 interface ImageUploadProps {
   selectedImages: File[]

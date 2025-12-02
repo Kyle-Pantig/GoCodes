@@ -39,8 +39,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { MoreHorizontal, Trash2, Edit, Download, Upload, Search, Package, CheckCircle2, User, DollarSign, XIcon, ArrowUpDown, ArrowUp, ArrowDown, ArrowRight, Image as ImageIcon, RefreshCw, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { AssetMediaDialog } from '@/components/asset-media-dialog'
-import { ImagePreviewDialog } from '@/components/image-preview-dialog'
+import { AssetMediaDialog } from '@/components/dialogs/asset-media-dialog'
+import { ImagePreviewDialog } from '@/components/dialogs/image-preview-dialog'
 import * as XLSX from 'xlsx'
 import {
   Pagination,
@@ -55,11 +55,11 @@ import { SelectValue } from '@radix-ui/react-select'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
-import { QRCodeDisplayDialog } from '@/components/qr-code-display-dialog'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
-import { ExportFieldsDialog } from '@/components/export-fields-dialog'
-import { BulkDeleteDialog } from '@/components/bulk-delete-dialog'
-import { ManagerDialog } from '@/components/manager-dialog'
+import { QRCodeDisplayDialog } from '@/components/dialogs/qr-code-display-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
+import { ExportFieldsDialog } from '@/components/dialogs/export-fields-dialog'
+import { BulkDeleteDialog } from '@/components/dialogs/bulk-delete-dialog'
+import { ManagerDialog } from '@/components/dialogs/manager-dialog'
 import { AuditHistoryManager } from '@/components/audit-history-manager'
 import { CheckoutManager } from '@/components/checkout-manager'
 import {
@@ -2698,10 +2698,10 @@ function AssetsPageContent() {
               <Select value={table.getState().pagination.pageSize.toString()} onValueChange={(value) => {
                 table.setPageSize(Number(value))
               }}>
-                <SelectTrigger className="w-full sm:w-[120px] bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150" size='sm'>
+                <SelectTrigger className="w-full sm:w-[120px] bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm" size='sm'>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 shadow-2xl backdrop-saturate-150">
+                <SelectContent>
                   <SelectItem value="10">10 rows</SelectItem>
                   <SelectItem value="25">25 rows</SelectItem>
                   <SelectItem value="50">50 rows</SelectItem>
@@ -2717,7 +2717,7 @@ function AssetsPageContent() {
                 toggleColumn(value)
               }}
             >
-              <SelectTrigger className="w-full sm:w-[200px] bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150 " size='sm'>
+              <SelectTrigger className="w-full sm:w-[200px] " size='sm'>
                 <span className="flex-1 text-left truncate">
                   {visibleColumns.length > 0 
                     ? `${visibleColumns.length} column${visibleColumns.length !== 1 ? 's' : ''} selected`
@@ -2725,7 +2725,7 @@ function AssetsPageContent() {
                   }
                 </span>
               </SelectTrigger>
-              <SelectContent className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 shadow-2xl backdrop-saturate-150">
+              <SelectContent>
                 <SelectItem
                   value={allSelected ? 'deselect-all' : 'select-all'}
                   className="font-semibold border-b"
@@ -2801,7 +2801,7 @@ function AssetsPageContent() {
                           {categoryFilter === 'all' || !categoryFilter ? 'All Categories' : categoryFilter}
                         </span>
                       </SelectTrigger>
-                      <SelectContent className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 shadow-2xl backdrop-saturate-150">
+                      <SelectContent>
                         <SelectItem value="all">All Categories</SelectItem>
                         {categoriesData?.map(category => (
                           <SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>
@@ -2829,7 +2829,7 @@ function AssetsPageContent() {
                           {statusFilter === 'all' || !statusFilter ? 'All Status' : statusFilter}
                         </span>
                       </SelectTrigger>
-                      <SelectContent className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 shadow-2xl backdrop-saturate-150">
+                      <SelectContent>
                         <SelectItem value="all">All Status</SelectItem>
                         {allStatusesData?.map(status => (
                           <SelectItem key={status} value={status}>{status}</SelectItem>

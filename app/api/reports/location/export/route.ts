@@ -6,6 +6,17 @@ export async function GET(request: NextRequest) {
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
+  // Helper function to format numbers with commas
+  const formatNumber = (value: number | null | undefined): string => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return '0.00'
+    }
+    return Number(value).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }
+
   try {
     const searchParams = request.nextUrl.searchParams
     const format = searchParams.get('format') || 'csv'
@@ -93,9 +104,9 @@ export async function GET(request: NextRequest) {
       ...(summary.byLocation || []).map((loc: any) => ({
         'Metric': `Location: ${loc.location || 'Unknown'}`,
         'Value': loc.assetCount?.toString() || '0',
-        'Total Value': loc.totalValue?.toString() || '0',
+        'Total Value': formatNumber(loc.totalValue),
         'Location Count': '',
-        'Average Value': loc.averageValue?.toFixed(2) || '0',
+        'Average Value': formatNumber(loc.averageValue),
         'Utilization %': `${loc.utilizationPercentage?.toFixed(1) || '0'}%`,
       })),
       {
@@ -118,9 +129,9 @@ export async function GET(request: NextRequest) {
       ...(summary.bySite || []).map((site: any) => ({
         'Metric': `Site: ${site.site || 'Unknown'}`,
         'Value': site.assetCount?.toString() || '0',
-        'Total Value': site.totalValue?.toString() || '0',
+        'Total Value': formatNumber(site.totalValue),
         'Location Count': site.locationCount?.toString() || '0',
-        'Average Value': site.averageValue?.toFixed(2) || '0',
+        'Average Value': formatNumber(site.averageValue),
         'Utilization %': `${site.utilizationPercentage?.toFixed(1) || '0'}%`,
       })),
     ]
@@ -131,7 +142,7 @@ export async function GET(request: NextRequest) {
       'Asset Tag ID': asset.assetTagId || '',
       'Description': asset.description || '',
       'Status': asset.status || '',
-      'Cost': asset.cost?.toString() || '',
+      'Cost': asset.cost ? formatNumber(Number(asset.cost)) : '',
       'Category': asset.category || '',
       'Location': asset.location || '',
       'Site': asset.site || '',

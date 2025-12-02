@@ -34,8 +34,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
-import { BulkDeleteDialog } from '@/components/bulk-delete-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
+import { BulkDeleteDialog } from '@/components/dialogs/bulk-delete-dialog'
 import {
   Select,
   SelectContent,

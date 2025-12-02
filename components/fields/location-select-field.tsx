@@ -21,12 +21,12 @@ import {
 } from '@/components/ui/command'
 import { Field, FieldLabel, FieldContent, FieldError as FieldErrorComponent } from '@/components/ui/field'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useSites, useCreateSite, type Site } from '@/hooks/use-sites'
-import { SiteDialog } from '@/components/site-dialog'
+import { useLocations, useCreateLocation, type Location } from '@/hooks/use-locations'
+import { LocationDialog } from '@/components/dialogs/location-dialog'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 
-interface SiteSelectFieldProps {
+interface LocationSelectFieldProps {
   // For react-hook-form integration
   name?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,29 +41,29 @@ interface SiteSelectFieldProps {
   required?: boolean
   disabled?: boolean
   placeholder?: string
-  canCreate?: boolean // Allow creating new sites (requires canManageSetup permission)
+  canCreate?: boolean // Allow creating new locations (requires canManageSetup permission)
 }
 
-export function SiteSelectField({
+export function LocationSelectField({
   name,
   control,
   error,
   value,
   onValueChange,
-  label = 'Site',
+  label = 'Location',
   required = false,
   disabled = false,
-  placeholder = 'Select or search site',
+  placeholder = 'Select or search location',
   canCreate = true,
-}: SiteSelectFieldProps) {
+}: LocationSelectFieldProps) {
   const [open, setOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [pendingSiteName, setPendingSiteName] = useState<string>('')
+  const [pendingLocationName, setPendingLocationName] = useState<string>('')
   const onChangeCallbackRef = useRef<((value: string) => void) | null>(null)
   
-  const { data: sites = [], isLoading: isLoadingSites } = useSites(true, searchQuery)
-  const createSiteMutation = useCreateSite()
+  const { data: locations = [], isLoading: isLoadingLocations } = useLocations(true, searchQuery)
+  const createLocationMutation = useCreateLocation()
 
   // Store the onChange callback in a ref (only for regular state management)
   useEffect(() => {
@@ -72,44 +72,44 @@ export function SiteSelectField({
     }
   }, [onValueChange, control])
 
-  const handleCreateSite = async (data: { name: string; description?: string }) => {
-    // Check if site name already exists (case-insensitive)
+  const handleCreateLocation = async (data: { name: string; description?: string }) => {
+    // Check if location name already exists (case-insensitive)
     const trimmedName = data.name.trim()
-    const nameExists = sites.some(
-      site => site.name.toLowerCase().trim() === trimmedName.toLowerCase()
+    const nameExists = locations.some(
+      location => location.name.toLowerCase().trim() === trimmedName.toLowerCase()
     )
 
     if (nameExists) {
-      toast.error('A site with this name already exists')
+      toast.error('A location with this name already exists')
       return
     }
 
     try {
-      const result = await createSiteMutation.mutateAsync({
+      const result = await createLocationMutation.mutateAsync({
         name: data.name.trim(),
         description: data.description?.trim() || null,
       })
       
-      // Set the newly created site as selected
+      // Set the newly created location as selected
       const callback = onChangeCallbackRef.current
       if (callback) {
-        callback(result.site.name)
+        callback(result.location.name)
       } else if (onValueChange) {
-        onValueChange(result.site.name)
+        onValueChange(result.location.name)
       }
       
       setIsCreateDialogOpen(false)
-      setPendingSiteName('')
+      setPendingLocationName('')
       setOpen(false)
-      toast.success('Site created successfully')
+      toast.success('Location created successfully')
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create site'
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create location'
       toast.error(errorMessage)
     }
   }
 
   const renderCombobox = (currentValue: string | undefined, onChange: (value: string) => void) => {
-    const selected = sites.find((site: Site) => site.name === currentValue)
+    const selected = locations.find((loc: Location) => loc.name === currentValue)
 
     return (
       <Popover open={open} onOpenChange={setOpen}>
@@ -119,7 +119,7 @@ export function SiteSelectField({
             role="combobox"
             aria-expanded={open}
             className="w-full justify-between"
-            disabled={disabled || isLoadingSites}
+            disabled={disabled || isLoadingLocations}
             aria-invalid={error ? 'true' : 'false'}
           >
             {selected ? (
@@ -130,16 +130,16 @@ export function SiteSelectField({
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
           <Command shouldFilter={false}>
             <CommandInput 
-              placeholder="Search sites..." 
+              placeholder="Search locations..." 
               value={searchQuery}
               onValueChange={setSearchQuery}
             />
             <CommandList className="max-h-none">
               <CommandEmpty>
-                {isLoadingSites ? (
+                {isLoadingLocations ? (
                   <div className="flex items-center justify-center py-4">
                     <Spinner className="h-4 w-4" />
                   </div>
@@ -150,7 +150,7 @@ export function SiteSelectField({
                       variant="outline"
                       className="w-full"
                       onClick={() => {
-                        setPendingSiteName(searchQuery)
+                        setPendingLocationName(searchQuery)
                         setIsCreateDialogOpen(true)
                         setOpen(false)
                       }}
@@ -160,20 +160,20 @@ export function SiteSelectField({
                     </Button>
                   </div>
                 ) : (
-                  'No sites found.'
+                  'No locations found.'
                 )}
               </CommandEmpty>
               <ScrollArea className="h-[300px]">
                 <CommandGroup>
-                  {sites.map((site: Site) => {
-                    const isSelected = currentValue === site.name
+                  {locations.map((location: Location) => {
+                    const isSelected = currentValue === location.name
 
                     return (
                       <CommandItem
-                        key={site.id}
-                        value={site.name}
+                        key={location.id}
+                        value={location.name}
                         onSelect={() => {
-                          onChange(site.name)
+                          onChange(location.name)
                           setOpen(false)
                           setSearchQuery('')
                         }}
@@ -184,22 +184,22 @@ export function SiteSelectField({
                             isSelected ? "opacity-100" : "opacity-0"
                           )}
                         />
-                        <span>{site.name}</span>
-                        {site.description && (
+                        <span>{location.name}</span>
+                        {location.description && (
                           <span className="text-muted-foreground ml-2 text-sm">
-                            - {site.description}
+                            - {location.description}
                           </span>
                         )}
                       </CommandItem>
                     )
                   })}
-                  {canCreate && searchQuery.trim() && !sites.some((site: Site) => 
-                    site.name.toLowerCase() === searchQuery.toLowerCase()
+                  {canCreate && searchQuery.trim() && !locations.some((loc: Location) => 
+                    loc.name.toLowerCase() === searchQuery.toLowerCase()
                   ) && (
                     <CommandItem
                       value={`create-${searchQuery}`}
                       onSelect={() => {
-                        setPendingSiteName(searchQuery)
+                        setPendingLocationName(searchQuery)
                         setIsCreateDialogOpen(true)
                         setOpen(false)
                       }}
@@ -247,13 +247,13 @@ export function SiteSelectField({
             {error && <FieldErrorComponent>{error.message}</FieldErrorComponent>}
           </FieldContent>
         </Field>
-        <SiteDialog
+        <LocationDialog
           open={isCreateDialogOpen}
           onOpenChange={setIsCreateDialogOpen}
-          onSubmit={handleCreateSite}
+          onSubmit={handleCreateLocation}
           mode="create"
-          initialData={pendingSiteName ? { name: pendingSiteName } : undefined}
-          isLoading={createSiteMutation.isPending}
+          initialData={pendingLocationName ? { name: pendingLocationName } : undefined}
+          isLoading={createLocationMutation.isPending}
         />
       </>
     )
@@ -269,20 +269,20 @@ export function SiteSelectField({
   return (
     <>
       <Field>
-        <FieldLabel htmlFor="site-select">
+        <FieldLabel htmlFor="location-select">
           {label} {required && <span className="text-destructive">*</span>}
         </FieldLabel>
         <FieldContent>
           {renderCombobox(value, handleValueChange)}
         </FieldContent>
       </Field>
-      <SiteDialog
+      <LocationDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
-        onSubmit={handleCreateSite}
+        onSubmit={handleCreateLocation}
         mode="create"
-        initialData={pendingSiteName ? { name: pendingSiteName } : undefined}
-        isLoading={createSiteMutation.isPending}
+        initialData={pendingLocationName ? { name: pendingLocationName } : undefined}
+        isLoading={createLocationMutation.isPending}
       />
     </>
   )

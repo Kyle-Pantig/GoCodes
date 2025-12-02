@@ -20,7 +20,6 @@ import {
   Calendar,
   RefreshCw,
   FileSpreadsheet,
-  Filter,
   X
 } from 'lucide-react'
 import Link from 'next/link'
@@ -33,7 +32,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
-import { ReportFilters } from '@/components/report-filters'
+import { ReportFilters } from '@/components/reports/report-filters'
 import { format } from 'date-fns'
 import {
   DropdownMenu,
@@ -41,17 +40,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { ExportDialog } from '@/components/dialogs/export-dialog'
 import { toast } from 'sonner'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Label } from '@/components/ui/label'
 
 type ReportType = 'summary' | 'status' | 'category'
 
@@ -138,7 +128,7 @@ export default function AssetReportsPage() {
   }, [filters])
 
   // Fetch report data
-  const { data: reportData, isLoading, error, refetch } = useQuery<ReportData>({
+  const { data: reportData, isLoading, isFetching, error, refetch } = useQuery<ReportData>({
     queryKey: ['asset-report', 'summary', queryString],
     queryFn: async () => {
       const response = await fetch(`/api/reports/assets/summary?${queryString}`)
@@ -717,9 +707,9 @@ export default function AssetReportsPage() {
             size="sm"
             onClick={() => refetch()}
             disabled={isLoading || isExporting}
-            className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150"
+            className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
           >
-            <RefreshCw className={`h-4 w-4 sm:mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 sm:mr-2 ${isLoading || isFetching ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Refresh</span>
           </Button>
           <DropdownMenu>
@@ -728,7 +718,7 @@ export default function AssetReportsPage() {
                 variant="outline" 
                 size="sm" 
                 disabled={isExporting || isLoading}
-                className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150"
+                className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
               >
                 {isExporting ? (
                   <>
@@ -1011,23 +1001,6 @@ export default function AssetReportsPage() {
             transition={{ duration: 0.3 }}
             className="space-y-6"
           >
-            {/* Refreshing Indicator */}
-            <AnimatePresence>
-              {isLoading && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden"
-                >
-                  <div className="flex items-center justify-center gap-2 py-2 px-4 bg-primary/10 border border-primary/20 rounded-lg">
-                    <Spinner className="h-4 w-4" />
-                    <span className="text-sm text-primary">Updating report...</span>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
@@ -1434,165 +1407,51 @@ export default function AssetReportsPage() {
       </AnimatePresence>
 
       {/* Export Confirmation Dialog */}
-      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-        <DialogContent className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Download className="h-5 w-5" />
-              Confirm Export
-            </DialogTitle>
-            <DialogDescription>
-              Review your export settings before downloading
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            {/* Report Type */}
-            <div className="space-y-2">
-              <h4 className="text-sm font-semibold flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Report Type
-              </h4>
-              <div className="pl-6">
-                <Badge variant="default" className="text-sm">
-                  {reportType === 'summary' && 'Summary Report - Complete Asset Data'}
-                  {reportType === 'status' && 'Status Report - Aggregated by Status'}
-                  {reportType === 'category' && 'Category Report - Aggregated by Category'}
-                </Badge>
-              </div>
-            </div>
-
-            {/* Export Format */}
-            <div className="space-y-2">
-              <h4 className="text-sm font-semibold flex items-center gap-2">
-                <FileSpreadsheet className="h-4 w-4" />
-                Export Format
-              </h4>
-              <div className="pl-6">
-                <Badge variant="secondary" className="text-sm uppercase">
-                  {pendingExportFormat}
-                </Badge>
-              </div>
-            </div>
-
-            {/* Active Filters */}
-            <div className="space-y-2">
-              <h4 className="text-sm font-semibold flex items-center gap-2">
-                <Filter className="h-4 w-4" />
-                Active Filters
-              </h4>
-              <div className="pl-6 space-y-1">
-                {Object.keys(filters).length === 0 || !Object.values(filters).some(v => v) ? (
-                  <p className="text-sm text-muted-foreground">No filters applied - All assets will be included</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {filters.status && (
-                      <Badge variant="outline" className="text-xs">
-                        Status: {filters.status}
-                      </Badge>
-                    )}
-                    {filters.category && (
-                      <Badge variant="outline" className="text-xs">
-                        Category: {categoryMap.get(filters.category) || filters.category}
-                      </Badge>
-                    )}
-                    {filters.location && (
-                      <Badge variant="outline" className="text-xs">
-                        Location: {filters.location}
-                      </Badge>
-                    )}
-                    {filters.site && (
-                      <Badge variant="outline" className="text-xs">
-                        Site: {filters.site}
-                      </Badge>
-                    )}
-                    {filters.department && (
-                      <Badge variant="outline" className="text-xs">
-                        Department: {filters.department}
-                      </Badge>
-                    )}
-                    {filters.startDate && (
-                      <Badge variant="outline" className="text-xs">
-                        From: {filters.startDate}
-                      </Badge>
-                    )}
-                    {filters.endDate && (
-                      <Badge variant="outline" className="text-xs">
-                        To: {filters.endDate}
-                      </Badge>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Include Asset List Option (for PDF, CSV, Excel summary) */}
-            {reportType === 'summary' && pendingExportFormat && (
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2 p-3 rounded-lg border border-border bg-muted/30">
-                  <Checkbox
-                    id="include-asset-list"
-                    checked={includeAssetList}
-                    onCheckedChange={(checked) => setIncludeAssetList(checked === true)}
-                  />
-                  <Label
-                    htmlFor="include-asset-list"
-                    className="text-sm font-medium cursor-pointer flex-1"
-                  >
-                    Include Asset List
-                  </Label>
-                </div>
-                <p className="text-xs text-muted-foreground pl-3">
-                  When checked, the export will include a detailed table of all assets. Unchecked by default - only summary statistics will be exported.
-                </p>
-              </div>
-            )}
-
-            {/* Export Description */}
-            <div className="bg-muted/50 p-3 rounded-lg text-sm">
-              <p className="text-muted-foreground">
-                {reportType === 'summary' && pendingExportFormat === 'pdf' && (
-                  <>This will export summary statistics with status and category breakdowns. {includeAssetList ? 'Asset details table will be included.' : 'Asset details table will not be included.'}</>
-                )}
-                {reportType === 'summary' && (pendingExportFormat === 'csv' || pendingExportFormat === 'excel') && (
-                  <>This will export summary statistics with status and category breakdowns. {includeAssetList ? 'Asset details table with complete data (42 columns) will be included.' : 'Only summary statistics will be exported (no asset list).'}</>
-                )}
-                {reportType === 'status' && (
-                  <>This will export aggregated data grouped by status with counts, total values, averages, and percentages.</>
-                )}
-                {reportType === 'category' && (
-                  <>This will export aggregated data grouped by category with counts, total values, averages, and percentages.</>
-                )}
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowExportDialog(false)
-                setPendingExportFormat(null)
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleConfirmExport} disabled={isExporting}>
-              {isExporting ? (
-                <>
-                  <Spinner className="h-4 w-4 mr-2" />
-                  Exporting...
-                </>
-              ) : (
-                <>
-                  <Download className="h-4 w-4 mr-2" />
-                  Export
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ExportDialog
+        open={showExportDialog}
+        onOpenChange={setShowExportDialog}
+        reportType={
+          reportType === 'summary' 
+            ? 'Summary Report - Complete Asset Data'
+            : reportType === 'status'
+            ? 'Status Report - Aggregated by Status'
+            : 'Category Report - Aggregated by Category'
+        }
+        reportTypeIcon={FileText}
+        exportFormat={pendingExportFormat}
+        filters={filters as Record<string, string | boolean | null | undefined>}
+        includeList={includeAssetList}
+        onIncludeListChange={setIncludeAssetList}
+        includeListLabel="Include Asset List"
+        includeListDescription={reportType === 'summary' ? "When checked, the export will include a detailed table of all assets. Unchecked by default - only summary statistics will be exported." : undefined}
+        exportDescription={(format, includeList) => {
+          if (reportType === 'summary' && format === 'pdf') {
+            return `This will export summary statistics with status and category breakdowns. ${includeList ? 'Asset details table will be included.' : 'Asset details table will not be included.'}`
+          }
+          if (reportType === 'summary' && (format === 'csv' || format === 'excel')) {
+            return `This will export summary statistics with status and category breakdowns. ${includeList ? 'Asset details table with complete data (42 columns) will be included.' : 'Only summary statistics will be exported (no asset list).'}`
+          }
+          if (reportType === 'status') {
+            return 'This will export aggregated data grouped by status with counts, total values, averages, and percentages.'
+          }
+          if (reportType === 'category') {
+            return 'This will export aggregated data grouped by category with counts, total values, averages, and percentages.'
+          }
+          return ''
+        }}
+        isExporting={isExporting}
+        onConfirm={handleConfirmExport}
+        onCancel={() => {
+          setShowExportDialog(false)
+          setPendingExportFormat(null)
+        }}
+        formatFilterValue={(key, value) => {
+          if (key === 'category') {
+            return categoryMap.get(value as string) || String(value)
+          }
+          return String(value)
+        }}
+      />
     </motion.div>
   )
 }

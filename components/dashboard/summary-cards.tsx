@@ -30,7 +30,7 @@ export function SummaryCards({ data, isLoading }: SummaryCardsProps) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[1, 2, 3].map((i) => (
-          <Card key={i} className="animate-pulse">
+          <Card key={i} className="animate-pulse bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border border-gray-100 dark:border-gray-800 shadow-sm">
             <CardHeader className="pb-2">
               <div className="h-4 w-1/3 bg-muted rounded" />
             </CardHeader>
@@ -81,29 +81,34 @@ export function SummaryCards({ data, isLoading }: SummaryCardsProps) {
       animate="show"
       className="grid grid-cols-1 md:grid-cols-3 gap-6"
     >
-      {cards.map((card, index) => (
-        <motion.div key={index} variants={item}>
-          <Card 
-            className="border-l-4 transition-all hover:shadow-md hover:bg-white/15 dark:hover:bg-white/10 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150" 
-            style={{ borderLeftColor: card.borderColor }}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                {card.title}
-              </CardTitle>
-              <div className={`p-2 rounded-full ${card.bgColor}`}>
-                <card.icon className={`h-4 w-4 ${card.color}`} />
+      {cards.map((card, index) => {
+        const IconComponent = card.icon
+        return (
+          <motion.div key={index} variants={item}>
+            <Card 
+              className="relative overflow-hidden border-l-4 transition-all hover:shadow-md bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border  shadow-sm" 
+              style={{ borderLeftColor: card.borderColor }}
+            >
+              {/* Large Background Icon - Blurred through glass */}
+              <div className="absolute right-0 top-0 pointer-events-none z-0">
+                <IconComponent className={`h-32 w-32 ${card.color} -mr-8 -mt-8 opacity-30 dark:opacity-20 blur-sm`} />
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{card.value}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {card.description}
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
-      ))}
+              
+              <CardHeader className="relative space-y-0 pb-2 z-10">
+                <CardTitle className="text-sm font-medium">
+                  {card.title}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="relative z-10">
+                <div className="text-2xl font-bold">{card.value}</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {card.description}
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )
+      })}
     </motion.div>
   )
 }

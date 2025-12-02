@@ -10,8 +10,8 @@ import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
-import { QRScannerDialog } from '@/components/qr-scanner-dialog'
-import { QRCodeDisplayDialog } from '@/components/qr-code-display-dialog'
+import { QRScannerDialog } from '@/components/dialogs/qr-scanner-dialog'
+import { QRCodeDisplayDialog } from '@/components/dialogs/qr-code-display-dialog'
 import {
   Table,
   TableBody,
@@ -898,7 +898,7 @@ function DisposeAssetPageContent() {
               {showSuggestions && (
                 <div
                   ref={suggestionRef}
-                  className="absolute z-50 w-full mt-2 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 rounded-md shadow-2xl backdrop-saturate-150 max-h-[300px] overflow-auto"
+                  className="absolute z-50 w-full mt-2 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-2xl rounded-md max-h-[300px] overflow-auto"
                 >
                   {isLoadingSuggestions ? (
                     <div className="flex items-center justify-center p-4">
@@ -919,8 +919,8 @@ function DisposeAssetPageContent() {
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ duration: 0.2, delay: index * 0.05 }}
                         className={cn(
-                          "px-4 py-3 cursor-pointer hover:bg-accent",
-                          index === selectedSuggestionIndex && "bg-accent"
+                          "px-4 py-3 cursor-pointer hover:bg-gray-400/20 hover:bg-clip-padding hover:backdrop-filter hover:backdrop-blur-sm",
+                          index === selectedSuggestionIndex && "bg-gray-400/20 bg-clip-padding backdrop-filter backdrop-blur-sm"
                         )}
                         onClick={() => handleSelectSuggestion(asset)}
                       >

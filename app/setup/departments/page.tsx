@@ -22,8 +22,8 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
-import { BulkDeleteDialog } from '@/components/bulk-delete-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
+import { BulkDeleteDialog } from '@/components/dialogs/bulk-delete-dialog'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useQueryClient } from '@tanstack/react-query'
@@ -34,7 +34,7 @@ import {
   useDeleteDepartment,
   type Department,
 } from '@/hooks/use-departments'
-import { DepartmentDialog } from '@/components/department-dialog'
+import { DepartmentDialog } from '@/components/dialogs/department-dialog'
 import { useIsMobile } from '@/hooks/use-mobile'
 
 export default function DepartmentsPage() {

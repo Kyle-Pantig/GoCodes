@@ -143,7 +143,7 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  className="h-8 gap-2 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150"
+                  className="h-8 gap-2 bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
                 >
                   <Settings2 className="h-4 w-4" />
                   <span className="hidden sm:inline">Customize</span>
@@ -151,7 +151,7 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
               </DropdownMenuTrigger>
               <DropdownMenuContent 
                 align="end" 
-                className="w-56 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-2xl backdrop-saturate-150"
+                className="w-56"
                 onPointerDownOutside={() => {
                   // Allow closing when clicking outside
                   setIsDropdownOpen(false)

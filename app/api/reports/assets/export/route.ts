@@ -8,6 +8,17 @@ export async function GET(request: NextRequest) {
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
+  // Helper function to format numbers with commas
+  const formatNumber = (value: number | null | undefined): string => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return '0.00'
+    }
+    return Number(value).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }
+
   try {
     const searchParams = request.nextUrl.searchParams
     const format = searchParams.get('format') || 'csv'
@@ -92,8 +103,8 @@ export async function GET(request: NextRequest) {
       exportData = Array.from(statusGroups.entries()).map(([status, data]) => ({
         'Status': status,
         'Asset Count': data.count.toString(),
-        'Total Value': data.totalValue.toFixed(2),
-        'Average Value': (data.totalValue / data.count).toFixed(2),
+        'Total Value': formatNumber(data.totalValue),
+        'Average Value': formatNumber(data.totalValue / data.count),
         'Percentage of Total': ((data.count / assets.length) * 100).toFixed(1) + '%',
       }))
 
@@ -121,8 +132,8 @@ export async function GET(request: NextRequest) {
       exportData = Array.from(categoryGroups.entries()).map(([category, data]) => ({
         'Category': category,
         'Asset Count': data.count.toString(),
-        'Total Value': data.totalValue.toFixed(2),
-        'Average Value': (data.totalValue / data.count).toFixed(2),
+        'Total Value': formatNumber(data.totalValue),
+        'Average Value': formatNumber(data.totalValue / data.count),
         'Percentage of Total': ((data.count / assets.length) * 100).toFixed(1) + '%',
       }))
 
@@ -165,8 +176,8 @@ export async function GET(request: NextRequest) {
         {
           'Metric': 'Total Assets',
           'Value': totalAssets.toString(),
-          'Total Value': totalValue.toFixed(2),
-          'Average Value': totalAssets > 0 ? (totalValue / totalAssets).toFixed(2) : '0.00',
+          'Total Value': formatNumber(totalValue),
+          'Average Value': totalAssets > 0 ? formatNumber(totalValue / totalAssets) : '0.00',
           'Percentage': '100%',
         },
         // Separator
@@ -188,8 +199,8 @@ export async function GET(request: NextRequest) {
         ...Array.from(statusGroups.entries()).map(([status, data]) => ({
           'Metric': `Status: ${status}`,
           'Value': data.count.toString(),
-          'Total Value': data.totalValue.toFixed(2),
-          'Average Value': (data.totalValue / data.count).toFixed(2),
+          'Total Value': formatNumber(data.totalValue),
+          'Average Value': formatNumber(data.totalValue / data.count),
           'Percentage': totalAssets > 0 ? ((data.count / totalAssets) * 100).toFixed(1) + '%' : '0%',
         })),
         // Separator
@@ -211,8 +222,8 @@ export async function GET(request: NextRequest) {
         ...Array.from(categoryGroups.entries()).map(([category, data]) => ({
           'Metric': `Category: ${category}`,
           'Value': data.count.toString(),
-          'Total Value': data.totalValue.toFixed(2),
-          'Average Value': (data.totalValue / data.count).toFixed(2),
+          'Total Value': formatNumber(data.totalValue),
+          'Average Value': formatNumber(data.totalValue / data.count),
           'Percentage': totalAssets > 0 ? ((data.count / totalAssets) * 100).toFixed(1) + '%' : '0%',
         })),
       ]
@@ -226,7 +237,7 @@ export async function GET(request: NextRequest) {
         'Purchased From': asset.purchasedFrom || '',
         'Purchase Date': asset.purchaseDate ? new Date(asset.purchaseDate).toISOString().split('T')[0] : '',
         'Brand': asset.brand || '',
-        'Cost': asset.cost?.toString() || '',
+        'Cost': asset.cost ? formatNumber(Number(asset.cost)) : '',
         'Model': asset.model || '',
         'Serial No': asset.serialNo || '',
         'Additional Information': asset.additionalInformation || '',
@@ -245,8 +256,8 @@ export async function GET(request: NextRequest) {
         'QR': asset.qr || '',
         'Old Asset Tag': asset.oldAssetTag || '',
         'Depreciable Asset': asset.depreciableAsset || '',
-        'Depreciable Cost': asset.depreciableCost?.toString() || '',
-        'Salvage Value': asset.salvageValue?.toString() || '',
+        'Depreciable Cost': asset.depreciableCost ? formatNumber(Number(asset.depreciableCost)) : '',
+        'Salvage Value': asset.salvageValue ? formatNumber(Number(asset.salvageValue)) : '',
         'Asset Life (months)': asset.assetLifeMonths?.toString() || '',
         'Depreciation Method': asset.depreciationMethod || '',
         'Date Acquired': asset.dateAcquired ? new Date(asset.dateAcquired).toISOString().split('T')[0] : '',

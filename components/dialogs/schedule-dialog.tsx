@@ -28,12 +28,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { QRScannerDialog } from '@/components/qr-scanner-dialog'
-import { EmployeeSelectField } from '@/components/employee-select-field'
-import { LocationSelectField } from '@/components/location-select-field'
+import { QRScannerDialog } from '@/components/dialogs/qr-scanner-dialog'
+import { EmployeeSelectField } from '@/components/fields/employee-select-field'
+import { LocationSelectField } from '@/components/fields/location-select-field'
 import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
-import { ScrollArea } from './ui/scroll-area'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { scheduleSchema, type ScheduleFormData } from '@/lib/validations/schedule'
 
 export const scheduleTypeLabels: Record<string, string> = {

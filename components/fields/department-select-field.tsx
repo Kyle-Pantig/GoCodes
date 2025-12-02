@@ -22,7 +22,7 @@ import {
 import { Field, FieldLabel, FieldContent, FieldError as FieldErrorComponent } from '@/components/ui/field'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useDepartments, useCreateDepartment, type Department } from '@/hooks/use-departments'
-import { DepartmentDialog } from '@/components/department-dialog'
+import { DepartmentDialog } from '@/components/dialogs/department-dialog'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 

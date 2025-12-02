@@ -22,8 +22,8 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { MoreHorizontal, Trash2, Edit, Plus, MapPin, ArrowUpDown, Clock, Text as TextIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
-import { BulkDeleteDialog } from '@/components/bulk-delete-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
+import { BulkDeleteDialog } from '@/components/dialogs/bulk-delete-dialog'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useQueryClient } from '@tanstack/react-query'
@@ -34,7 +34,7 @@ import {
   useDeleteLocation,
   type Location,
 } from '@/hooks/use-locations'
-import { LocationDialog } from '@/components/location-dialog'
+import { LocationDialog } from '@/components/dialogs/location-dialog'
 import { useIsMobile } from '@/hooks/use-mobile'
 
 export default function LocationsPage() {

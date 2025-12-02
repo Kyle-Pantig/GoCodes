@@ -45,7 +45,7 @@ import { cn } from '@/lib/utils'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import Image from 'next/image'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ImagePreviewDialog } from '@/components/image-preview-dialog'
+import { ImagePreviewDialog } from '@/components/dialogs/image-preview-dialog'
 
 interface Asset {
   id: string
@@ -2218,7 +2218,6 @@ function ListOfMaintenancesPageContent() {
                   <SelectItem
                     key={column.key}
                     value={column.key}
-                    className={visibleColumns.includes(column.key) ? 'bg-accent' : ''}
                     disabled={false}
                   >
                     <div className="flex items-center gap-2">

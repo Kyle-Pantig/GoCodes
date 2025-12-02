@@ -10,8 +10,8 @@ import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
-import { QRScannerDialog } from '@/components/qr-scanner-dialog'
-import { QRCodeDisplayDialog } from '@/components/qr-code-display-dialog'
+import { QRScannerDialog } from '@/components/dialogs/qr-scanner-dialog'
+import { QRCodeDisplayDialog } from '@/components/dialogs/qr-code-display-dialog'
 import {
   Table,
   TableBody,
@@ -33,9 +33,9 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
-import { EmployeeSelectField } from "@/components/employee-select-field"
-import { LocationSelectField } from "@/components/location-select-field"
-import { DepartmentSelectField } from "@/components/department-select-field"
+import { EmployeeSelectField } from "@/components/fields/employee-select-field"
+import { LocationSelectField } from "@/components/fields/location-select-field"
+import { DepartmentSelectField } from "@/components/fields/department-select-field"
 import {
   Select,
   SelectContent,
@@ -853,7 +853,7 @@ function MoveAssetPageContent() {
                 {showSuggestions && (
                   <div
                     ref={suggestionRef}
-                    className="absolute z-50 w-full mt-1 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 rounded-md shadow-2xl backdrop-saturate-150 max-h-60 overflow-auto"
+                    className="absolute z-50 w-full mt-1 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-2xl rounded-md max-h-60 overflow-auto"
                   >
                     {isLoadingSuggestions ? (
                       <div className="flex items-center justify-center py-4">
@@ -873,8 +873,8 @@ function MoveAssetPageContent() {
                           onMouseEnter={() => setSelectedSuggestionIndex(index)}
                           className={cn(
                             "px-4 py-3 cursor-pointer transition-colors",
-                            "hover:bg-accent",
-                            selectedSuggestionIndex === index && "bg-accent"
+                            "hover:bg-gray-400/20 hover:bg-clip-padding hover:backdrop-filter hover:backdrop-blur-sm",
+                            selectedSuggestionIndex === index && "bg-gray-400/20 bg-clip-padding backdrop-filter backdrop-blur-sm"
                           )}
                         >
                           <div className="flex items-center justify-between">

@@ -13,10 +13,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import PersonalDetails from '@/components/personal-details'
-import PasswordAndSecurity from '@/components/password-security'
-import Permissions from '@/components/permissions'
-import Preferences from '@/components/preferences'
+import PersonalDetails from '@/components/settings/personal-details'
+import PasswordAndSecurity from '@/components/settings/password-security'
+import Permissions from '@/components/settings/permissions'
+import Preferences from '@/components/settings/preferences'
 
 function AccountPageContent() {
   const router = useRouter()

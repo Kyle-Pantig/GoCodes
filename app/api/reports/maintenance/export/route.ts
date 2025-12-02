@@ -6,6 +6,17 @@ export async function GET(request: NextRequest) {
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
+  // Helper function to format numbers with commas
+  const formatNumber = (value: number | null | undefined): string => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return '0.00'
+    }
+    return Number(value).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }
+
   try {
     const searchParams = request.nextUrl.searchParams
     const format = searchParams.get('format') || 'csv'
@@ -52,8 +63,8 @@ export async function GET(request: NextRequest) {
         'Under Repair': summary.underRepair?.toString() || '0',
         'Upcoming': summary.upcoming?.toString() || '0',
         'Completed': summary.completed?.toString() || '0',
-        'Total Cost': summary.totalCost?.toFixed(2) || '0',
-        'Average Cost': summary.averageCost?.toFixed(2) || '0',
+        'Total Cost': formatNumber(summary.totalCost),
+        'Average Cost': formatNumber(summary.averageCost),
       },
       {
         'Metric': '---',
@@ -80,8 +91,8 @@ export async function GET(request: NextRequest) {
         'Under Repair': '',
         'Upcoming': '',
         'Completed': '',
-        'Total Cost': statusItem.totalCost?.toFixed(2) || '0',
-        'Average Cost': statusItem.averageCost?.toFixed(2) || '0',
+        'Total Cost': formatNumber(statusItem.totalCost),
+        'Average Cost': formatNumber(statusItem.averageCost),
       })),
     ]
 
@@ -92,7 +103,7 @@ export async function GET(request: NextRequest) {
       'Asset Description': maintenance.assetDescription || '',
       'Category': maintenance.category || '',
       'Asset Status': maintenance.assetStatus || '',
-      'Asset Cost': maintenance.assetCost?.toString() || '',
+      'Asset Cost': maintenance.assetCost ? formatNumber(Number(maintenance.assetCost)) : '',
       'Title': maintenance.title || '',
       'Details': maintenance.details || '',
       'Status': maintenance.status || '',
@@ -100,7 +111,7 @@ export async function GET(request: NextRequest) {
       'Date Completed': maintenance.dateCompleted || '',
       'Date Cancelled': maintenance.dateCancelled || '',
       'Maintenance By': maintenance.maintenanceBy || '',
-      'Cost': maintenance.cost?.toString() || '',
+      'Cost': maintenance.cost ? formatNumber(Number(maintenance.cost)) : '',
       'Is Repeating': maintenance.isRepeating ? 'Yes' : 'No',
       'Is Overdue': maintenance.isOverdue ? 'Yes' : 'No',
       'Is Upcoming': maintenance.isUpcoming ? 'Yes' : 'No',

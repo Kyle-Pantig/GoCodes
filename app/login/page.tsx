@@ -2,7 +2,7 @@
 
 import { Suspense } from "react"
 import { motion } from "framer-motion"
-import { LoginForm } from "@/components/login-form"
+import { LoginForm } from "@/components/forms/login-form"
 
 function LoginFormWrapper() {
   return <LoginForm />

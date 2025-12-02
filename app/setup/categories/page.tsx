@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { MoreHorizontal, Trash2, Edit, Plus, Folder, FolderOpen, FolderTree, ArrowUpDown, Clock, Text as TextIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { usePermissions } from '@/hooks/use-permissions'
 import { 
@@ -36,8 +36,8 @@ import {
   type Category,
   type SubCategory,
 } from '@/hooks/use-categories'
-import { CategoryDialog } from '@/components/category-dialog'
-import { SubCategoryDialog } from '@/components/subcategory-dialog'
+import { CategoryDialog } from '@/components/dialogs/category-dialog'
+import { SubCategoryDialog } from '@/components/dialogs/subcategory-dialog'
 
 export default function CategoriesPage() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()

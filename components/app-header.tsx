@@ -46,8 +46,8 @@ import { ScrollArea, ScrollBar } from "./ui/scroll-area"
 import { useQuery } from "@tanstack/react-query"
 import { CheckoutManager } from "@/components/checkout-manager"
 import { AuditHistoryManager } from "@/components/audit-history-manager"
-import { ImagePreviewDialog } from "@/components/image-preview-dialog"
-import { DownloadConfirmationDialog } from "@/components/download-confirmation-dialog"
+import { ImagePreviewDialog } from "@/components/dialogs/image-preview-dialog"
+import { DownloadConfirmationDialog } from "@/components/dialogs/download-confirmation-dialog"
 import Image from "next/image"
 
 const routeLabels: Record<string, string> = {

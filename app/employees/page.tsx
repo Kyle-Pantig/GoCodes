@@ -51,7 +51,7 @@ import { Label } from '@/components/ui/label'
 import { MoreHorizontal, Trash2, Edit, Search, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, Calendar, MapPin, X, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -59,7 +59,7 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { employeeSchema, type EmployeeFormData } from '@/lib/validations/employees'
 import { FieldError } from '@/components/ui/field'
-import { QRCodeDisplayDialog } from '@/components/qr-code-display-dialog'
+import { QRCodeDisplayDialog } from '@/components/dialogs/qr-code-display-dialog'
 
 interface Employee {
   id: string

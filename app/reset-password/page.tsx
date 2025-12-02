@@ -2,7 +2,7 @@
 
 import { Suspense } from "react"
 import { motion } from "framer-motion"
-import { ResetPasswordForm } from "@/components/reset-password-form"
+import { ResetPasswordForm } from "@/components/forms/reset-password-form"
 
 function ResetPasswordFormWrapper() {
   return <ResetPasswordForm />

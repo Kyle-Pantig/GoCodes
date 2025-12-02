@@ -17,7 +17,6 @@ import {
   X,
   ArrowLeft,
   ArrowRight,
-  Filter
 } from 'lucide-react'
 import {
   Table,
@@ -28,7 +27,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
-import { CheckoutReportFilters } from '@/components/checkout-report-filters'
+import { CheckoutReportFilters } from '@/components/reports/checkout-report-filters'
 import { format } from 'date-fns'
 import {
   Select,
@@ -43,17 +42,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { ExportDialog } from '@/components/dialogs/export-dialog'
 import { toast } from 'sonner'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Label } from '@/components/ui/label'
 
 interface CheckoutReportData {
   summary: {
@@ -188,7 +178,7 @@ function CheckoutReportsPageContent() {
   }, [filters, page, pageSize])
 
   // Fetch report data
-  const { data: reportData, isLoading, error, refetch } = useQuery<CheckoutReportData>({
+  const { data: reportData, isLoading, isFetching, error, refetch } = useQuery<CheckoutReportData>({
     queryKey: ['checkout-report', queryString, page, pageSize],
     queryFn: async () => {
       const response = await fetch(`/api/reports/checkout?${queryString}`)
@@ -633,9 +623,9 @@ function CheckoutReportsPageContent() {
             size="sm"
             onClick={() => refetch()}
             disabled={isLoading || isExporting}
-            className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150"
+            className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
           >
-            <RefreshCw className={`h-4 w-4 sm:mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 sm:mr-2 ${isLoading || isFetching ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Refresh</span>
           </Button>
           <DropdownMenu>
@@ -644,7 +634,7 @@ function CheckoutReportsPageContent() {
                 variant="outline" 
                 size="sm" 
                 disabled={isExporting || isLoading}
-                className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150"
+                className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
               >
                 {isExporting ? (
                   <>
@@ -966,162 +956,39 @@ function CheckoutReportsPageContent() {
       )}
 
       {/* Export Confirmation Dialog */}
-      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-        <DialogContent className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Download className="h-5 w-5" />
-              Confirm Export
-            </DialogTitle>
-            <DialogDescription>
-              Review your export settings before downloading
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            {/* Report Type */}
-            <div className="space-y-2">
-              <h4 className="text-sm font-semibold flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Report Type
-              </h4>
-              <div className="pl-6">
-                <Badge variant="default" className="text-sm">
-                  Checkout Report - Active and Historical Checkouts
-                </Badge>
-              </div>
-            </div>
-
-            {/* Export Format */}
-            <div className="space-y-2">
-              <h4 className="text-sm font-semibold flex items-center gap-2">
-                <FileSpreadsheet className="h-4 w-4" />
-                Export Format
-              </h4>
-              <div className="pl-6">
-                <Badge variant="secondary" className="text-sm uppercase">
-                  {pendingExportFormat}
-                </Badge>
-              </div>
-            </div>
-
-            {/* Active Filters */}
-            <div className="space-y-2">
-              <h4 className="text-sm font-semibold flex items-center gap-2">
-                <Filter className="h-4 w-4" />
-                Active Filters
-              </h4>
-              <div className="pl-6 space-y-1">
-                {Object.keys(filters).length === 0 || !Object.values(filters).some(v => v) ? (
-                  <p className="text-sm text-muted-foreground">No filters applied - All checkouts will be included</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {filters.employeeId && (
-                      <Badge variant="outline" className="text-xs">
-                        Employee: {filters.employeeId}
-                      </Badge>
-                    )}
-                    {filters.dueDate && (
-                      <Badge variant="outline" className="text-xs">
-                        Due Date: {format(new Date(filters.dueDate), 'MMM d, yyyy')}
-                      </Badge>
-                    )}
-                    {filters.isOverdue && (
-                      <Badge variant="outline" className="text-xs">
-                        Past Due Only
-                      </Badge>
-                    )}
-                    {filters.location && (
-                      <Badge variant="outline" className="text-xs">
-                        Location: {filters.location}
-                      </Badge>
-                    )}
-                    {filters.site && (
-                      <Badge variant="outline" className="text-xs">
-                        Site: {filters.site}
-                      </Badge>
-                    )}
-                    {filters.department && (
-                      <Badge variant="outline" className="text-xs">
-                        Department: {filters.department}
-                      </Badge>
-                    )}
-                    {filters.startDate && (
-                      <Badge variant="outline" className="text-xs">
-                        From: {format(new Date(filters.startDate), 'MMM d, yyyy')}
-                      </Badge>
-                    )}
-                    {filters.endDate && (
-                      <Badge variant="outline" className="text-xs">
-                        To: {format(new Date(filters.endDate), 'MMM d, yyyy')}
-                      </Badge>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Include Checkout List Option (for PDF, CSV, Excel) */}
-            {pendingExportFormat && (
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2 p-3 rounded-lg border border-border bg-muted/30">
-                  <Checkbox
-                    id="include-checkout-list"
-                    checked={includeCheckoutList}
-                    onCheckedChange={(checked) => setIncludeCheckoutList(checked === true)}
-                  />
-                  <Label
-                    htmlFor="include-checkout-list"
-                    className="text-sm font-medium cursor-pointer flex-1"
-                  >
-                    Include Checkout List
-                  </Label>
-                </div>
-                <p className="text-xs text-muted-foreground pl-3">
-                  When checked, the export will include a detailed table of all checkouts. Unchecked by default - only summary statistics will be exported.
-                </p>
-              </div>
-            )}
-
-            {/* Export Description */}
-            <div className="bg-muted/50 p-3 rounded-lg text-sm">
-              <p className="text-muted-foreground">
-                {(pendingExportFormat === 'csv' || pendingExportFormat === 'excel') && (
-                  <>This will export summary statistics with employee and department breakdowns. {includeCheckoutList ? 'Checkout details table with complete data will be included.' : 'Only summary statistics will be exported (no checkout list).'}</>
-                )}
-                {pendingExportFormat === 'pdf' && (
-                  <>This will export summary statistics with employee and department breakdowns. {includeCheckoutList ? 'Checkout details table will be included.' : 'Checkout details table will not be included.'}</>
-                )}
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowExportDialog(false)
-                setPendingExportFormat(null)
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleConfirmExport} disabled={isExporting}>
-              {isExporting ? (
-                <>
-                  <Spinner className="h-4 w-4 mr-2" />
-                  Exporting...
-                </>
-              ) : (
-                <>
-                  <Download className="h-4 w-4 mr-2" />
-                  Export
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ExportDialog
+        open={showExportDialog}
+        onOpenChange={setShowExportDialog}
+        reportType="Checkout Report - Active and Historical Checkouts"
+        reportTypeIcon={FileText}
+        exportFormat={pendingExportFormat}
+        filters={filters as Record<string, string | boolean | null | undefined>}
+        includeList={includeCheckoutList}
+        onIncludeListChange={setIncludeCheckoutList}
+        includeListLabel="Include Checkout List"
+        includeListDescription="When checked, the export will include a detailed table of all checkouts. Unchecked by default - only summary statistics will be exported."
+        exportDescription={(format, includeList) => {
+          if (format === 'pdf') {
+            return `This will export summary statistics with employee and department breakdowns. ${includeList ? 'Checkout details table will be included.' : 'Checkout details table will not be included.'}`
+          }
+          return `This will export summary statistics with employee and department breakdowns. ${includeList ? 'Checkout details table with complete data will be included.' : 'Only summary statistics will be exported (no checkout list).'}`
+        }}
+        isExporting={isExporting}
+        onConfirm={handleConfirmExport}
+        onCancel={() => {
+          setShowExportDialog(false)
+          setPendingExportFormat(null)
+        }}
+        formatFilterValue={(key, value) => {
+          if (key === 'dueDate' || key === 'startDate' || key === 'endDate') {
+            return format(new Date(value as string), 'MMM d, yyyy')
+          }
+          if (key === 'isOverdue' && value === true) {
+            return 'Past Due Only'
+          }
+          return String(value)
+        }}
+      />
     </motion.div>
   )
 }

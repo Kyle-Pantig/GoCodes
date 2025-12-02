@@ -19,10 +19,10 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
-import { MediaBrowserDialog } from '@/components/media-browser-dialog'
-import { DocumentBrowserDialog } from '@/components/document-browser-dialog'
-import { DownloadConfirmationDialog } from '@/components/download-confirmation-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
+import { MediaBrowserDialog } from '@/components/dialogs/media-browser-dialog'
+import { DocumentBrowserDialog } from '@/components/dialogs/document-browser-dialog'
+import { DownloadConfirmationDialog } from '@/components/dialogs/download-confirmation-dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,14 +40,14 @@ import {
 import { Controller } from 'react-hook-form'
 import { Upload, Image as ImageIcon, Eye, X, PlusIcon, FileText } from 'lucide-react'
 import { toast } from 'sonner'
-import { ImagePreviewDialog } from '@/components/image-preview-dialog'
+import { ImagePreviewDialog } from '@/components/dialogs/image-preview-dialog'
 import { editAssetSchema, type EditAssetFormData } from '@/lib/validations/assets'
 import { useCategories, useSubCategories, useCreateCategory, useCreateSubCategory, type Category } from '@/hooks/use-categories'
-import { CategoryDialog } from '@/components/category-dialog'
-import { SubCategoryDialog } from '@/components/subcategory-dialog'
+import { CategoryDialog } from '@/components/dialogs/category-dialog'
+import { SubCategoryDialog } from '@/components/dialogs/subcategory-dialog'
 import { usePermissions } from '@/hooks/use-permissions'
-import { SiteSelectField } from '@/components/site-select-field'
-import { DepartmentSelectField } from '@/components/department-select-field'
+import { SiteSelectField } from '@/components/fields/site-select-field'
+import { DepartmentSelectField } from '@/components/fields/department-select-field'
 
 async function updateAsset(id: string, data: Partial<Asset>) {
   const response = await fetch(`/api/assets/${id}`, {

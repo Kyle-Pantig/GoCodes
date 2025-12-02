@@ -29,8 +29,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ImagePreviewDialog } from '@/components/image-preview-dialog'
-import { DownloadConfirmationDialog } from '@/components/download-confirmation-dialog'
+import { ImagePreviewDialog } from '@/components/dialogs/image-preview-dialog'
+import { DownloadConfirmationDialog } from '@/components/dialogs/download-confirmation-dialog'
 import { toast } from 'sonner'
 import Image from 'next/image'
 // Format utilities

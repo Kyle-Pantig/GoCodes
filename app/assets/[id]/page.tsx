@@ -15,10 +15,10 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { toast } from 'sonner'
 import { useCategories, useSubCategories, useCreateCategory, useCreateSubCategory } from "@/hooks/use-categories"
-import { CategoryDialog } from "@/components/category-dialog"
-import { SubCategoryDialog } from "@/components/subcategory-dialog"
-import { MediaBrowserDialog } from "@/components/media-browser-dialog"
-import { DocumentBrowserDialog } from "@/components/document-browser-dialog"
+import { CategoryDialog } from "@/components/dialogs/category-dialog"
+import { SubCategoryDialog } from "@/components/dialogs/subcategory-dialog"
+import { MediaBrowserDialog } from "@/components/dialogs/media-browser-dialog"
+import { DocumentBrowserDialog } from "@/components/dialogs/document-browser-dialog"
 import { editAssetSchema, type EditAssetFormData } from "@/lib/validations/assets"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -37,9 +37,9 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
-import { LocationSelectField } from "@/components/location-select-field"
-import { SiteSelectField } from "@/components/site-select-field"
-import { DepartmentSelectField } from "@/components/department-select-field"
+import { LocationSelectField } from "@/components/fields/location-select-field"
+import { SiteSelectField } from "@/components/fields/site-select-field"
+import { DepartmentSelectField } from "@/components/fields/department-select-field"
 import {
   Select,
   SelectContent,
@@ -50,9 +50,9 @@ import {
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
-import { ImagePreviewDialog } from "@/components/image-preview-dialog"
-import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog"
-import { DownloadConfirmationDialog } from "@/components/download-confirmation-dialog"
+import { ImagePreviewDialog } from "@/components/dialogs/image-preview-dialog"
+import { DeleteConfirmationDialog } from "@/components/dialogs/delete-confirmation-dialog"
+import { DownloadConfirmationDialog } from "@/components/dialogs/download-confirmation-dialog"
 import type { Category, SubCategory } from "@/hooks/use-categories"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import {

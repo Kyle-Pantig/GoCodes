@@ -15,14 +15,14 @@ import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { format } from 'date-fns'
-import { ExportFieldsDialog } from '@/components/export-fields-dialog'
+import { ExportFieldsDialog } from '@/components/dialogs/export-fields-dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 import { cn } from '@/lib/utils'
 
 interface FileHistory {

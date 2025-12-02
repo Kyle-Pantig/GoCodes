@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Filter, X } from 'lucide-react'
 import {
   Popover,
@@ -20,22 +19,21 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 
-interface CheckoutReportFiltersProps {
+interface LeaseReportFiltersProps {
   filters: {
-    employeeId?: string
-    dueDate?: string
-    isOverdue?: boolean
+    category?: string
+    lessee?: string
     location?: string
     site?: string
-    department?: string
+    status?: string
     startDate?: string
     endDate?: string
   }
-  onFiltersChange: (filters: CheckoutReportFiltersProps['filters']) => void
+  onFiltersChange: (filters: LeaseReportFiltersProps['filters']) => void
   disabled?: boolean
 }
 
-export function CheckoutReportFilters({ filters, onFiltersChange, disabled = false }: CheckoutReportFiltersProps) {
+export function LeaseReportFilters({ filters, onFiltersChange, disabled = false }: LeaseReportFiltersProps) {
   const [open, setOpen] = useState(false)
   const [localFilters, setLocalFilters] = useState(filters)
 
@@ -44,18 +42,17 @@ export function CheckoutReportFilters({ filters, onFiltersChange, disabled = fal
     setLocalFilters(filters)
   }, [filters])
 
-  // Fetch employees
-  const { data: employeesData } = useQuery({
-    queryKey: ['employees'],
+  // Fetch options for dropdowns
+  const { data: categories } = useQuery({
+    queryKey: ['categories'],
     queryFn: async () => {
-      const response = await fetch('/api/employees?pageSize=1000')
+      const response = await fetch('/api/categories')
       if (!response.ok) return []
       const data = await response.json()
-      return data.employees || []
+      return data.categories || []
     },
   })
 
-  // Fetch locations
   const { data: locations } = useQuery({
     queryKey: ['locations'],
     queryFn: async () => {
@@ -66,7 +63,6 @@ export function CheckoutReportFilters({ filters, onFiltersChange, disabled = fal
     },
   })
 
-  // Fetch sites
   const { data: sites } = useQuery({
     queryKey: ['sites'],
     queryFn: async () => {
@@ -77,23 +73,14 @@ export function CheckoutReportFilters({ filters, onFiltersChange, disabled = fal
     },
   })
 
-  // Fetch departments
-  const { data: departments } = useQuery({
-    queryKey: ['departments'],
-    queryFn: async () => {
-      const response = await fetch('/api/departments')
-      if (!response.ok) return []
-      const data = await response.json()
-      return data.departments || []
-    },
-  })
+  const leaseStatuses = [
+    { value: 'active', label: 'Active' },
+    { value: 'expired', label: 'Expired' },
+    { value: 'upcoming', label: 'Upcoming' },
+  ]
 
-  const handleFilterChange = (key: string, value: string | boolean | undefined) => {
+  const handleFilterChange = (key: string, value: string | undefined) => {
     const newFilters = { ...localFilters, [key]: value || undefined }
-    // If value is false for checkbox, remove it
-    if (value === false) {
-      delete newFilters[key as keyof typeof newFilters]
-    }
     setLocalFilters(newFilters)
   }
 
@@ -113,7 +100,12 @@ export function CheckoutReportFilters({ filters, onFiltersChange, disabled = fal
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" disabled={disabled}>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          disabled={disabled}
+          className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
+        >
           <Filter className="h-4 w-4 mr-2" />
           Filters
           {hasActiveFilters && (
@@ -124,50 +116,37 @@ export function CheckoutReportFilters({ filters, onFiltersChange, disabled = fal
       <PopoverContent className="max-w-[500px] w-[calc(100vw-2rem)] sm:w-full" align="start">
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Employee Filter */}
+            {/* Category Filter */}
             <div className="space-y-2">
-              <Label htmlFor="employee-filter">Employee</Label>
+              <Label htmlFor="category-filter">Category</Label>
               <Select
-                value={localFilters.employeeId || 'all'}
-                onValueChange={(value) => handleFilterChange('employeeId', value === 'all' ? undefined : value)}
+                value={localFilters.category || 'all'}
+                onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
               >
-                <SelectTrigger id="employee-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All employees" className="truncate" />
+                <SelectTrigger id="category-filter" className="w-full truncate">
+                  <SelectValue placeholder="All Categories" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All employees</SelectItem>
-                  {employeesData?.map((employee: { id: string; name: string; email: string }) => (
-                    <SelectItem key={employee.id} value={employee.id}>
-                      {employee.name} ({employee.email})
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories?.map((cat: { id: string; name: string }) => (
+                    <SelectItem key={cat.id} value={cat.name} className="truncate">
+                      {cat.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Due Date Filter */}
+            {/* Lessee Filter */}
             <div className="space-y-2">
-              <Label htmlFor="due-date-filter">Due Date</Label>
+              <Label htmlFor="lessee-filter">Lessee</Label>
               <Input
-                id="due-date-filter"
-                type="date"
-                value={localFilters.dueDate || ''}
-                onChange={(e) => handleFilterChange('dueDate', e.target.value || undefined)}
+                id="lessee-filter"
+                placeholder="Search lessee..."
+                value={localFilters.lessee || ''}
+                onChange={(e) => handleFilterChange('lessee', e.target.value || undefined)}
+                className="w-full"
               />
-            </div>
-
-            {/* Past Due Filter */}
-            <div className="space-y-2 flex items-end">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="past-due-filter"
-                  checked={localFilters.isOverdue || false}
-                  onCheckedChange={(checked) => handleFilterChange('isOverdue', checked === true)}
-                />
-                <Label htmlFor="past-due-filter" className="cursor-pointer">
-                  Past Due Only
-                </Label>
-              </div>
             </div>
 
             {/* Location Filter */}
@@ -177,14 +156,14 @@ export function CheckoutReportFilters({ filters, onFiltersChange, disabled = fal
                 value={localFilters.location || 'all'}
                 onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
               >
-                <SelectTrigger id="location-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All locations" className="truncate" />
+                <SelectTrigger id="location-filter" className="w-full truncate">
+                  <SelectValue placeholder="All Locations" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All locations</SelectItem>
-                  {locations?.map((location: { id: string; name: string }) => (
-                    <SelectItem key={location.id} value={location.name}>
-                      {location.name}
+                  <SelectItem value="all">All Locations</SelectItem>
+                  {locations?.map((loc: { id: string; name: string }) => (
+                    <SelectItem key={loc.id} value={loc.name} className="truncate">
+                      {loc.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -198,13 +177,13 @@ export function CheckoutReportFilters({ filters, onFiltersChange, disabled = fal
                 value={localFilters.site || 'all'}
                 onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
               >
-                <SelectTrigger id="site-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All sites" className="truncate" />
+                <SelectTrigger id="site-filter" className="w-full truncate">
+                  <SelectValue placeholder="All Sites" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All sites</SelectItem>
+                  <SelectItem value="all">All Sites</SelectItem>
                   {sites?.map((site: { id: string; name: string }) => (
-                    <SelectItem key={site.id} value={site.name}>
+                    <SelectItem key={site.id} value={site.name} className="truncate">
                       {site.name}
                     </SelectItem>
                   ))}
@@ -212,46 +191,48 @@ export function CheckoutReportFilters({ filters, onFiltersChange, disabled = fal
               </Select>
             </div>
 
-            {/* Department Filter */}
+            {/* Status Filter */}
             <div className="space-y-2">
-              <Label htmlFor="department-filter">Department</Label>
+              <Label htmlFor="status-filter">Lease Status</Label>
               <Select
-                value={localFilters.department || 'all'}
-                onValueChange={(value) => handleFilterChange('department', value === 'all' ? undefined : value)}
+                value={localFilters.status || 'all'}
+                onValueChange={(value) => handleFilterChange('status', value === 'all' ? undefined : value)}
               >
-                <SelectTrigger id="department-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All departments" className="truncate" />
+                <SelectTrigger id="status-filter" className="w-full truncate">
+                  <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All departments</SelectItem>
-                  {departments?.map((dept: { id: string; name: string }) => (
-                    <SelectItem key={dept.id} value={dept.name}>
-                      {dept.name}
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  {leaseStatuses.map((status) => (
+                    <SelectItem key={status.value} value={status.value} className="truncate">
+                      {status.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Checkout Start Date */}
+            {/* Start Date Filter */}
             <div className="space-y-2">
-              <Label htmlFor="start-date">Checkout From</Label>
+              <Label htmlFor="start-date-filter">Lease Start From</Label>
               <Input
-                id="start-date"
+                id="start-date-filter"
                 type="date"
                 value={localFilters.startDate || ''}
                 onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
+                className="w-full"
               />
             </div>
 
-            {/* Checkout End Date */}
+            {/* End Date Filter */}
             <div className="space-y-2">
-              <Label htmlFor="end-date">Checkout To</Label>
+              <Label htmlFor="end-date-filter">Lease Start To</Label>
               <Input
-                id="end-date"
+                id="end-date-filter"
                 type="date"
                 value={localFilters.endDate || ''}
                 onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
+                className="w-full"
               />
             </div>
           </div>

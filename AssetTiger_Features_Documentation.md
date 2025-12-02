@@ -42,23 +42,23 @@ Generates analytical and operational reports for decision-making.
 
 \- Custom Reports – Allows building tailored reports with specific filters and data fields.
 
-\- Asset Reports – Reports on assets by category, location, cost, depreciation, etc.
+\- Asset Reports – Reports on assets by category, location, cost, depreciation, etc. ***************
 
-\- Audit Reports – Tracks changes, updates, or deletions in the system for accountability.
+\- Audit Reports – Tracks changes, updates, or deletions in the system for accountability.*******************
 
-\- Check-Out Reports – Shows which assets are currently checked out, by whom, and for how long.
+\- Check-Out Reports – Shows which assets are currently checked out, by whom, and for how long. ***********
 
-\- Depreciation Reports – Calculates asset depreciation over time using accounting methods (straight-line, declining balance, etc.).
+\- Depreciation Reports – Calculates asset depreciation over time using accounting methods (straight-line, declining balance, etc.).*********
 
 \- Insurance Reports – Provides asset insurance details for claims and compliance.
 
-\- Leased Asset Reports – Reports specifically on leased assets and their usage.
+\- Leased Asset Reports – Reports specifically on leased assets and their usage. **********
 
-\- Maintenance Reports – Shows maintenance history, costs, and schedules.
+\- Maintenance Reports – Shows maintenance history, costs, and schedules.*************
 
-\- Reservation Reports – Lists reserved assets and their booking details.
+\- Reservation Reports – Lists reserved assets and their booking details. ***************
 
-\- Status Reports – Summarizes asset statuses (available, disposed, checked out, under repair, etc.).
+\- Status Reports – Summarizes asset statuses (available, disposed, checked out, under repair, etc.). ***************
 
 \- Transaction Reports – Full record of asset transactions (additions, disposals, movements, check-in/out).
 

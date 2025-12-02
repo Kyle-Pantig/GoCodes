@@ -39,7 +39,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog"
+import { DeleteConfirmationDialog } from "@/components/dialogs/delete-confirmation-dialog"
 import { toast } from "sonner"
 import { useMutation } from "@tanstack/react-query"
 

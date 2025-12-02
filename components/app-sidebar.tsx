@@ -12,16 +12,14 @@ import {
   FileText,
   ClipboardList,
   Cog,
-  Clock,
-  MapPin,
 } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import Image from "next/image"
 import { useUserProfile } from "@/hooks/use-user-profile"
 
-import { NavMain } from "@/components/nav-main"
-import { NavProjects } from "@/components/nav-projects"
-import { NavUser } from "@/components/nav-user"
+import { NavMain } from "@/components/navigation/nav-main"
+import { NavProjects } from "@/components/navigation/nav-projects"
+import { NavUser } from "@/components/navigation/nav-user"
 import {
   Sidebar,
   SidebarContent,
@@ -189,6 +187,22 @@ const data = {
         {
           title: "Maintenance Reports",
           url: "/reports/maintenance",
+        },
+        {
+          title: "Audit Reports",
+          url: "/reports/audit",
+        },
+        {
+          title: "Depreciation Reports",
+          url: "/reports/depreciation",
+        },
+        {
+          title: "Leased Asset Reports",
+          url: "/reports/lease",
+        },
+        {
+          title: "Reservation Reports",
+          url: "/reports/reservation",
         },
       ],
     },

@@ -6,6 +6,17 @@ export async function GET(request: NextRequest) {
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
+  // Helper function to format numbers with commas
+  const formatNumber = (value: number | null | undefined): string => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return '0.00'
+    }
+    return Number(value).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }
+
   try {
     const searchParams = request.nextUrl.searchParams
     const format = searchParams.get('format') || 'csv'
@@ -63,7 +74,7 @@ export async function GET(request: NextRequest) {
         'Value': summary.totalActive?.toString() || '0',
         'Overdue': summary.totalOverdue?.toString() || '0',
         'Historical': summary.totalHistorical?.toString() || '0',
-        'Total Value': totalValue.toFixed(2),
+        'Total Value': formatNumber(totalValue),
       },
       {
         'Metric': '---',
@@ -91,7 +102,7 @@ export async function GET(request: NextRequest) {
           'Value': emp.count?.toString() || '0',
           'Overdue': emp.overdueCount?.toString() || '0',
           'Historical': (emp.count - emp.overdueCount)?.toString() || '0',
-          'Total Value': empValue.toFixed(2),
+          'Total Value': formatNumber(empValue),
         }
       }),
       {
@@ -120,7 +131,7 @@ export async function GET(request: NextRequest) {
           'Value': dept.count?.toString() || '0',
           'Overdue': dept.overdueCount?.toString() || '0',
           'Historical': (dept.count - dept.overdueCount)?.toString() || '0',
-          'Total Value': deptValue.toFixed(2),
+          'Total Value': formatNumber(deptValue),
         }
       }),
     ]
@@ -136,7 +147,7 @@ export async function GET(request: NextRequest) {
       'Due date': checkout.expectedReturnDate || '',
       'Return Date': checkout.returnDate || '',
       'Department': checkout.employeeDepartment || '',
-      'Cost': checkout.assetCost?.toString() || '',
+      'Cost': checkout.assetCost ? formatNumber(Number(checkout.assetCost)) : '',
     }))
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -55,7 +55,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { MoreHorizontal, Trash2, Edit, Search, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Shield, ShieldCheck, Eye, EyeOff, Copy, Check, X, CheckCircle, RefreshCw, Mail } from 'lucide-react'
 import { toast } from 'sonner'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Badge } from '@/components/ui/badge'
 import { Field, FieldLabel, FieldContent, FieldError } from '@/components/ui/field'
@@ -1266,7 +1266,7 @@ function UsersPageContent() {
           createForm.reset()
         }
       }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl! max-h-[90vh] ">
           <DialogHeader>
             <DialogTitle>Add New User</DialogTitle>
             <DialogDescription>
@@ -1274,6 +1274,7 @@ function UsersPageContent() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate}>
+            <ScrollArea className='h-[70vh]'>
             <div className="grid gap-4 py-4">
               <Field>
                 <FieldLabel htmlFor="email">
@@ -1496,6 +1497,7 @@ function UsersPageContent() {
               </div>
             )}
             </div>
+            </ScrollArea>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
                 Cancel

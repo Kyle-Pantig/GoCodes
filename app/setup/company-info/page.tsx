@@ -23,8 +23,8 @@ import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
 import { Upload, X, Image as ImageIcon, Building2 } from 'lucide-react'
 import Image from 'next/image'
-import { CountrySelectField } from '@/components/country-select-field'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import { CountrySelectField } from '@/components/fields/country-select-field'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 
 type Country = {
   name: string

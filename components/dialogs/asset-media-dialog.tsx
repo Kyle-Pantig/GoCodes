@@ -11,8 +11,8 @@ import {
 } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { ImageIcon, FileText } from 'lucide-react'
-import { ImagePreviewDialog } from '@/components/image-preview-dialog'
-import { DownloadConfirmationDialog } from '@/components/download-confirmation-dialog'
+import { ImagePreviewDialog } from '@/components/dialogs/image-preview-dialog'
+import { DownloadConfirmationDialog } from '@/components/dialogs/download-confirmation-dialog'
 
 interface Asset {
   assetTagId: string

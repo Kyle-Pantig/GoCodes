@@ -9,8 +9,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { CheckCircle2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
-import { AuditDialog } from '@/components/audit-dialog'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import { AuditDialog } from '@/components/dialogs/audit-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 import type { AuditFormData } from '@/lib/validations/audit'
 
 interface AuditHistoryManagerProps {

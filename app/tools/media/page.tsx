@@ -41,14 +41,14 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
-import { BulkDeleteDialog } from '@/components/bulk-delete-dialog'
-import { DownloadConfirmationDialog } from '@/components/download-confirmation-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
+import { BulkDeleteDialog } from '@/components/dialogs/bulk-delete-dialog'
+import { DownloadConfirmationDialog } from '@/components/dialogs/download-confirmation-dialog'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
-import { ImagePreviewDialog } from '@/components/image-preview-dialog'
+import { ImagePreviewDialog } from '@/components/dialogs/image-preview-dialog'
 
 interface MediaImage {
   id: string
