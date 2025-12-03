@@ -46,11 +46,11 @@ export const automatedReportScheduleSchema = z.object({
   (data) => {
     // For weekly frequency, frequencyDay should be 0-6 (day of week)
     if (data.frequency === 'weekly') {
-      return data.frequencyDay === null || (data.frequencyDay >= 0 && data.frequencyDay <= 6)
+      return data.frequencyDay === null || data.frequencyDay === undefined || (data.frequencyDay >= 0 && data.frequencyDay <= 6)
     }
     // For monthly frequency, frequencyDay should be 1-31 (day of month)
     if (data.frequency === 'monthly') {
-      return data.frequencyDay === null || (data.frequencyDay >= 1 && data.frequencyDay <= 31)
+      return data.frequencyDay === null || data.frequencyDay === undefined || (data.frequencyDay >= 1 && data.frequencyDay <= 31)
     }
     // For yearly frequency, both frequencyMonth and frequencyDay should be set
     if (data.frequency === 'yearly') {
