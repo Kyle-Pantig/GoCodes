@@ -797,7 +797,7 @@ function LeaseAssetPageContent() {
                   disabled={!canViewAssets || !canLease}
                 />
                 
-                {/* Suggestions dropdown */}
+                {/* Suggestions dropdown  */}
                 {showSuggestions && (
                   <div
                     ref={suggestionRef}
