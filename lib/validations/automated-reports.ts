@@ -42,6 +42,17 @@ export const automatedReportScheduleSchema = z.object({
     .regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format. Use HH:mm format (24-hour)'),
   format: z.enum(['pdf', 'csv', 'excel']),
   includeList: z.boolean(),
+  emailRecipients: z
+    .array(z.string().email('Invalid email address'))
+    .min(1, 'At least one email recipient is required')
+    .refine(
+      (emails) => {
+        // Check for duplicate emails
+        const uniqueEmails = new Set(emails)
+        return uniqueEmails.size === emails.length
+      },
+      { message: 'Duplicate email addresses are not allowed' }
+    ),
 })
 .refine(
   (data) => {

@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/table'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { ReportFilters } from '@/components/reports/report-filters'
+import { Skeleton } from '@/components/ui/skeleton'
 import { format } from 'date-fns'
 import {
   DropdownMenu,
@@ -89,6 +90,7 @@ const reportTypes = [
 export default function AssetReportsPage() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canViewAssets = hasPermission('canViewAssets')
+  const canManageReports = hasPermission('canManageReports')
   
   const [reportType, setReportType] = useState<ReportType>('summary')
   const [filters, setFilters] = useState<ReportFilters>({})
@@ -137,7 +139,8 @@ export default function AssetReportsPage() {
       }
       return response.json()
     },
-    enabled: canViewAssets && !permissionsLoading,
+    enabled: canViewAssets, // Only fetch if user has permission
+    placeholderData: (previousData) => previousData,
   })
 
   const formatCurrency = (value: number | null | undefined) => {
@@ -161,6 +164,10 @@ export default function AssetReportsPage() {
 
   // Export handlers
   const handleExportClick = (format: 'csv' | 'excel' | 'pdf') => {
+    if (!canManageReports) {
+      toast.error('You do not have permission to export reports. Please contact your administrator.')
+      return
+    }
     setPendingExportFormat(format)
     // Reset includeAssetList when opening dialog
     setIncludeAssetList(false)
@@ -647,37 +654,6 @@ export default function AssetReportsPage() {
     `
   }
 
-  if (permissionsLoading) {
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="flex items-center justify-center min-h-[400px]"
-      >
-        <Spinner className="h-8 w-8" />
-      </motion.div>
-    )
-  }
-
-  if (!canViewAssets) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-center min-h-[400px]"
-      >
-        <Card className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
-              <p className="text-muted-foreground">You do not have permission to view reports</p>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-    )
-  }
-
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -962,18 +938,21 @@ export default function AssetReportsPage() {
 
       {/* Report Content */}
       <AnimatePresence mode="wait">
-        {isLoading && !reportData ? (
-          // Initial loading state
+        {!canViewAssets && !permissionsLoading ? (
+          // Access denied state - only show when permissions are done loading
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex items-center justify-center min-h-[400px]"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
           >
-            <div className="flex flex-col items-center gap-3">
-              <Spinner className="h-8 w-8" />
-              <p className="text-sm text-muted-foreground">Generating report...</p>
+            <Card className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
+              <CardContent className="pt-6">
+                <div className="text-center">
+                  <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
+                  <p className="text-muted-foreground">You do not have permission to view reports</p>
             </div>
+              </CardContent>
+            </Card>
           </motion.div>
         ) : error ? (
           // Error state
@@ -991,8 +970,8 @@ export default function AssetReportsPage() {
               </CardContent>
             </Card>
           </motion.div>
-        ) : reportData ? (
-          // Report content
+        ) : (
+          // Report content with skeleton loading
           <motion.div
             key={reportType}
             initial={{ opacity: 0, y: 20 }}
@@ -1006,7 +985,7 @@ export default function AssetReportsPage() {
               {[
                 {
                   title: 'Total Assets',
-                  value: reportData.summary.totalAssets.toLocaleString(),
+                  value: reportData?.summary.totalAssets.toLocaleString(),
                   description: 'All assets in system',
                   icon: Package,
                   color: 'text-blue-500',
@@ -1016,7 +995,7 @@ export default function AssetReportsPage() {
                 },
                 {
                   title: 'Total Value',
-                  value: formatCurrency(reportData.summary.totalValue),
+                  value: reportData ? formatCurrency(reportData.summary.totalValue) : undefined,
                   description: 'Combined asset value',
                   icon: TrendingUp,
                   color: 'text-green-500',
@@ -1026,7 +1005,7 @@ export default function AssetReportsPage() {
                 },
                 {
                   title: 'Locations',
-                  value: reportData.summary.byLocation.length.toString(),
+                  value: reportData?.summary.byLocation.length.toString(),
                   description: 'Unique locations',
                   icon: MapPin,
                   color: 'text-amber-500',
@@ -1036,7 +1015,7 @@ export default function AssetReportsPage() {
                 },
                 {
                   title: 'Categories',
-                  value: reportData.summary.byCategory.length.toString(),
+                  value: reportData?.summary.byCategory.length.toString(),
                   description: 'Asset categories',
                   icon: Building2,
                   color: 'text-purple-500',
@@ -1063,7 +1042,11 @@ export default function AssetReportsPage() {
                       </div>
                     </CardHeader>
                     <CardContent>
+                      {card.value ? (
                       <div className="text-2xl font-bold">{card.value}</div>
+                      ) : (
+                        <Skeleton className="h-8 w-24 mb-1" />
+                      )}
                       <p className="text-xs text-muted-foreground mt-1.5">{card.description}</p>
                     </CardContent>
                   </Card>
@@ -1090,6 +1073,7 @@ export default function AssetReportsPage() {
                       <CardDescription>Distribution of assets across categories</CardDescription>
                     </CardHeader>
                     <CardContent>
+                      {reportData ? (
                       <ScrollArea className="h-[400px]">
                         <Table>
                           <TableHeader>
@@ -1131,6 +1115,14 @@ export default function AssetReportsPage() {
                           className='z-50'
                         />
                       </ScrollArea>
+                      ) : (
+                        <div className="flex items-center justify-center h-[400px]">
+                          <div className="flex flex-col items-center gap-3">
+                            <Spinner className="h-8 w-8" />
+                            <p className="text-sm text-muted-foreground">Loading categories...</p>
+                          </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </motion.div>
@@ -1151,6 +1143,7 @@ export default function AssetReportsPage() {
                       <CardDescription>Distribution by status</CardDescription>
                     </CardHeader>
                     <CardContent>
+                      {reportData ? (
                       <div className="space-y-4">
                         {reportData.summary.byStatus.map((item, index) => {
                           const percentage = reportData.summary.totalAssets > 0
@@ -1190,6 +1183,14 @@ export default function AssetReportsPage() {
                           )
                         })}
                       </div>
+                      ) : (
+                        <div className="flex items-center justify-center h-[400px]">
+                          <div className="flex flex-col items-center gap-3">
+                            <Spinner className="h-8 w-8" />
+                            <p className="text-sm text-muted-foreground">Loading status...</p>
+                          </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </motion.div>
@@ -1212,6 +1213,7 @@ export default function AssetReportsPage() {
                     <CardDescription>Distribution of assets across different statuses</CardDescription>
                   </CardHeader>
                   <CardContent>
+                    {reportData ? (
                     <div className="space-y-4">
                       {reportData.summary.byStatus.map((item, index) => {
                         const percentage = reportData.summary.totalAssets > 0
@@ -1251,6 +1253,14 @@ export default function AssetReportsPage() {
                         )
                       })}
                     </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-[400px]">
+                        <div className="flex flex-col items-center gap-3">
+                          <Spinner className="h-8 w-8" />
+                          <p className="text-sm text-muted-foreground">Loading status...</p>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </motion.div>
@@ -1272,6 +1282,7 @@ export default function AssetReportsPage() {
                     <CardDescription>Distribution of assets across categories</CardDescription>
                   </CardHeader>
                   <CardContent>
+                    {reportData ? (
                     <ScrollArea className="h-[400px]">
                       <Table>
                         <TableHeader>
@@ -1313,11 +1324,22 @@ export default function AssetReportsPage() {
                         className='z-50'
                       />
                     </ScrollArea>
+                    ) : (
+                      <div className="flex items-center justify-center h-[400px]">
+                        <div className="flex flex-col items-center gap-3">
+                          <Spinner className="h-8 w-8" />
+                          <p className="text-sm text-muted-foreground">Loading categories...</p>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </motion.div>
             )}
 
+            {/* Show rest of content only when data is loaded */}
+            {reportData && (
+              <>
             {/* Recent Assets */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -1402,8 +1424,10 @@ export default function AssetReportsPage() {
               <Calendar className="h-3 w-3" />
               <span>Report generated on {format(new Date(reportData.generatedAt), 'PPpp')}</span>
             </motion.div>
+              </>
+            )}
           </motion.div>
-        ) : null}
+        )}
       </AnimatePresence>
 
       {/* Export Confirmation Dialog */}

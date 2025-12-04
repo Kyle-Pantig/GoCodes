@@ -25,6 +25,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -55,6 +60,7 @@ import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { format } from 'date-fns'
 import { formatFrequencyDescription } from '@/lib/report-schedule-utils'
 import { Suspense } from 'react'
+import { AnimatePresence } from 'framer-motion'
 import { AutomatedReportFilters } from '@/components/reports/automated-report-filters'
 
 interface AutomatedReportSchedule {
@@ -128,22 +134,23 @@ const FORMATS = [
 ]
 
 function AutomatedReportsPageContent() {
-  const { hasPermission } = usePermissions()
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions()
+  const canManageReports = hasPermission('canManageReports')
   const queryClient = useQueryClient()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState<AutomatedReportSchedule | null>(null)
   const [deleteScheduleId, setDeleteScheduleId] = useState<string | null>(null)
   const [emailInput, setEmailInput] = useState('')
-  const [emailRecipients, setEmailRecipients] = useState<string[]>([])
   const [reportFilters, setReportFilters] = useState<Record<string, unknown>>({})
 
-  const { data: schedules, isLoading } = useQuery<{ schedules: AutomatedReportSchedule[] }>({
+  const { data: schedules, isLoading, error } = useQuery<{ schedules: AutomatedReportSchedule[] }>({
     queryKey: ['automated-reports'],
     queryFn: async () => {
       const response = await fetch('/api/reports/automated')
       if (!response.ok) throw new Error('Failed to fetch schedules')
       return response.json()
     },
+    enabled: canManageReports, // Only fetch if user has permission
   })
 
   const form = useForm<AutomatedReportScheduleFormData>({
@@ -157,13 +164,17 @@ function AutomatedReportsPageContent() {
       scheduledTime: '02:00',
       format: 'pdf' as AutomatedReportScheduleFormData['format'],
       includeList: true,
+      emailRecipients: [],
     },
-    mode: 'onBlur', // Only validate on blur to prevent immediate errors on empty fields
+    mode: 'onSubmit', // Only validate when form is submitted
+    reValidateMode: 'onBlur', // Re-validate on blur after first submit
+    shouldUnregister: false, // Keep form state when dialog closes
   })
 
-  const { register, handleSubmit, control, reset, watch, setValue, formState: { errors } } = form
+  const { register, handleSubmit, control, reset, watch, setValue, clearErrors, formState: { errors } } = form
   const frequency = watch('frequency')
   const reportType = watch('reportType')
+  const formEmailRecipients = watch('emailRecipients') || []
 
   const createMutation = useMutation({
     mutationFn: async (data: AutomatedReportScheduleFormData) => {
@@ -172,7 +183,6 @@ function AutomatedReportsPageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...data,
-          emailRecipients,
         }),
       })
       if (!response.ok) {
@@ -185,7 +195,6 @@ function AutomatedReportsPageContent() {
       queryClient.invalidateQueries({ queryKey: ['automated-reports'] })
       setIsDialogOpen(false)
       reset()
-      setEmailRecipients([])
       setReportFilters({})
       toast.success('Automated report schedule created successfully')
     },
@@ -204,7 +213,6 @@ function AutomatedReportsPageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...data,
-          emailRecipients,
           filters: reportFilters,
         }),
       })
@@ -219,7 +227,6 @@ function AutomatedReportsPageContent() {
       setIsDialogOpen(false)
       setEditingSchedule(null)
       reset()
-      setEmailRecipients([])
       setReportFilters({})
       toast.success('Automated report schedule updated successfully')
     },
@@ -296,12 +303,12 @@ function AutomatedReportsPageContent() {
         scheduledTime: schedule.scheduledTime,
         format: schedule.format as AutomatedReportScheduleFormData['format'],
         includeList: schedule.includeList,
-      })
-      setEmailRecipients([...schedule.emailRecipients])
+        emailRecipients: schedule.emailRecipients || [], // Set email recipients from schedule
+      }, { keepErrors: false }) // Clear errors when opening dialog
+      setReportFilters(schedule.filters || {})
     } else {
       setEditingSchedule(null)
-      reset()
-      setEmailRecipients([])
+      reset(undefined, { keepErrors: false }) // Clear errors and reset to default values
       setReportFilters({})
     }
     setIsDialogOpen(true)
@@ -310,8 +317,8 @@ function AutomatedReportsPageContent() {
   const handleCloseDialog = useCallback(() => {
     setIsDialogOpen(false)
     setEditingSchedule(null)
-    reset()
-    setEmailRecipients([])
+    reset(undefined, { keepErrors: false }) // Clear errors when closing dialog
+    setReportFilters({})
   }, [reset])
 
   const onSubmit: SubmitHandler<AutomatedReportScheduleFormData> = useCallback((data) => {
@@ -321,61 +328,37 @@ function AutomatedReportsPageContent() {
       scheduledTime: data.scheduledTime || '02:00',
     }
 
-    // Validate email recipients
-    if (emailRecipients.length === 0) {
-      toast.error('Please add at least one email recipient')
-      return
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    const invalidEmails = emailRecipients.filter(email => !emailRegex.test(email))
-    if (invalidEmails.length > 0) {
-      toast.error(`Invalid email address(es): ${invalidEmails.join(', ')}`)
-      return
-    }
-
     if (editingSchedule) {
       updateMutation.mutate({ id: editingSchedule.id, data: formData })
     } else {
       createMutation.mutate(formData)
     }
-  }, [emailRecipients, editingSchedule, createMutation, updateMutation])
+  }, [editingSchedule, createMutation, updateMutation])
 
   const handleAddEmail = useCallback(() => {
     const email = emailInput.trim()
     if (!email) return
     
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
-      toast.error('Invalid email address')
+    // Check if email already exists
+    if (formEmailRecipients.includes(email)) {
+      // Add duplicate to trigger Zod validation error
+      const withDuplicate = [...formEmailRecipients, email]
+      setValue('emailRecipients', withDuplicate, { shouldValidate: true })
       return
     }
     
-    if (emailRecipients.includes(email)) {
-      toast.error('Email already added')
-      return
-    }
-    
-    setEmailRecipients([...emailRecipients, email])
+    // Add email to form
+    const updatedRecipients = [...formEmailRecipients, email]
+    setValue('emailRecipients', updatedRecipients, { shouldValidate: true })
     setEmailInput('')
-  }, [emailInput, emailRecipients])
+    // Clear errors if validation passes
+    clearErrors('emailRecipients')
+  }, [emailInput, formEmailRecipients, setValue, clearErrors])
 
   const handleRemoveEmail = useCallback((email: string) => {
-    setEmailRecipients(emailRecipients.filter(e => e !== email))
-  }, [emailRecipients])
-
-  if (!hasPermission('canManageReports')) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <Card className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10">
-          <CardContent className="p-6">
-            <p className="text-center text-muted-foreground">You don&apos;t have permission to manage automated reports.</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
+    const updatedRecipients = formEmailRecipients.filter(e => e !== email)
+    setValue('emailRecipients', updatedRecipients, { shouldValidate: true })
+  }, [formEmailRecipients, setValue])
 
   return (
     <div className="space-y-6">
@@ -399,6 +382,8 @@ function AutomatedReportsPageContent() {
             <Button 
               onClick={() => handleOpenDialog()} 
               className="gap-2 bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
+              disabled={!canManageReports}
+              variant="outline"
             >
               <Plus className="h-4 w-4" />
               Create Schedule
@@ -407,43 +392,100 @@ function AutomatedReportsPageContent() {
         </motion.div>
 
         {/* Scheduled Reports Table */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.1 }}
-        >
-          <Card className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
-          <CardHeader>
-            <CardTitle>Scheduled Reports</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Spinner />
-              </div>
-            ) : schedules?.schedules.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No automated report schedules found.</p>
-                <p className="text-sm mt-2">Create your first schedule to get started.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Report Name</TableHead>
-                      <TableHead>Report Type</TableHead>
-                      <TableHead>Frequency</TableHead>
-                      <TableHead>Recipients</TableHead>
-                      <TableHead>Format</TableHead>
-                      <TableHead>Next Run</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {schedules?.schedules.map((schedule) => (
+        <AnimatePresence mode="wait">
+          {permissionsLoading || (isLoading && !schedules) ? (
+            // Initial loading state for permissions or data
+            <motion.div
+              key="loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <Card className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
+                <CardHeader>
+                  <CardTitle>Scheduled Reports</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-center py-12">
+                    <div className="flex flex-col items-center gap-3">
+                      <Spinner className="h-8 w-8" />
+                      <p className="text-sm text-muted-foreground">Loading...</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ) : !canManageReports ? (
+            // Access denied state - only show when permissions are done loading
+            <motion.div
+              key="access-denied"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+            >
+              <Card className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
+                <CardContent className="pt-6">
+                  <div className="text-center">
+                    <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
+                    <p className="text-muted-foreground">You do not have permission to manage automated reports</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ) : error ? (
+            // Error state
+            <motion.div
+              key="error"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+            >
+              <Card className="bg-destructive/10 border-destructive/20">
+                <CardContent className="pt-6">
+                  <div className="text-center text-destructive">
+                    <p className="font-medium">Failed to load automated reports</p>
+                    <p className="text-sm mt-1">Please try again or check your connection</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ) : (
+            // Content
+            <motion.div
+              key="content"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <Card className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
+                <CardHeader>
+                  <CardTitle>Scheduled Reports</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {schedules?.schedules.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>No automated report schedules found.</p>
+                      <p className="text-sm mt-2">Create your first schedule to get started.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Report Name</TableHead>
+                            <TableHead>Report Type</TableHead>
+                            <TableHead>Frequency</TableHead>
+                            <TableHead>Recipients</TableHead>
+                            <TableHead>Format</TableHead>
+                            <TableHead>Next Run</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {schedules?.schedules.map((schedule) => (
                       <TableRow key={schedule.id}>
                         <TableCell className="font-medium">{schedule.reportName}</TableCell>
                         <TableCell>
@@ -465,10 +507,26 @@ function AutomatedReportsPageContent() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Mail className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm">{schedule.emailRecipients.length} recipient(s)</span>
-                          </div>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button className="flex items-center gap-2 hover:text-primary transition-colors cursor-pointer">
+                                <Mail className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm">{schedule.emailRecipients.length} recipient(s)</span>
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto max-w-[300px]" align="start">
+                              <div className="space-y-2">
+                                <h4 className="text-sm font-semibold">Email Recipients</h4>
+                                <div className="flex flex-col gap-1">
+                                  {schedule.emailRecipients.map((email, index) => (
+                                    <div key={index} className="text-sm text-muted-foreground">
+                                      {email}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">{schedule.format.toUpperCase()}</Badge>
@@ -544,11 +602,13 @@ function AutomatedReportsPageContent() {
             )}
           </CardContent>
         </Card>
-        </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Create/Edit Dialog */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl! max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingSchedule ? 'Edit Automated Report Schedule' : 'Create Automated Report Schedule'}
@@ -571,42 +631,55 @@ function AutomatedReportsPageContent() {
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="reportType">Report Type *</Label>
-                <Controller
-                  name="reportType"
-                  control={control}
-                  render={({ field }) => (
-                    <div>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger className={errors.reportType ? 'border-destructive' : ''}>
-                          <SelectValue placeholder="Select report type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {REPORT_TYPES.map((type) => (
-                            <SelectItem key={type.value} value={type.value}>
-                              {type.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {errors.reportType && (
-                        <p className="text-sm text-destructive mt-1">{errors.reportType.message}</p>
-                      )}
-                    </div>
-                  )}
-                />
-              </div>
+              <div className="flex items-end gap-4">
+                <div className="space-y-2 flex-1">
+                  <Label htmlFor="reportType">Report Type *</Label>
+                  <Controller
+                    name="reportType"
+                    control={control}
+                    render={({ field }) => (
+                      <div>
+                        <Select 
+                          onValueChange={(value) => {
+                            field.onChange(value)
+                            // Clear the error when a value is selected
+                            if (errors.reportType) {
+                              clearErrors('reportType')
+                            }
+                          }} 
+                          value={field.value || undefined}
+                        >
+                          <SelectTrigger className={errors.reportType ? 'border-destructive' : ''}>
+                            <SelectValue placeholder="Select report type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {REPORT_TYPES.map((type) => (
+                              <SelectItem key={type.value} value={type.value}>
+                                {type.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {errors.reportType && (
+                          <p className="text-sm text-destructive mt-1">{errors.reportType.message}</p>
+                        )}
+                      </div>
+                    )}
+                  />
+                </div>
 
-              {/* Report Filters */}
-              {reportType && (
-                <AutomatedReportFilters
-                  reportType={reportType}
-                  filters={reportFilters}
-                  onFiltersChange={setReportFilters}
-                  disabled={false}
-                />
-              )}
+                {/* Report Filters */}
+                {reportType && (
+                  <div className="pb-0">
+                    <AutomatedReportFilters
+                      reportType={reportType}
+                      filters={reportFilters}
+                      onFiltersChange={setReportFilters}
+                      disabled={false}
+                    />
+                  </div>
+                )}
+              </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -616,7 +689,16 @@ function AutomatedReportsPageContent() {
                     control={control}
                     render={({ field }) => (
                       <div>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select 
+                          onValueChange={(value) => {
+                            field.onChange(value)
+                            // Clear the error when a value is selected
+                            if (errors.frequency) {
+                              clearErrors('frequency')
+                            }
+                          }} 
+                          value={field.value || undefined}
+                        >
                           <SelectTrigger className={errors.frequency ? 'border-destructive' : ''}>
                             <SelectValue placeholder="Select frequency" />
                           </SelectTrigger>
@@ -750,14 +832,15 @@ function AutomatedReportsPageContent() {
                       }
                     }}
                     placeholder="Enter email address"
+                    className={errors.emailRecipients ? 'border-destructive' : ''}
                   />
-                  <Button type="button" onClick={handleAddEmail}>
-                    Add
+                  <Button type="button" onClick={handleAddEmail} variant="outline">
+                    <Plus className="h-4 w-4" />
                   </Button>
                 </div>
-                {emailRecipients.length > 0 && (
+                {formEmailRecipients.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {emailRecipients.map((email) => (
+                    {formEmailRecipients.map((email) => (
                       <Badge key={email} variant="secondary" className="gap-1">
                         {email}
                         <button
@@ -770,6 +853,9 @@ function AutomatedReportsPageContent() {
                       </Badge>
                     ))}
                   </div>
+                )}
+                {errors.emailRecipients && (
+                  <p className="text-sm text-destructive mt-1">{errors.emailRecipients.message}</p>
                 )}
               </div>
 
@@ -796,7 +882,7 @@ function AutomatedReportsPageContent() {
                   />
                 </div>
 
-                <div className="space-y-2 flex items-end">
+                <div className="space-y-2 flex justify-end items-end">
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="includeList"

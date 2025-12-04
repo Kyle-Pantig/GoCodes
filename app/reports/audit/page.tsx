@@ -83,6 +83,7 @@ function AuditReportsPageContent() {
   const searchParams = useSearchParams()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canViewAssets = hasPermission('canViewAssets')
+  const canManageReports = hasPermission('canManageReports')
   
   // Get page and pageSize from URL
   const page = parseInt(searchParams.get('page') || '1', 10)
@@ -155,7 +156,7 @@ function AuditReportsPageContent() {
       }
       return response.json()
     },
-    enabled: canViewAssets && !permissionsLoading,
+    enabled: canViewAssets, // Only fetch if user has permission
     placeholderData: (previousData) => previousData,
   })
 
@@ -173,6 +174,10 @@ function AuditReportsPageContent() {
 
   // Export handlers
   const handleExportClick = (format: 'csv' | 'excel' | 'pdf') => {
+    if (!canManageReports) {
+      toast.error('You do not have permission to export reports. Please contact your administrator.')
+      return
+    }
     setPendingExportFormat(format)
     setIncludeAuditList(false)
     setShowExportDialog(true)
@@ -462,28 +467,6 @@ function AuditReportsPageContent() {
     }
   }
 
-  if (permissionsLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Spinner className="h-8 w-8" />
-      </div>
-    )
-  }
-
-  if (!canViewAssets) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">
-              You do not have permission to view audit reports.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -651,25 +634,42 @@ function AuditReportsPageContent() {
         </motion.div>
       )}
 
-      {/* Loading State */}
-      {isLoading && (
-        <div className="flex items-center justify-center min-h-[400px]">
-          <Spinner className="h-8 w-8" />
+      {/* Report Content */}
+      <AnimatePresence mode="wait">
+        {!canViewAssets && !permissionsLoading ? (
+          // Access denied state - only show when permissions are done loading
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+          >
+            <Card className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
+              <CardContent className="pt-6">
+                <div className="text-center">
+                  <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
+                  <p className="text-muted-foreground">You do not have permission to view reports</p>
         </div>
-      )}
-
-      {/* Error State */}
-      {error && (
+              </CardContent>
+            </Card>
+          </motion.div>
+        ) : error ? (
+          // Error state
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+          >
         <Card className="bg-destructive/10 border-destructive/20">
           <CardContent className="pt-6">
-            <p className="text-destructive">Failed to load report data. Please try again.</p>
+                <div className="text-center text-destructive">
+                  <p className="font-medium">Failed to load report data</p>
+                  <p className="text-sm mt-1">Please try again or check your connection</p>
+                </div>
           </CardContent>
         </Card>
-      )}
-
-      {/* Report Content */}
-      {!isLoading && !error && data && (
-        <AnimatePresence mode="wait">
+          </motion.div>
+        ) : (
+          // Report content with loading spinner in content area
           <motion.div
             key="audit-report"
             initial={{ opacity: 0, y: 20 }}
@@ -687,6 +687,26 @@ function AuditReportsPageContent() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-1 px-0 relative">
+                {isFetching && data && audits.length > 0 && (
+                  <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+                    <Spinner variant="default" size={24} className="text-muted-foreground" />
+                  </div>
+                )}
+                {permissionsLoading || (isLoading && !data) ? (
+                  // Loading state: show spinner in content area
+                  <div className="h-[560px] pt-12 flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <Spinner className="h-8 w-8" />
+                      <p className="text-sm text-muted-foreground">Loading...</p>
+                    </div>
+                  </div>
+                ) : data && audits.length === 0 ? (
+                  <div className="h-[560px] pt-12 flex items-center justify-center">
+                    <div className="text-center text-muted-foreground">
+                      <p className="text-sm">No audit records found</p>
+                    </div>
+                  </div>
+                ) : data ? (
                 <div className="h-[560px] pt-8">
                   <div className="min-w-full">
                     <ScrollArea className="h-[528px] relative">
@@ -706,14 +726,7 @@ function AuditReportsPageContent() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {audits.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={8} className="h-24 text-center">
-                                  No audit records found
-                                </TableCell>
-                              </TableRow>
-                            ) : (
-                              audits.map((audit) => (
+                              {audits.map((audit) => (
                                 <TableRow key={audit.id} className="group relative hover:bg-muted/90 border-b transition-colors">
                                   <TableCell className="font-medium">{audit.assetTagId}</TableCell>
                                   <TableCell>{audit.category || 'N/A'}</TableCell>
@@ -726,8 +739,7 @@ function AuditReportsPageContent() {
                                   </TableCell>
                                   <TableCell>{audit.auditBy || 'N/A'}</TableCell>
                                 </TableRow>
-                              ))
-                            )}
+                              ))}
                           </TableBody>
                         </Table>
                       </div>
@@ -736,6 +748,8 @@ function AuditReportsPageContent() {
                     </ScrollArea>
                   </div>
                 </div>
+                ) : null}
+              </CardContent>
                 
                 {/* Pagination Bar - Fixed at Bottom */}
                 <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-b-lg">
@@ -811,11 +825,10 @@ function AuditReportsPageContent() {
                     </div>
                   </div>
                 </div>
-              </CardContent>
             </Card>
           </motion.div>
-        </AnimatePresence>
       )}
+      </AnimatePresence>
 
       {/* Export Confirmation Dialog */}
       <ExportDialog

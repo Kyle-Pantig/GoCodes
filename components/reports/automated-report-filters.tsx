@@ -13,7 +13,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Filter, X } from 'lucide-react'
+import { Filter, X, Info } from 'lucide-react'
 import {
   Popover,
   PopoverContent,
@@ -34,6 +34,7 @@ export function AutomatedReportFilters({
   disabled = false 
 }: AutomatedReportFiltersProps) {
   const [open, setOpen] = useState(false)
+  const [badgesOpen, setBadgesOpen] = useState(false)
   const [localFilters, setLocalFilters] = useState<Record<string, unknown>>(filters || {})
 
   // Sync local filters when popover opens
@@ -54,7 +55,7 @@ export function AutomatedReportFilters({
       const data = await response.json()
       return data.categories || []
     },
-    enabled: ['assets', 'transaction'].includes(reportType),
+    enabled: ['assets', 'transaction', 'maintenance', 'audit', 'depreciation', 'lease', 'reservation'].includes(reportType),
   })
 
   const { data: locations } = useQuery({
@@ -65,7 +66,7 @@ export function AutomatedReportFilters({
       const data = await response.json()
       return data.locations || []
     },
-    enabled: ['assets', 'checkout', 'transaction', 'location'].includes(reportType),
+    enabled: ['assets', 'checkout', 'transaction', 'location', 'audit', 'depreciation', 'lease', 'reservation'].includes(reportType),
   })
 
   const { data: sites } = useQuery({
@@ -76,7 +77,7 @@ export function AutomatedReportFilters({
       const data = await response.json()
       return data.sites || []
     },
-    enabled: ['assets', 'checkout', 'transaction', 'location'].includes(reportType),
+    enabled: ['assets', 'checkout', 'transaction', 'location', 'audit', 'depreciation', 'lease', 'reservation'].includes(reportType),
   })
 
   const { data: departments } = useQuery({
@@ -87,7 +88,7 @@ export function AutomatedReportFilters({
       const data = await response.json()
       return data.departments || []
     },
-    enabled: ['assets', 'checkout', 'transaction'].includes(reportType),
+    enabled: ['assets', 'checkout', 'transaction', 'reservation'].includes(reportType),
   })
 
   const { data: employeesData } = useQuery({
@@ -98,7 +99,7 @@ export function AutomatedReportFilters({
       const data = await response.json()
       return data.employees || []
     },
-    enabled: reportType === 'checkout',
+    enabled: ['checkout', 'reservation'].includes(reportType),
   })
 
   const handleFilterChange = (key: string, value: string | boolean | undefined) => {
@@ -142,8 +143,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('reportType', value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="report-type-filter">
-                  <SelectValue placeholder="Select report type" />
+                <SelectTrigger id="report-type-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="Select report type" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="summary">Summary</SelectItem>
@@ -159,8 +160,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('status', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="status-filter">
-                  <SelectValue placeholder="All statuses" />
+                <SelectTrigger id="status-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All statuses" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
@@ -180,8 +181,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="category-filter">
-                  <SelectValue placeholder="All categories" />
+                <SelectTrigger id="category-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All categories" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All categories</SelectItem>
@@ -200,8 +201,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="location-filter">
-                  <SelectValue placeholder="All locations" />
+                <SelectTrigger id="location-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All locations" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All locations</SelectItem>
@@ -220,8 +221,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="site-filter">
-                  <SelectValue placeholder="All sites" />
+                <SelectTrigger id="site-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All sites" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All sites</SelectItem>
@@ -240,8 +241,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('department', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="department-filter">
-                  <SelectValue placeholder="All departments" />
+                <SelectTrigger id="department-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All departments" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All departments</SelectItem>
@@ -286,8 +287,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('employeeId', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="employee-filter">
-                  <SelectValue placeholder="All employees" />
+                <SelectTrigger id="employee-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All employees" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All employees</SelectItem>
@@ -329,8 +330,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="location-filter">
-                  <SelectValue placeholder="All locations" />
+                <SelectTrigger id="location-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All locations" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All locations</SelectItem>
@@ -349,8 +350,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="site-filter">
-                  <SelectValue placeholder="All sites" />
+                <SelectTrigger id="site-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All sites" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All sites</SelectItem>
@@ -369,8 +370,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('department', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="department-filter">
-                  <SelectValue placeholder="All departments" />
+                <SelectTrigger id="department-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All departments" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All departments</SelectItem>
@@ -415,8 +416,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('transactionType', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="transaction-type-filter">
-                  <SelectValue placeholder="All transaction types" />
+                <SelectTrigger id="transaction-type-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All transaction types" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All transaction types</SelectItem>
@@ -445,8 +446,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="category-filter">
-                  <SelectValue placeholder="All categories" />
+                <SelectTrigger id="category-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All categories" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All categories</SelectItem>
@@ -465,8 +466,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="location-filter">
-                  <SelectValue placeholder="All locations" />
+                <SelectTrigger id="location-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All locations" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All locations</SelectItem>
@@ -485,8 +486,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="site-filter">
-                  <SelectValue placeholder="All sites" />
+                <SelectTrigger id="site-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All sites" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All sites</SelectItem>
@@ -505,8 +506,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('department', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="department-filter">
-                  <SelectValue placeholder="All departments" />
+                <SelectTrigger id="department-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All departments" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All departments</SelectItem>
@@ -561,8 +562,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="location-filter">
-                  <SelectValue placeholder="All locations" />
+                <SelectTrigger id="location-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All locations" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All locations</SelectItem>
@@ -581,8 +582,8 @@ export function AutomatedReportFilters({
                 onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
                 disabled={disabled}
               >
-                <SelectTrigger id="site-filter">
-                  <SelectValue placeholder="All sites" />
+                <SelectTrigger id="site-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All sites" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All sites</SelectItem>
@@ -597,6 +598,540 @@ export function AutomatedReportFilters({
           </div>
         )
 
+      case 'maintenance':
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="status-filter">Status</Label>
+              <Select
+                value={(localFilters.status as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('status', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="status-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All statuses" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="Pending">Pending</SelectItem>
+                  <SelectItem value="In Progress">In Progress</SelectItem>
+                  <SelectItem value="Completed">Completed</SelectItem>
+                  <SelectItem value="Cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="category-filter">Category</Label>
+              <Select
+                value={(localFilters.category as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="category-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All categories" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {categories?.map((cat: { id: string; name: string }) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="start-date-filter">Start Date</Label>
+              <Input
+                id="start-date-filter"
+                type="date"
+                value={(localFilters.startDate as string) || ''}
+                onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end-date-filter">End Date</Label>
+              <Input
+                id="end-date-filter"
+                type="date"
+                value={(localFilters.endDate as string) || ''}
+                onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+          </div>
+        )
+
+      case 'audit':
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="category-filter">Category</Label>
+              <Select
+                value={(localFilters.category as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="category-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All categories" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {categories?.map((cat: { id: string; name: string }) => (
+                    <SelectItem key={cat.id} value={cat.name}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="audit-type-filter">Audit Type</Label>
+              <Input
+                id="audit-type-filter"
+                placeholder="Filter by audit type"
+                value={(localFilters.auditType as string) || ''}
+                onChange={(e) => handleFilterChange('auditType', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="location-filter">Location</Label>
+              <Select
+                value={(localFilters.location as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="location-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All locations" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All locations</SelectItem>
+                  {locations?.map((loc: { id: string; name: string }) => (
+                    <SelectItem key={loc.id} value={loc.name}>
+                      {loc.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="site-filter">Site</Label>
+              <Select
+                value={(localFilters.site as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="site-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All sites" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sites</SelectItem>
+                  {sites?.map((site: { id: string; name: string }) => (
+                    <SelectItem key={site.id} value={site.name}>
+                      {site.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="auditor-filter">Auditor</Label>
+              <Input
+                id="auditor-filter"
+                placeholder="Filter by auditor name"
+                value={(localFilters.auditor as string) || ''}
+                onChange={(e) => handleFilterChange('auditor', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="start-date-filter">Start Date</Label>
+              <Input
+                id="start-date-filter"
+                type="date"
+                value={(localFilters.startDate as string) || ''}
+                onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end-date-filter">End Date</Label>
+              <Input
+                id="end-date-filter"
+                type="date"
+                value={(localFilters.endDate as string) || ''}
+                onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+          </div>
+        )
+
+      case 'depreciation':
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="category-filter">Category</Label>
+              <Select
+                value={(localFilters.category as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="category-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All categories" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {categories?.map((cat: { id: string; name: string }) => (
+                    <SelectItem key={cat.id} value={cat.name}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="depreciation-method-filter">Depreciation Method</Label>
+              <Select
+                value={(localFilters.depreciationMethod as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('depreciationMethod', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="depreciation-method-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All methods" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All methods</SelectItem>
+                  <SelectItem value="Straight-line">Straight-line</SelectItem>
+                  <SelectItem value="Declining Balance">Declining Balance</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="location-filter">Location</Label>
+              <Select
+                value={(localFilters.location as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="location-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All locations" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All locations</SelectItem>
+                  {locations?.map((loc: { id: string; name: string }) => (
+                    <SelectItem key={loc.id} value={loc.name}>
+                      {loc.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="site-filter">Site</Label>
+              <Select
+                value={(localFilters.site as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="site-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All sites" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sites</SelectItem>
+                  {sites?.map((site: { id: string; name: string }) => (
+                    <SelectItem key={site.id} value={site.name}>
+                      {site.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 flex items-end">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="depreciable-filter"
+                  checked={(localFilters.isDepreciable as boolean) || false}
+                  onCheckedChange={(checked) => handleFilterChange('isDepreciable', checked === true)}
+                  disabled={disabled}
+                />
+                <Label htmlFor="depreciable-filter" className="cursor-pointer">
+                  Depreciable Assets Only
+                </Label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="start-date-filter">Date Acquired From</Label>
+              <Input
+                id="start-date-filter"
+                type="date"
+                value={(localFilters.startDate as string) || ''}
+                onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end-date-filter">Date Acquired To</Label>
+              <Input
+                id="end-date-filter"
+                type="date"
+                value={(localFilters.endDate as string) || ''}
+                onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+          </div>
+        )
+
+      case 'lease':
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="category-filter">Category</Label>
+              <Select
+                value={(localFilters.category as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="category-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All categories" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {categories?.map((cat: { id: string; name: string }) => (
+                    <SelectItem key={cat.id} value={cat.name}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="lessee-filter">Lessee</Label>
+              <Input
+                id="lessee-filter"
+                placeholder="Search lessee..."
+                value={(localFilters.lessee as string) || ''}
+                onChange={(e) => handleFilterChange('lessee', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="location-filter">Location</Label>
+              <Select
+                value={(localFilters.location as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="location-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All locations" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All locations</SelectItem>
+                  {locations?.map((loc: { id: string; name: string }) => (
+                    <SelectItem key={loc.id} value={loc.name}>
+                      {loc.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="site-filter">Site</Label>
+              <Select
+                value={(localFilters.site as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="site-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All sites" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sites</SelectItem>
+                  {sites?.map((site: { id: string; name: string }) => (
+                    <SelectItem key={site.id} value={site.name}>
+                      {site.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="status-filter">Lease Status</Label>
+              <Select
+                value={(localFilters.status as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('status', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="status-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All statuses" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="expired">Expired</SelectItem>
+                  <SelectItem value="upcoming">Upcoming</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="start-date-filter">Lease Start From</Label>
+              <Input
+                id="start-date-filter"
+                type="date"
+                value={(localFilters.startDate as string) || ''}
+                onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end-date-filter">Lease Start To</Label>
+              <Input
+                id="end-date-filter"
+                type="date"
+                value={(localFilters.endDate as string) || ''}
+                onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+          </div>
+        )
+
+      case 'reservation':
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="category-filter">Category</Label>
+              <Select
+                value={(localFilters.category as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="category-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All categories" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {categories?.map((cat: { id: string; name: string }) => (
+                    <SelectItem key={cat.id} value={cat.name}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reservation-type-filter">Reservation Type</Label>
+              <Select
+                value={(localFilters.reservationType as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('reservationType', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="reservation-type-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All types" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  <SelectItem value="Employee">Employee</SelectItem>
+                  <SelectItem value="Department">Department</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="location-filter">Location</Label>
+              <Select
+                value={(localFilters.location as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="location-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All locations" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All locations</SelectItem>
+                  {locations?.map((loc: { id: string; name: string }) => (
+                    <SelectItem key={loc.id} value={loc.name}>
+                      {loc.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="site-filter">Site</Label>
+              <Select
+                value={(localFilters.site as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="site-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All sites" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sites</SelectItem>
+                  {sites?.map((site: { id: string; name: string }) => (
+                    <SelectItem key={site.id} value={site.name}>
+                      {site.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="department-filter">Department</Label>
+              <Input
+                id="department-filter"
+                placeholder="Search department..."
+                value={(localFilters.department as string) || ''}
+                onChange={(e) => handleFilterChange('department', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="employee-filter">Employee</Label>
+              <Select
+                value={(localFilters.employeeId as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('employeeId', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="employee-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All employees" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All employees</SelectItem>
+                  {employeesData?.map((employee: { id: string; name: string; email: string }) => (
+                    <SelectItem key={employee.id} value={employee.id}>
+                      {employee.name} ({employee.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="start-date-filter">Reservation Date From</Label>
+              <Input
+                id="start-date-filter"
+                type="date"
+                value={(localFilters.startDate as string) || ''}
+                onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end-date-filter">Reservation Date To</Label>
+              <Input
+                id="end-date-filter"
+                type="date"
+                value={(localFilters.endDate as string) || ''}
+                onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
+                disabled={disabled}
+              />
+            </div>
+          </div>
+        )
+
       default:
         return (
           <div className="text-sm text-muted-foreground">
@@ -607,24 +1142,22 @@ export function AutomatedReportFilters({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <Label>Report Filters</Label>
-        <Popover open={open} onOpenChange={handleOpenChange}>
-          <PopoverTrigger asChild>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              disabled={disabled}
-              className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
-            >
-              <Filter className="h-4 w-4 mr-2" />
-              Configure Filters
-              {hasActiveFilters && (
-                <span className="ml-2 h-2 w-2 rounded-full bg-primary" />
-              )}
-            </Button>
-          </PopoverTrigger>
+    <div className="flex items-end gap-2">
+      <Popover open={open} onOpenChange={handleOpenChange}>
+        <PopoverTrigger asChild>
+          <Button 
+            variant="outline" 
+            size="default" 
+            disabled={disabled}
+            className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
+          >
+            <Filter className="h-4 w-4 mr-2" />
+            Configure Filters
+            {hasActiveFilters && (
+              <span className="ml-2 h-2 w-2 rounded-full bg-primary" />
+            )}
+          </Button>
+        </PopoverTrigger>
           <PopoverContent className="max-w-[600px] w-[calc(100vw-2rem)] sm:w-full" align="start">
             <div className="space-y-4">
               {renderFilters()}
@@ -646,36 +1179,110 @@ export function AutomatedReportFilters({
             </div>
           </PopoverContent>
         </Popover>
-      </div>
       {hasActiveFilters && (
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(filters || {}).map(([key, value]) => {
-            if (!value || value === '') return null
-            return (
-              <div
-                key={key}
-                className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-md text-sm"
-              >
-                <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                <span>{String(value)}</span>
+        <Popover open={badgesOpen} onOpenChange={setBadgesOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              size="default"
+              className="bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 hover:text-primary"
+              onMouseEnter={() => setBadgesOpen(true)}
+              onMouseLeave={() => setBadgesOpen(false)}
+            >
+              <Info className="h-4 w-4 mr-2" />
+              Active Filters ({Object.values(filters || {}).filter(v => v !== undefined && v !== '' && v !== null).length})
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent 
+            className="max-w-[400px] w-[calc(100vw-2rem)] sm:w-full" 
+            align="start"
+            onMouseEnter={() => setBadgesOpen(true)}
+            onMouseLeave={() => setBadgesOpen(false)}
+          >
+            <div className="flex flex-col space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold">Active Filters</h4>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-4 w-4 p-0 hover:bg-primary/20"
-                  onClick={() => {
-                    const newFilters = { ...localFilters }
-                    delete newFilters[key]
-                    setLocalFilters(newFilters)
-                    onFiltersChange(newFilters)
-                  }}
+                  onClick={handleClearFilters}
                   disabled={disabled}
+                  className="h-7 text-xs"
                 >
-                  <X className="h-3 w-3" />
+                  Clear All
                 </Button>
               </div>
-            )
-          })}
-        </div>
+              <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto">
+                {Object.entries(filters || {}).map(([key, value]) => {
+                  if (!value || value === '') return null
+                  
+                  // Format the value for display
+                  let displayValue = String(value)
+                  if (key === 'startDate' || key === 'endDate' || key === 'dueDate') {
+                    try {
+                      displayValue = new Date(value as string).toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric', 
+                        year: 'numeric' 
+                      })
+                    } catch {
+                      displayValue = String(value)
+                    }
+                  } else if (key === 'employeeId' && employeesData) {
+                    const employee = employeesData.find((emp: { id: string; name: string }) => emp.id === value)
+                    if (employee) {
+                      displayValue = employee.name
+                    }
+                  } else if (key === 'category' && categories) {
+                    const category = categories.find((cat: { id: string; name: string }) => cat.id === value || cat.name === value)
+                    if (category) {
+                      displayValue = category.name
+                    }
+                  } else if (key === 'location' && locations) {
+                    const location = locations.find((loc: { id: string; name: string }) => loc.name === value)
+                    if (location) {
+                      displayValue = location.name
+                    }
+                  } else if (key === 'site' && sites) {
+                    const site = sites.find((s: { id: string; name: string }) => s.name === value)
+                    if (site) {
+                      displayValue = site.name
+                    }
+                  } else if (key === 'department' && departments) {
+                    const dept = departments.find((d: { id: string; name: string }) => d.name === value)
+                    if (dept) {
+                      displayValue = dept.name
+                    }
+                  }
+                  
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-md text-sm max-w-full"
+                    >
+                      <span className="font-medium capitalize shrink-0">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                      <span className="truncate max-w-[200px]" title={displayValue}>{displayValue}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-4 w-4 p-0 hover:bg-primary/20 shrink-0"
+                        onClick={() => {
+                          const newFilters = { ...localFilters }
+                          delete newFilters[key]
+                          setLocalFilters(newFilters)
+                          onFiltersChange(newFilters)
+                        }}
+                        disabled={disabled}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
       )}
     </div>
   )

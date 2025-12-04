@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const auth = await verifyAuth()
   if (auth.error) return auth.error
 
-  const permissionCheck = await requirePermission('canManageMaintenance')
+  const permissionCheck = await requirePermission('canViewAssets')
   if (!permissionCheck.allowed && permissionCheck.error) {
     return permissionCheck.error
   }

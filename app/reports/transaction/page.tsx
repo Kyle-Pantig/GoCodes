@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
+import { Skeleton } from '@/components/ui/skeleton'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Download, 
@@ -401,6 +402,7 @@ function TransactionReportsPageContent() {
   const searchParams = useSearchParams()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canViewAssets = hasPermission('canViewAssets')
+  const canManageReports = hasPermission('canManageReports')
   
   // Get page and pageSize from URL
   const page = parseInt(searchParams.get('page') || '1', 10)
@@ -493,7 +495,7 @@ function TransactionReportsPageContent() {
       }
       return response.json()
     },
-    enabled: canViewAssets && !permissionsLoading,
+    enabled: canViewAssets, // Only fetch if user has permission
     placeholderData: (previousData) => previousData,
   })
 
@@ -523,6 +525,10 @@ function TransactionReportsPageContent() {
 
   // Export handlers
   const handleExportClick = (format: 'csv' | 'excel' | 'pdf') => {
+    if (!canManageReports) {
+      toast.error('You do not have permission to export reports. Please contact your administrator.')
+      return
+    }
     setPendingExportFormat(format)
     setIncludeTransactionList(false)
     setShowExportDialog(true)
@@ -902,28 +908,6 @@ function TransactionReportsPageContent() {
     return colorMap[type] || 'bg-gray-500/10 text-gray-600 dark:text-gray-400'
   }
 
-  if (permissionsLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Spinner className="h-8 w-8" />
-      </div>
-    )
-  }
-
-  if (!canViewAssets) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">
-              You don&apos;t have permission to view this report.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -1093,81 +1077,83 @@ function TransactionReportsPageContent() {
       </AnimatePresence>
 
       {/* Summary Cards */}
-      {summary && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.1 }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
-        >
-          {[
-            {
-              title: 'Total Transactions',
-              value: summary.totalTransactions.toLocaleString(),
-              description: 'All transactions',
-              icon: Activity,
-              color: 'text-blue-500',
-              bgColor: 'bg-blue-500/10',
-              borderColor: '#3b82f6',
-              delay: 0.1,
-            },
-            {
-              title: 'Transaction Types',
-              value: summary.byType.length.toString(),
-              description: 'Unique types',
-              icon: FileText,
-              color: 'text-green-500',
-              bgColor: 'bg-green-500/10',
-              borderColor: '#22c55e',
-              delay: 0.2,
-            },
-            {
-              title: 'Total Asset Value',
-              value: formatCurrency(summary.byType.reduce((sum, item) => sum + item.totalValue, 0)),
-              description: 'Combined value',
-              icon: Download,
-              color: 'text-amber-500',
-              bgColor: 'bg-amber-500/10',
-              borderColor: '#f59e0b',
-              delay: 0.3,
-            },
-            {
-              title: 'Current Page',
-              value: `${transactions.length} / ${pagination?.total.toLocaleString() || 0}`,
-              description: 'Displayed items',
-              icon: FileSpreadsheet,
-              color: 'text-purple-500',
-              bgColor: 'bg-purple-500/10',
-              borderColor: '#a855f7',
-              delay: 0.4,
-            },
-          ].map((card) => (
-            <motion.div
-              key={card.title}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: card.delay }}
-              whileHover={{ y: -4, transition: { duration: 0.2 } }}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.1 }}
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+      >
+        {[
+          {
+            title: 'Total Transactions',
+            value: summary ? summary.totalTransactions.toLocaleString() : undefined,
+            description: 'All transactions',
+            icon: Activity,
+            color: 'text-blue-500',
+            bgColor: 'bg-blue-500/10',
+            borderColor: '#3b82f6',
+            delay: 0.1,
+          },
+          {
+            title: 'Transaction Types',
+            value: summary ? summary.byType.length.toString() : undefined,
+            description: 'Unique types',
+            icon: FileText,
+            color: 'text-green-500',
+            bgColor: 'bg-green-500/10',
+            borderColor: '#22c55e',
+            delay: 0.2,
+          },
+          {
+            title: 'Total Asset Value',
+            value: summary ? formatCurrency(summary.byType.reduce((sum, item) => sum + item.totalValue, 0)) : undefined,
+            description: 'Combined value',
+            icon: Download,
+            color: 'text-amber-500',
+            bgColor: 'bg-amber-500/10',
+            borderColor: '#f59e0b',
+            delay: 0.3,
+          },
+          {
+            title: 'Current Page',
+            value: pagination ? `${transactions.length} / ${pagination.total.toLocaleString()}` : undefined,
+            description: 'Displayed items',
+            icon: FileSpreadsheet,
+            color: 'text-purple-500',
+            bgColor: 'bg-purple-500/10',
+            borderColor: '#a855f7',
+            delay: 0.4,
+          },
+        ].map((card) => (
+          <motion.div
+            key={card.title}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: card.delay }}
+            whileHover={{ y: -4, transition: { duration: 0.2 } }}
+          >
+            <Card
+              className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-l-4 border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150 transition-all hover:shadow-md hover:bg-white/15 dark:hover:bg-white/10"
+              style={{ borderLeftColor: card.borderColor }}
             >
-              <Card
-                className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-l-4 border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150 transition-all hover:shadow-md hover:bg-white/15 dark:hover:bg-white/10"
-                style={{ borderLeftColor: card.borderColor }}
-              >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">{card.title}</CardTitle>
-                  <div className={`p-2 rounded-lg ${card.bgColor}`}>
-                    <card.icon className={`h-4 w-4 ${card.color}`} />
-                  </div>
-                </CardHeader>
-                <CardContent>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{card.title}</CardTitle>
+                <div className={`p-2 rounded-lg ${card.bgColor}`}>
+                  <card.icon className={`h-4 w-4 ${card.color}`} />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {card.value ? (
                   <div className="text-2xl font-bold">{card.value}</div>
-                  <p className="text-xs text-muted-foreground mt-1.5">{card.description}</p>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </motion.div>
-      )}
+                ) : (
+                  <Skeleton className="h-8 w-3/4" />
+                )}
+                <p className="text-xs text-muted-foreground mt-1.5">{card.description}</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </motion.div>
 
       {/* Transactions Table */}
       <motion.div
@@ -1186,15 +1172,21 @@ function TransactionReportsPageContent() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-1 px-0 relative">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
+            {isFetching && data && transactions.length > 0 && (
+              <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+                <Spinner variant="default" size={24} className="text-muted-foreground" />
+              </div>
+            )}
+            {permissionsLoading || (isLoading && !data) ? (
+              // Loading state: show spinner in content area
+              <div className="h-[560px] pt-12 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
                   <Spinner className="h-8 w-8" />
-                  <p className="text-sm text-muted-foreground">Loading transactions...</p>
+                  <p className="text-sm text-muted-foreground">Loading...</p>
                 </div>
               </div>
             ) : error ? (
-              <div className="py-12 text-center">
+              <div className="h-[560px] pt-12 flex items-center justify-center">
                 <Card className="bg-destructive/10 border-destructive/20">
                   <CardContent className="pt-6">
                     <div className="text-center text-destructive">
@@ -1205,12 +1197,13 @@ function TransactionReportsPageContent() {
                 </Card>
               </div>
             ) : transactions.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground">
-                <p className="text-sm">No transactions found matching your filters.</p>
+              <div className="h-[560px] pt-12 flex items-center justify-center">
+                <div className="text-center text-muted-foreground">
+                  <p className="text-sm">No transactions found matching your filters.</p>
+                </div>
               </div>
             ) : (
-              <>
-                <div className="h-[560px] pt-8">
+              <div className="h-[560px] pt-8">
                   <div className="min-w-full">
                     <ScrollArea className="h-[528px] relative">
                       <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
@@ -1407,13 +1400,11 @@ function TransactionReportsPageContent() {
                     </ScrollArea>
                   </div>
                 </div>
-              </>
             )}
           </CardContent>
           
           {/* Pagination Bar - Fixed at Bottom */}
-          {pagination && (
-            <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-b-lg">
+          <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-b-lg">
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3">
                     {/* Left Side - Navigation */}
                     <div className="flex items-center justify-center sm:justify-start gap-2">
@@ -1486,7 +1477,6 @@ function TransactionReportsPageContent() {
                     </div>
                   </div>
                 </div>
-          )}
         </Card>
       </motion.div>
 
