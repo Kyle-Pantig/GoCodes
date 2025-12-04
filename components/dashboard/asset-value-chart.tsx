@@ -1,8 +1,16 @@
 'use client'
 
+import { useState } from 'react'
 import { TrendingUp } from 'lucide-react'
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart } from 'recharts'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   ChartConfig,
   ChartContainer,
@@ -10,13 +18,23 @@ import {
   ChartTooltipContent,
 } from '@/components/ui/chart'
 import { DashboardStats } from '@/types/dashboard'
-import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { motion } from 'framer-motion'
+import { useQuery } from '@tanstack/react-query'
 
 interface AssetValueChartProps {
   data: DashboardStats['assetValueByCategory'] | undefined
   isLoading: boolean
 }
+
+type GroupByOption = 'category' | 'status' | 'location' | 'department' | 'site'
+
+const GROUP_BY_OPTIONS: Array<{ value: GroupByOption; label: string }> = [
+  { value: 'category', label: 'Category' },
+  { value: 'status', label: 'Status' },
+  { value: 'location', label: 'Location' },
+  { value: 'department', label: 'Department' },
+  { value: 'site', label: 'Site' },
+]
 
 const chartColors = [
   '#3b82f6', // Blue
@@ -37,10 +55,25 @@ const chartColors = [
 ]
 
 export function AssetValueChart({ data, isLoading }: AssetValueChartProps) {
-  // Transform data for radar chart - show all categories
-  const allCategories = data || []
+  const [groupBy, setGroupBy] = useState<GroupByOption>('category')
+
+  // Fetch grouped data based on selected option
+  const { data: groupedData, isLoading: isGroupedLoading } = useQuery<{ data: Array<{ name: string; value: number }> }>({
+    queryKey: ['asset-value-grouped', groupBy],
+    queryFn: async () => {
+      const response = await fetch(`/api/dashboard/asset-value-grouped?groupBy=${groupBy}`)
+      if (!response.ok) throw new Error('Failed to fetch grouped data')
+      return response.json()
+    },
+    enabled: groupBy !== 'category', // Use initial data for category
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Use grouped data if available, otherwise fall back to initial category data
+  const chartDataRaw = groupBy === 'category' ? (data || []) : (groupedData?.data || [])
+  const isChartLoading = isLoading || (groupBy !== 'category' && isGroupedLoading)
   
-  const chartData = allCategories.map((item, index) => ({
+  const chartData = chartDataRaw.map((item, index) => ({
     category: item.name.length > 12 ? `${item.name.substring(0, 12)}...` : item.name,
     value: item.value,
     fullName: item.name,
@@ -54,18 +87,46 @@ export function AssetValueChart({ data, isLoading }: AssetValueChartProps) {
     },
   } satisfies ChartConfig
 
-  const totalValue = allCategories.reduce((sum, item) => sum + item.value, 0)
+  const totalValue = chartDataRaw.reduce((sum, item) => sum + item.value, 0)
 
-  if (isLoading) {
+  const groupByLabel = GROUP_BY_OPTIONS.find(opt => opt.value === groupBy)?.label || 'Category'
+  
+  // Proper pluralization for footer
+  const getPluralLabel = (label: string) => {
+    if (label.toLowerCase() === 'status') return 'statuses'
+    return `${label.toLowerCase()}s`
+  }
+
+  if (isChartLoading) {
     return (
-      <Card className="flex flex-col h-[500px]">
-        <CardHeader>
-          <div className="h-6 w-1/2 bg-muted rounded mb-2" />
-          <div className="h-4 w-1/3 bg-muted rounded" />
+      <Card className="flex flex-col h-full min-h-[500px] animate-pulse">
+        <CardHeader className="items-center pb-4">
+          <div className="flex items-center justify-between w-full">
+            <div className="flex-1">
+              <div className="h-6 w-48 bg-muted rounded mb-2" />
+              <div className="h-4 w-64 bg-muted rounded" />
+            </div>
+            <div className="h-10 w-[140px] bg-muted rounded" />
+          </div>
         </CardHeader>
-        <CardContent className="flex-1 flex items-center justify-center">
-          <Spinner className="h-8 w-8" />
+        <CardContent className="pb-0 flex-1 flex flex-col">
+          <div className="flex-1 flex items-center justify-center min-h-[250px]">
+            <div className="w-[250px] h-[250px] bg-muted rounded-full" />
+          </div>
+          <div className="w-full grid grid-cols-2 gap-x-4 gap-y-2 mt-4 border-t pt-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded-full bg-muted shrink-0" />
+                <div className="h-4 w-24 bg-muted rounded flex-1" />
+                <div className="h-4 w-16 bg-muted rounded" />
+              </div>
+            ))}
+          </div>
         </CardContent>
+        <CardFooter className="flex-col gap-2 text-sm">
+          <div className="h-4 w-32 bg-muted rounded" />
+          <div className="h-4 w-40 bg-muted rounded" />
+        </CardFooter>
       </Card>
     )
   }
@@ -78,10 +139,26 @@ export function AssetValueChart({ data, isLoading }: AssetValueChartProps) {
     >
       <Card className="flex flex-col h-full min-h-[500px]">
         <CardHeader className="items-center pb-4">
-          <CardTitle>Asset Value by Category</CardTitle>
-          <CardDescription>
-            Total asset value grouped by category
-          </CardDescription>
+          <div className="flex items-center justify-between w-full">
+            <div>
+              <CardTitle>Asset Value by {groupByLabel}</CardTitle>
+              <CardDescription>
+                Total asset value grouped by {groupByLabel.toLowerCase()}
+              </CardDescription>
+            </div>
+            <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupByOption)}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {GROUP_BY_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardHeader>
         <CardContent className="pb-0 flex-1 flex flex-col">
           {chartData.length > 0 ? (
@@ -139,7 +216,7 @@ export function AssetValueChart({ data, isLoading }: AssetValueChartProps) {
         {chartData.length > 0 && (
           <CardFooter className="flex-col gap-2 text-sm">
             <div className="flex items-center gap-2 leading-none font-medium">
-              {chartData.length} categories by value <TrendingUp className="h-4 w-4" />
+              {chartData.length} {getPluralLabel(groupByLabel)} by value <TrendingUp className="h-4 w-4" />
             </div>
             <div className="text-muted-foreground flex items-center gap-2 leading-none">
               Total: ₱{totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
