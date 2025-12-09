@@ -405,7 +405,7 @@ function LeaseAssetPageContent() {
     params.delete('assetId')
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
     router.replace(newUrl)
-    hasProcessedUrlParams.current = false
+    // Don't reset hasProcessedUrlParams here - let it be controlled by the caller
   }, [searchParams, router])
 
   // Handle URL query parameters for assetId
@@ -472,8 +472,10 @@ function LeaseAssetPageContent() {
       conditions: '',
       notes: '',
     })
-    // Reset the URL params processed flag so new URL params can be processed
-    hasProcessedUrlParams.current = false
+    // Only reset the flag if URL params are already cleared (allows new URL params to be processed)
+    if (!searchParams.get('assetId')) {
+      hasProcessedUrlParams.current = false
+    }
   }
 
   // Handle QR code scan result
@@ -548,9 +550,12 @@ function LeaseAssetPageContent() {
       return response.json()
     },
     onSuccess: () => {
+      // Mark URL params as processed BEFORE clearing form to prevent re-processing
+      hasProcessedUrlParams.current = true
       queryClient.invalidateQueries({ queryKey: ["assets"] })
       queryClient.invalidateQueries({ queryKey: ["lease-stats"] })
       toast.success('Asset leased successfully')
+      clearUrlParams()
       clearForm()
     },
     onError: (error: Error) => {

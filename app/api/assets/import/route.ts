@@ -16,6 +16,13 @@ export async function POST(request: NextRequest) {
   try {
     const { assets } = await request.json()
 
+    // Get user info for history logging - use name from metadata, fallback to email
+    const userName = auth.user.user_metadata?.name || 
+                     auth.user.user_metadata?.full_name || 
+                     auth.user.email?.split('@')[0] || 
+                     auth.user.email || 
+                     auth.user.id
+
     if (!assets || !Array.isArray(assets)) {
       return NextResponse.json(
         { error: 'Invalid request body. Expected an array of assets.' },
@@ -488,6 +495,44 @@ export async function POST(request: NextRequest) {
         skipDuplicates: true
       })
       createdCount = result.count
+      
+      // After batch creation, create history logs for imported assets
+      // Fetch created assets to get their IDs for history logging
+      const assetTagIds = assetsToCreate.map(asset => asset.assetTagId)
+      const createdAssets = await prisma.assets.findMany({
+        where: { 
+          assetTagId: { in: assetTagIds }
+        },
+        select: { id: true, assetTagId: true, createdAt: true }
+      })
+      
+      // Only create history logs for assets that don't already have an 'added' event
+      // This prevents duplicate history logs if import is run multiple times
+      const existingHistoryLogs = await prisma.assetsHistoryLogs.findMany({
+        where: {
+          assetId: { in: createdAssets.map(a => a.id) },
+          eventType: 'added'
+        },
+        select: { assetId: true }
+      })
+      
+      const existingAssetIds = new Set(existingHistoryLogs.map(log => log.assetId))
+      const assetsNeedingHistoryLogs = createdAssets.filter(asset => !existingAssetIds.has(asset.id))
+      
+      // Create history logs for each imported asset
+      if (assetsNeedingHistoryLogs.length > 0) {
+        const historyLogsToCreate = assetsNeedingHistoryLogs.map(asset => ({
+          assetId: asset.id,
+          eventType: 'added',
+          actionBy: userName,
+          eventDate: asset.createdAt,
+        }))
+        
+        await prisma.assetsHistoryLogs.createMany({
+          data: historyLogsToCreate,
+          skipDuplicates: true
+        })
+      }
     }
 
     // After batch creation, process audit history records for assets with audit data

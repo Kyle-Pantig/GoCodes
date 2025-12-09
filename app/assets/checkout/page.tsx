@@ -350,7 +350,7 @@ function CheckoutPageContent() {
     params.delete('assetId')
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
     router.replace(newUrl)
-    hasProcessedUrlParams.current = false
+    // Don't reset hasProcessedUrlParams here - let it be controlled by the caller
   }, [searchParams, router])
 
   // Handle URL query parameters for assetId
@@ -430,6 +430,10 @@ function CheckoutPageContent() {
       site: "",
       location: "",
     })
+    // Only reset the flag if URL params are already cleared (allows new URL params to be processed)
+    if (!searchParams.get('assetId')) {
+      hasProcessedUrlParams.current = false
+    }
   }
 
   // Handle QR code scan result
@@ -501,10 +505,27 @@ function CheckoutPageContent() {
 
       return response.json()
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["assets"] })
-      queryClient.invalidateQueries({ queryKey: ["checkout-stats"] })
+    onSuccess: async (data) => {
+      // Invalidate and refetch queries
+      await queryClient.invalidateQueries({ queryKey: ["assets"] })
+      // Invalidate history logs for all checked out assets
+      if (data?.checkouts && Array.isArray(data.checkouts)) {
+        data.checkouts.forEach((checkout: { assetId: string }) => {
+          queryClient.invalidateQueries({ queryKey: ["historyLogs", checkout.assetId] })
+          queryClient.invalidateQueries({ queryKey: ["checkoutHistory", checkout.assetId] })
+        })
+      }
+      // Invalidate checkout stats query - this will trigger refetch
+      queryClient.invalidateQueries({ 
+        queryKey: ["checkout-stats"],
+        refetchType: 'all' // Refetch all matching queries (active and inactive)
+      })
+      // Mark URL params as processed BEFORE clearing form to prevent re-processing
+      hasProcessedUrlParams.current = true
+      // Also explicitly refetch to ensure immediate update
+      refetchCheckoutStats()
       toast.success('Assets checked out successfully')
+      clearUrlParams()
       clearForm()
     },
     onError: (error: Error) => {
@@ -574,16 +595,29 @@ function CheckoutPageContent() {
   const totalAvailableAssets = summaryData?.summary?.availableAssets || 0
   const selectedAssetsCount = selectedAssets.length
   
-  // Fetch employees count for statistics
+  // Fetch employees count for statistics - fetch all pages to get complete list
   const { data: employees = [] } = useQuery<EmployeeUser[]>({
     queryKey: ["employees", "checkout-stats"],
     queryFn: async () => {
-      const response = await fetch("/api/employees")
+      let allEmployees: EmployeeUser[] = []
+      let page = 1
+      let hasMore = true
+      const pageSize = 1000 // Large page size to minimize requests
+      
+      while (hasMore) {
+        const response = await fetch(`/api/employees?page=${page}&pageSize=${pageSize}`)
       if (!response.ok) {
         throw new Error('Failed to fetch employees')
       }
       const data = await response.json()
-      return (data.employees || []) as EmployeeUser[]
+        
+        allEmployees = [...allEmployees, ...(data.employees || [])]
+        
+        hasMore = data.pagination?.hasNextPage || false
+        page++
+      }
+      
+      return allEmployees
     },
     enabled: canViewAssets,
     retry: 2,
@@ -592,7 +626,7 @@ function CheckoutPageContent() {
   const availableEmployeesCount = employees.length
 
   // Fetch checkout statistics
-  const { data: checkoutStats, isLoading: isLoadingCheckoutStats, error: checkoutStatsError } = useQuery<{
+  const { data: checkoutStats, isLoading: isLoadingCheckoutStats, error: checkoutStatsError, refetch: refetchCheckoutStats } = useQuery<{
     recentCheckouts: Array<{
       id: string
       checkoutDate: string
@@ -612,7 +646,9 @@ function CheckoutPageContent() {
   }>({
     queryKey: ["checkout-stats"],
     queryFn: async () => {
-      const response = await fetch("/api/assets/checkout/stats")
+      const response = await fetch("/api/assets/checkout/stats", {
+        cache: 'no-store', // Don't cache the fetch request
+      })
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         throw new Error(errorData.error || 'Failed to fetch checkout statistics')
@@ -631,6 +667,9 @@ function CheckoutPageContent() {
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 3000),
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
+    refetchOnMount: true, // Always refetch when component mounts
+    staleTime: 0, // Always consider data stale to allow immediate refetch
+    placeholderData: (previousData) => previousData, // Keep showing previous data during refetch
   })
 
   // Calculate time ago
@@ -798,7 +837,7 @@ function CheckoutPageContent() {
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-0">
-            {permissionsLoading || isLoadingCheckoutStats ? (
+            {permissionsLoading || (isLoadingCheckoutStats && !checkoutStats) ? (
               <div className="flex items-center justify-center py-8">
                 <div className="flex flex-col items-center gap-3">
                   <Spinner variant="default" size={24} className="text-muted-foreground" />
@@ -818,7 +857,7 @@ function CheckoutPageContent() {
                 Failed to load history. Please try again.
               </p>
             ) : recentCheckouts.length > 0 ? (
-              <ScrollArea className="h-52">
+              <ScrollArea className="h-52" key={`checkout-history-${recentCheckouts.length}-${recentCheckouts[0]?.id}`}>
                 <div className="relative w-full">
                   <Table className="w-full caption-bottom text-sm">
                     <TableHeader className="sticky top-0 z-0 bg-card">
@@ -832,7 +871,7 @@ function CheckoutPageContent() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    <AnimatePresence mode='popLayout'>
+                    <AnimatePresence mode='popLayout' initial={false}>
                       {recentCheckouts.map((checkout, index) => (
                         <motion.tr
                           key={checkout.id}

@@ -74,16 +74,29 @@ export function EmployeeSelectField({
     setMounted(true)
   }, [])
 
-  // Fetch employees
+  // Fetch employees - fetch all pages to get complete list
   const { data: employees = [], isLoading: isLoadingEmployees } = useQuery<EmployeeUser[]>({
     queryKey,
     queryFn: async () => {
-      const response = await fetch('/api/employees')
+      let allEmployees: EmployeeUser[] = []
+      let page = 1
+      let hasMore = true
+      const pageSize = 1000 // Large page size to minimize requests
+      
+      while (hasMore) {
+        const response = await fetch(`/api/employees?page=${page}&pageSize=${pageSize}`)
       if (!response.ok) {
         throw new Error('Failed to fetch employees')
       }
       const data = await response.json()
-      return (data.employees || []) as EmployeeUser[]
+        
+        allEmployees = [...allEmployees, ...(data.employees || [])]
+        
+        hasMore = data.pagination?.hasNextPage || false
+        page++
+      }
+      
+      return allEmployees
     },
     retry: 2,
     retryDelay: 1000,

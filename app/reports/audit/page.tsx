@@ -752,7 +752,7 @@ function AuditReportsPageContent() {
               </CardContent>
                 
                 {/* Pagination Bar - Fixed at Bottom */}
-                <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-b-lg">
+                <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-b-2xl">
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3">
                     {/* Left Side - Navigation */}
                     <div className="flex items-center justify-center sm:justify-start gap-2">

@@ -45,16 +45,10 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
         }
       }
     }
-    // Default visible tabs
+    // Default visible tabs: Checkout, Checkin, New Assets
     return new Set([
       'checked-out',
       'checked-in',
-      'under-repair',
-      'move',
-      'reserve',
-      'lease',
-      'return',
-      'dispose',
       'new-assets',
     ])
   })

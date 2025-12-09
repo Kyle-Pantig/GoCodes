@@ -359,7 +359,7 @@ function CheckinPageContent() {
     params.delete('assetId')
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
     router.replace(newUrl)
-    hasProcessedUrlParams.current = false
+    // Don't reset hasProcessedUrlParams here - let it be controlled by the caller
   }, [searchParams, router])
 
   // Handle URL query parameters for assetId
@@ -455,8 +455,10 @@ function CheckinPageContent() {
       checkinDate: new Date().toISOString().split('T')[0],
       assetUpdates: [],
     })
-    // Reset the URL params processed flag so new URL params can be processed
-    hasProcessedUrlParams.current = false
+    // Only reset the flag if URL params are already cleared (allows new URL params to be processed)
+    if (!searchParams.get('assetId')) {
+      hasProcessedUrlParams.current = false
+    }
   }
 
   // Handle QR code scan result
@@ -567,12 +569,26 @@ function CheckinPageContent() {
 
       return response.json()
     },
-    onSuccess: () => {
+    onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ["assets"] })
       queryClient.invalidateQueries({ queryKey: ["checkin-stats"] })
+      
+      // Invalidate checkout history and history logs for each checked-in asset
+      if (data?.checkins && Array.isArray(data.checkins)) {
+        data.checkins.forEach((checkin: { assetId: string }) => {
+          queryClient.invalidateQueries({ queryKey: ["checkoutHistory", checkin.assetId] })
+          queryClient.invalidateQueries({ queryKey: ["historyLogs", checkin.assetId] })
+        })
+      }
+      
+      // Mark URL params as processed BEFORE clearing form to prevent re-processing
+      hasProcessedUrlParams.current = true
+      
+      // Refetch in background without removing existing data
+      refetchCheckinStats()
       toast.success('Assets checked in successfully')
-      clearForm()
       clearUrlParams()
+      clearForm()
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to check in assets')
@@ -669,7 +685,7 @@ function CheckinPageContent() {
   }
 
   // Fetch check-in statistics
-  const { data: checkinStats, isLoading: isLoadingCheckinStats, error: checkinStatsError } = useQuery<{
+  const { data: checkinStats, isLoading: isLoadingCheckinStats, error: checkinStatsError, refetch: refetchCheckinStats } = useQuery<{
     recentCheckins: Array<{
       id: string
       checkinDate: string
@@ -690,7 +706,9 @@ function CheckinPageContent() {
   }>({
     queryKey: ["checkin-stats"],
     queryFn: async () => {
-      const response = await fetch("/api/assets/checkin/stats")
+      const response = await fetch("/api/assets/checkin/stats", {
+        cache: 'no-store', // Don't cache the fetch request
+      })
       if (!response.ok) {
         throw new Error('Failed to fetch check-in statistics')
       }
@@ -700,6 +718,9 @@ function CheckinPageContent() {
     enabled: canViewAssets,
     retry: 2,
     retryDelay: 1000,
+    staleTime: 0, // Always consider data stale to allow immediate refetch
+    placeholderData: (previousData) => previousData, // Keep showing previous data during refetch
+    refetchOnMount: 'always', // Always refetch when component mounts
   })
 
   // Calculate time ago
@@ -878,7 +899,7 @@ function CheckinPageContent() {
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-0">
-            {permissionsLoading || isLoadingCheckinStats ? (
+            {permissionsLoading || (isLoadingCheckinStats && !checkinStats) ? (
               <div className="flex items-center justify-center py-8">
                 <div className="flex flex-col items-center gap-3">
                   <Spinner variant="default" size={24} className="text-muted-foreground" />
@@ -898,7 +919,7 @@ function CheckinPageContent() {
                 Failed to load history. Please try again.
               </p>
             ) : recentCheckins.length > 0 ? (
-              <ScrollArea className="h-52">
+              <ScrollArea className="h-52" key={`checkin-history-${recentCheckins.length}-${recentCheckins[0]?.id}`}>
                 <div className="relative w-full">
                   <Table className="w-full caption-bottom text-sm">
                     <TableHeader className="sticky top-0 z-0 bg-card">
@@ -912,7 +933,7 @@ function CheckinPageContent() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    <AnimatePresence mode='popLayout'>
+                    <AnimatePresence mode='popLayout' initial={false}>
                       {recentCheckins.map((checkin, index) => (
                         <motion.tr
                           key={checkin.id}

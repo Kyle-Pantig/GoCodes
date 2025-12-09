@@ -385,7 +385,7 @@ model AssetsHistoryLogs {
   assetId           String    @map("asset_id")
   asset             Assets    @relation(fields: [assetId], references: [id], onDelete: Cascade)
   
-  eventDate         DateTime  @default(now()) @map("event_date") @db.Date
+  eventDate         DateTime  @default(now()) @map("event_date")
   eventType         String    @map("event_type") @db.VarChar(50) // "added", "edited", "deleted"
   field             String?   @map("field") @db.VarChar(100) // Field name that was changed (only for edited events)
   changeFrom        String?   @map("change_from") @db.Text // Old value (only for edited events)

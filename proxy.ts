@@ -43,19 +43,25 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // Protect root and dashboard routes (but allow reset-password page)
-  if (request.nextUrl.pathname === '/' || request.nextUrl.pathname.startsWith('/dashboard')) {
-    if (!user) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/login'
-      return NextResponse.redirect(url)
-    }
+  // Public routes that don't require authentication
+  const publicRoutes = ['/login', '/signup', '/reset-password']
+  const isPublicRoute = publicRoutes.some(route => request.nextUrl.pathname.startsWith(route))
+  
+  // API routes should be handled by their own authentication checks
+  const isApiRoute = request.nextUrl.pathname.startsWith('/api')
+
+  // Protect all routes except public ones and API routes
+  // API routes handle their own authentication
+  if (!isPublicRoute && !isApiRoute && !user) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
   }
 
-  // Redirect authenticated users away from login page
+  // Redirect authenticated users away from login/signup pages
   // Note: Inactive user check is handled client-side via use-permissions hook
   // and API routes, as proxy runs on Edge Runtime which doesn't support Prisma
-  if (request.nextUrl.pathname.startsWith('/login')) {
+  if (request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup')) {
     if (user) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'

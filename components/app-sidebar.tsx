@@ -251,6 +251,10 @@ const data = {
           url: "/account",
         },
         {
+          title: "Asset Events",
+          url: "/settings/asset-events",
+        },
+        {
           title: "Users",
           url: "/settings/users",
         },

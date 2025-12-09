@@ -672,8 +672,8 @@ function AssetEventsPageContent() {
 
       <Card className="pb-0 gap-0">
         <CardHeader className='shrink-0 pb-3'>
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div className="flex items-center w-full md:flex-1 md:max-w-md border rounded-md overflow-hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div className="flex items-center w-full lg:flex-1 lg:max-w-md border rounded-md overflow-hidden">
               <Select
                 value={searchType}
                 onValueChange={(value: 'unified' | 'assetTag' | 'field' | 'actionBy' | 'changeFrom' | 'changeTo') => {
@@ -728,7 +728,7 @@ function AssetEventsPageContent() {
                 />
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-nowrap w-full lg:w-auto">
               {/* Event Type Filter */}
               <Select
                 value={eventType}
@@ -737,7 +737,7 @@ function AssetEventsPageContent() {
                   updateURL({ eventType: value, page: 1 })
                 }}
               >
-                <SelectTrigger className="w-[140px] h-8">
+                <SelectTrigger className="flex-1 lg:w-[140px] h-8 min-w-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -756,7 +756,7 @@ function AssetEventsPageContent() {
                   updateURL({ field: value, page: 1 })
                 }}
               >
-                <SelectTrigger className="w-[140px] h-8">
+                <SelectTrigger className="flex-1 lg:w-[140px] h-8 min-w-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -773,7 +773,7 @@ function AssetEventsPageContent() {
                   size="sm"
                   onClick={handleBulkDelete}
                   disabled={bulkDeleteMutation.isPending}
-                  className="flex-1 md:flex-initial"
+                  className="flex-1 lg:flex-initial shrink-0"
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete Selected ({selectedCount})
@@ -786,7 +786,7 @@ function AssetEventsPageContent() {
                   setIsManualRefresh(true)
                   queryClient.invalidateQueries({ queryKey: ['asset-events'] })
                 }}
-                className="h-8 w-8"
+                className="h-8 w-8 shrink-0"
                 title="Refresh table"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -899,7 +899,7 @@ function AssetEventsPageContent() {
         </CardContent>
         
         {/* Pagination Bar - Fixed at Bottom */}
-        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-b-lg">
+        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-b-2xl">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3">
             <div className="flex items-center justify-center sm:justify-start gap-2">
               <Button

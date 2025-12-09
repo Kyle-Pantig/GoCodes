@@ -308,6 +308,10 @@ export async function POST(
     const assignedTo = activeCheckout?.employeeUser?.name || 'N/A'
     const issuedTo = asset.issuedTo || 'N/A'
 
+    // Find the creator from history logs (eventType: 'added')
+    const creationLog = historyLogs.find((log: { eventType: string }) => log.eventType === 'added')
+    const createdBy = creationLog?.actionBy || 'N/A'
+
     // Generate HTML with tables
     const html = `
       <!DOCTYPE html>
@@ -352,7 +356,6 @@ export async function POST(
           <!-- Basic Details Table -->
           <h2>Basic Details</h2>
           <table>
-            <tr><th style="width: 30%;">Field</th><th>Value</th></tr>
             <tr><td class="field-label">Asset Tag ID</td><td>${asset.assetTagId}</td></tr>
             <tr><td class="field-label">Purchase Date</td><td>${formatDate(asset.purchaseDate)}</td></tr>
             <tr><td class="field-label">Cost</td><td>${formatCurrency(asset.cost ? Number(asset.cost) : null)}</td></tr>
@@ -381,6 +384,26 @@ export async function POST(
             <tr><td class="field-label">Remarks</td><td>${asset.remarks || 'N/A'}</td></tr>
             <tr><td class="field-label">Unaccounted Inventory</td><td>${asset.unaccountedInventory || 'N/A'}</td></tr>
             <tr><td class="field-label">Description</td><td>${asset.description || 'N/A'}</td></tr>
+          </table>
+
+          ${activeCheckout ? `
+          <!-- Check out Section -->
+          <h2>Check out</h2>
+          <table>
+            <tr><td class="field-label">Checkout Date</td><td>${formatDate(activeCheckout.checkoutDate)}</td></tr>
+            <tr><td class="field-label">Expected Return Date</td><td>${activeCheckout.expectedReturnDate ? formatDate(activeCheckout.expectedReturnDate) : 'N/A'}</td></tr>
+            ${activeCheckout.employeeUser ? `
+            <tr><td class="field-label">Assigned To</td><td>${activeCheckout.employeeUser.name || 'N/A'}</td></tr>
+            ${activeCheckout.employeeUser.email ? `<tr><td class="field-label">Employee Email</td><td>${activeCheckout.employeeUser.email}</td></tr>` : ''}
+            ${activeCheckout.employeeUser.department ? `<tr><td class="field-label">Department</td><td>${activeCheckout.employeeUser.department}</td></tr>` : ''}
+            ` : ''}
+          </table>
+          ` : ''}
+
+          <!-- Creation Section -->
+          <h2>Creation</h2>
+          <table>
+            <tr><td class="field-label">Created By</td><td>${createdBy}</td></tr>
             <tr><td class="field-label">Created At</td><td>${formatDate(asset.createdAt)}</td></tr>
             <tr><td class="field-label">Updated At</td><td>${formatDate(asset.updatedAt)}</td></tr>
           </table>

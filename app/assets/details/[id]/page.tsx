@@ -493,7 +493,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const { data: historyData, isLoading: isLoadingHistory } = useQuery({
     queryKey: ['asset-history', resolvedParams.id],
     queryFn: () => fetchHistoryLogs(resolvedParams.id),
-    enabled: !!resolvedParams.id && activeTab === 'history',
+    enabled: !!resolvedParams.id && (activeTab === 'history' || activeTab === 'details'),
   })
 
   const { data: maintenanceData, isLoading: isLoadingMaintenance } = useQuery({
@@ -511,6 +511,10 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const historyLogs = historyData?.logs || []
   const maintenances = maintenanceData?.maintenances || []
   const reservations = reserveData?.reservations || []
+  
+  // Find the creator from history logs (eventType: 'added')
+  const creationLog = historyLogs.find((log: { eventType: string }) => log.eventType === 'added')
+  const createdBy = creationLog?.actionBy || 'N/A'
 
   if (assetLoading || isFetching) {
     return (
@@ -1251,6 +1255,54 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               <p className="text-xs font-medium text-muted-foreground mb-1">Unaccounted Inventory</p>
               <p className="text-sm">{asset.unaccountedInventory ? 'Yes' : 'No'}</p>
             </div>
+            {asset.description && (
+              <div className="md:col-span-2">
+                <p className="text-xs font-medium text-muted-foreground mb-1">Description</p>
+                <p className="text-sm">{asset.description}</p>
+              </div>
+            )}
+            {activeCheckout && (
+              <>
+                <div className="md:col-span-2 pt-2 border-t">
+                  <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Check out</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Checkout Date</p>
+                  <p className="text-sm">{formatDateTime(activeCheckout.checkoutDate || null)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Expected Return Date</p>
+                  <p className="text-sm">{activeCheckout.expectedReturnDate ? formatDateTime(activeCheckout.expectedReturnDate) : 'N/A'}</p>
+                </div>
+                {activeCheckout.employeeUser && (
+                  <>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Assigned To</p>
+                      <p className="text-sm">{activeCheckout.employeeUser.name || 'N/A'}</p>
+                    </div>
+                    {activeCheckout.employeeUser.email && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Employee Email</p>
+                        <p className="text-sm">{activeCheckout.employeeUser.email}</p>
+                      </div>
+                    )}
+                    {activeCheckout.employeeUser.department && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Department</p>
+                        <p className="text-sm">{activeCheckout.employeeUser.department}</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+            <div className="md:col-span-2 pt-2 border-t">
+              <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Creation</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Created By</p>
+              <p className="text-sm">{createdBy}</p>
+            </div>
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-1">Created At</p>
               <p className="text-sm">{formatDateTime(asset.createdAt || null)}</p>
@@ -1259,12 +1311,6 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               <p className="text-xs font-medium text-muted-foreground mb-1">Updated At</p>
               <p className="text-sm">{formatDateTime(asset.updatedAt || null)}</p>
             </div>
-            {asset.description && (
-              <div className="md:col-span-2">
-                <p className="text-xs font-medium text-muted-foreground mb-1">Description</p>
-                <p className="text-sm">{asset.description}</p>
-              </div>
-            )}
           </div>
         </motion.div>
         )}
@@ -1644,7 +1690,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                       return (
                         <TableRow key={log.id}>
                           <TableCell className="font-medium">
-                            {formatDate(log.eventDate)}
+                            {formatDateTime(log.eventDate)}
                           </TableCell>
                           <TableCell>
                             <span className={`px-2 py-1 text-xs font-medium rounded ${

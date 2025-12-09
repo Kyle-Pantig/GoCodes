@@ -378,7 +378,7 @@ function MaintenancePageContent() {
     params.delete('status')
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
     router.replace(newUrl)
-    hasProcessedUrlParams.current = false
+    // Don't reset hasProcessedUrlParams here - let it be controlled by the caller
   }, [searchParams, router])
 
   // Handle URL query parameters for assetId and status
@@ -539,14 +539,16 @@ function MaintenancePageContent() {
       return response.json()
     },
     onSuccess: async () => {
+      // Mark URL params as processed BEFORE clearing form to prevent re-processing
+      hasProcessedUrlParams.current = true
       queryClient.invalidateQueries({ queryKey: ["assets"] })
       queryClient.invalidateQueries({ queryKey: ["maintenance-stats"] })
       // Explicitly refetch the maintenance stats to update the recent history table
       await refetchMaintenanceStats()
       toast.success('Maintenance record created successfully')
       // Reset form and clear URL params
-      clearForm()
       clearUrlParams()
+      clearForm()
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to create maintenance')
@@ -606,8 +608,10 @@ function MaintenancePageContent() {
       dateCancelled: '',
       isRepeating: false,
     })
-    // Reset the URL params processed flag so new URL params can be processed
-    hasProcessedUrlParams.current = false
+    // Only reset the flag if URL params are already cleared (allows new URL params to be processed)
+    if (!searchParams.get('assetId')) {
+      hasProcessedUrlParams.current = false
+    }
   }
 
   // Handle QR code scan result

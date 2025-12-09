@@ -71,6 +71,9 @@ interface Asset {
       email: string
       department: string | null
     } | null
+    checkins?: Array<{
+      id: string
+    }>
   }>
   leases?: Array<{
     id: string
@@ -176,7 +179,9 @@ function MoveAssetPageContent() {
   }>({
     queryKey: ["move-stats"],
     queryFn: async () => {
-      const response = await fetch("/api/assets/move/stats")
+      const response = await fetch("/api/assets/move/stats", {
+        cache: 'no-store', // Don't cache the fetch request
+      })
       if (!response.ok) {
         throw new Error('Failed to fetch move statistics')
       }
@@ -186,6 +191,8 @@ function MoveAssetPageContent() {
     enabled: canViewAssets,
     retry: 2,
     retryDelay: 1000,
+    staleTime: 0, // Always consider data stale to allow immediate refetch
+    placeholderData: (previousData) => previousData, // Keep showing previous data during refetch
   })
 
   // Format date for display
@@ -349,7 +356,11 @@ function MoveAssetPageContent() {
     }
     
     if (moveType === 'Employee Assignment') {
-      const currentEmployeeId = assetToAdd.checkouts?.[0]?.employeeUser?.id
+      // Find active checkout (one without checkins)
+      const activeCheckout = assetToAdd.checkouts?.find(
+        (checkout) => !checkout.checkins || checkout.checkins.length === 0
+      )
+      const currentEmployeeId = activeCheckout?.employeeUser?.id
       if (currentEmployeeId) {
         form.setValue('employeeUserId', currentEmployeeId, { shouldValidate: false })
         form.clearErrors('employeeUserId')
@@ -433,7 +444,7 @@ function MoveAssetPageContent() {
     params.delete('assetId')
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
     router.replace(newUrl)
-    hasProcessedUrlParams.current = false
+    // Don't reset hasProcessedUrlParams here - let it be controlled by the caller
   }, [searchParams, router])
 
   // Handle URL query parameters for assetId
@@ -481,6 +492,36 @@ function MoveAssetPageContent() {
     }
   }, [searchParams, selectedAsset, form, clearUrlParams])
 
+  // Refetch selected asset when window regains focus (to catch updates from other tabs/components)
+  useEffect(() => {
+    if (!selectedAsset) return
+
+    const handleFocus = () => {
+      // Refetch asset data when window regains focus to catch any updates
+      const refetchAsset = async () => {
+        try {
+          const response = await fetch(`/api/assets/${selectedAsset.id}?_t=${Date.now()}`)
+          if (response.ok) {
+            const result = await response.json()
+            const updatedAsset = result.asset as Asset
+            // Only update if asset ID matches
+            if (updatedAsset.id === selectedAsset.id) {
+              setSelectedAsset(updatedAsset)
+            }
+          }
+        } catch {
+          // Silently fail - don't disrupt user experience
+        }
+      }
+      refetchAsset()
+    }
+
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [selectedAsset])
+
   // Track form changes to show floating buttons - only show when asset is selected
   const isFormDirty = useMemo(() => {
     // Only show floating buttons when an asset is actually selected
@@ -501,8 +542,10 @@ function MoveAssetPageContent() {
       reason: '',
       notes: '',
     })
-    // Reset the URL params processed flag so new URL params can be processed
-    hasProcessedUrlParams.current = false
+    // Only reset the flag if URL params are already cleared (allows new URL params to be processed)
+    if (!searchParams.get('assetId')) {
+      hasProcessedUrlParams.current = false
+    }
   }
 
   // Handle QR code scan result
@@ -539,7 +582,11 @@ function MoveAssetPageContent() {
       form.setValue('department', '', { shouldValidate: false })
       form.clearErrors(['location', 'employeeUserId', 'department'])
     } else if (value === 'Employee Assignment') {
-      const currentEmployeeId = selectedAsset?.checkouts?.[0]?.employeeUser?.id
+      // Find active checkout (one without checkins)
+      const activeCheckout = selectedAsset?.checkouts?.find(
+        (checkout) => !checkout.checkins || checkout.checkins.length === 0
+      )
+      const currentEmployeeId = activeCheckout?.employeeUser?.id
       form.setValue('employeeUserId', currentEmployeeId || '', { shouldValidate: false })
       form.setValue('location', '', { shouldValidate: false })
       form.setValue('department', '', { shouldValidate: false })
@@ -590,6 +637,8 @@ function MoveAssetPageContent() {
       queryClient.invalidateQueries({ queryKey: ["assets"] })
       queryClient.invalidateQueries({ queryKey: ["move-stats"] })
       queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "asset-move-suggestions" })
+      // Refetch in background without removing existing data
+      queryClient.refetchQueries({ queryKey: ["move-stats"] })
       
       // Fetch fresh asset data to update selectedAsset if it's still selected
       if (selectedAsset && selectedAsset.id === variables.assetId) {
@@ -605,9 +654,11 @@ function MoveAssetPageContent() {
         }
       }
       
+      // Mark URL params as processed BEFORE clearing form to prevent re-processing
+      hasProcessedUrlParams.current = true
       toast.success('Asset moved successfully')
-      clearForm()
       clearUrlParams()
+      clearForm()
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to move asset')
@@ -677,7 +728,7 @@ function MoveAssetPageContent() {
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-0">
-            {permissionsLoading || isLoadingMoveStats ? (
+            {permissionsLoading || (isLoadingMoveStats && !moveStats) ? (
               <div className="flex items-center justify-center py-8">
                 <div className="flex flex-col items-center gap-3">
                   <Spinner variant="default" size={24} className="text-muted-foreground" />
@@ -697,7 +748,7 @@ function MoveAssetPageContent() {
                 Failed to load history. Please try again.
               </p>
             ) : recentMoves.length > 0 ? (
-              <ScrollArea className="h-52">
+              <ScrollArea className="h-52" key={`move-history-${recentMoves.length}-${recentMoves[0]?.id}`}>
                 <div className="relative w-full">
                   <Table className="w-full caption-bottom text-sm">
                     <TableHeader className="sticky top-0 z-0 bg-card">
@@ -711,7 +762,7 @@ function MoveAssetPageContent() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    <AnimatePresence mode='popLayout'>
+                    <AnimatePresence mode='popLayout' initial={false}>
                       {recentMoves.map((move, index) => (
                         <motion.tr
                           key={move.id}
@@ -939,11 +990,17 @@ function MoveAssetPageContent() {
                         Current Department: {selectedAsset.department}
                       </p>
                     )}
-                    {selectedAsset.status === "Checked out" && selectedAsset.checkouts?.[0]?.employeeUser && (
+                    {selectedAsset.status === "Checked out" && (() => {
+                      // Find active checkout (one without checkins)
+                      const activeCheckout = selectedAsset.checkouts?.find(
+                        (checkout: { checkins?: Array<{ id: string }> }) => !checkout.checkins || checkout.checkins.length === 0
+                      )
+                      return activeCheckout?.employeeUser ? (
                       <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-                        Assigned to: {selectedAsset.checkouts[0].employeeUser.name} ({selectedAsset.checkouts[0].employeeUser.email}){selectedAsset.checkouts[0].employeeUser.department && <span className="text-muted-foreground"> - {selectedAsset.checkouts[0].employeeUser.department}</span>}
+                          Assigned to: {activeCheckout.employeeUser.name} ({activeCheckout.employeeUser.email}){activeCheckout.employeeUser.department && <span className="text-muted-foreground"> - {activeCheckout.employeeUser.department}</span>}
                       </p>
-                    )}
+                      ) : null
+                    })()}
         </div>
       </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -1054,7 +1111,13 @@ function MoveAssetPageContent() {
                         label="Assign To Employee"
                         required
                         disabled={!canViewAssets || !canMove || !selectedAsset}
-                        currentEmployeeId={selectedAsset?.checkouts?.[0]?.employeeUser?.id}
+                        currentEmployeeId={(() => {
+                          // Find active checkout (one without checkins)
+                          const activeCheckout = selectedAsset?.checkouts?.find(
+                            (checkout) => !checkout.checkins || checkout.checkins.length === 0
+                          )
+                          return activeCheckout?.employeeUser?.id
+                        })()}
                         queryKey={["employees", "move"]}
                         error={fieldState.error}
                       />

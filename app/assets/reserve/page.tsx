@@ -150,7 +150,9 @@ function ReserveAssetPageContent() {
   }>({
     queryKey: ["reserve-stats"],
     queryFn: async () => {
-      const response = await fetch("/api/assets/reserve/stats")
+      const response = await fetch("/api/assets/reserve/stats", {
+        cache: 'no-store', // Don't cache the fetch request
+      })
       if (!response.ok) {
         throw new Error('Failed to fetch reservation statistics')
       }
@@ -160,6 +162,8 @@ function ReserveAssetPageContent() {
     enabled: canViewAssets,
     retry: 2,
     retryDelay: 1000,
+    staleTime: 0, // Always consider data stale to allow immediate refetch
+    placeholderData: (previousData) => previousData, // Keep showing previous data during refetch
   })
 
   // Format date for display
@@ -403,7 +407,7 @@ function ReserveAssetPageContent() {
     params.delete('assetId')
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
     router.replace(newUrl)
-    hasProcessedUrlParams.current = false
+    // Don't reset hasProcessedUrlParams here - let it be controlled by the caller
   }, [searchParams, router])
 
   // Handle URL query parameters for assetId
@@ -466,6 +470,10 @@ function ReserveAssetPageContent() {
       purpose: '',
       notes: '',
     })
+    // Only reset the flag if URL params are already cleared (allows new URL params to be processed)
+    if (!searchParams.get('assetId')) {
+      hasProcessedUrlParams.current = false
+    }
   }
 
   // Handle QR code scan result
@@ -561,6 +569,8 @@ function ReserveAssetPageContent() {
       queryClient.invalidateQueries({ queryKey: ["assets"] })
       queryClient.invalidateQueries({ queryKey: ["reserve-stats"] })
       queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "asset-reserve-suggestions" })
+      // Refetch in background without removing existing data
+      queryClient.refetchQueries({ queryKey: ["reserve-stats"] })
       
       // Fetch fresh asset data to update selectedAsset if it's still selected
       if (selectedAsset && selectedAsset.id === variables.assetId) {
@@ -576,9 +586,11 @@ function ReserveAssetPageContent() {
         }
       }
       
+      // Mark URL params as processed BEFORE clearing form to prevent re-processing
+      hasProcessedUrlParams.current = true
       toast.success('Asset reserved successfully')
-      clearForm()
       clearUrlParams()
+      clearForm()
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to reserve asset')
@@ -647,7 +659,7 @@ function ReserveAssetPageContent() {
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-0">
-            {permissionsLoading || isLoadingReserveStats ? (
+            {permissionsLoading || (isLoadingReserveStats && !reserveStats) ? (
               <div className="flex items-center justify-center py-8">
                 <div className="flex flex-col items-center gap-3">
                   <Spinner variant="default" size={24} className="text-muted-foreground" />
@@ -667,7 +679,7 @@ function ReserveAssetPageContent() {
                 Failed to load history. Please try again.
               </p>
             ) : recentReservations.length > 0 ? (
-              <ScrollArea className="h-52">
+              <ScrollArea className="h-52" key={`reserve-history-${recentReservations.length}-${recentReservations[0]?.id}`}>
                 <div className="relative w-full">
                   <Table className="w-full caption-bottom text-sm">
                     <TableHeader className="sticky top-0 z-0 bg-card">
@@ -682,7 +694,7 @@ function ReserveAssetPageContent() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    <AnimatePresence mode='popLayout'>
+                    <AnimatePresence mode='popLayout' initial={false}>
                       {recentReservations.map((reservation, index) => (
                         <motion.tr
                           key={reservation.id}

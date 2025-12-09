@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyAuth } from '@/lib/auth-utils'
-import { parseDate } from '@/lib/date-utils'
+import { parseDate, parseDateTime } from '@/lib/date-utils'
 import { requirePermission } from '@/lib/permission-utils'
 
 // PATCH - Update a checkout record (e.g., assign employee)
@@ -21,6 +21,13 @@ export async function PATCH(
     const { checkoutId } = await params
     const body = await request.json()
 
+    // Get user info for history logging
+    const userName = auth.user.user_metadata?.name || 
+                     auth.user.user_metadata?.full_name || 
+                     auth.user.email?.split('@')[0] || 
+                     auth.user.email || 
+                     auth.user.id
+
     const updateData: Record<string, unknown> = {}
 
     if (body.employeeUserId !== undefined) {
@@ -35,6 +42,26 @@ export async function PATCH(
       updateData.expectedReturnDate = body.expectedReturnDate ? parseDate(body.expectedReturnDate) : null
     }
 
+    // Get current checkout to capture old employee assignment
+    const currentCheckout = await prisma.assetsCheckout.findUnique({
+      where: { id: checkoutId },
+      include: {
+        asset: true,
+        employeeUser: true,
+      },
+    })
+
+    if (!currentCheckout) {
+      return NextResponse.json(
+        { error: 'Checkout record not found' },
+        { status: 404 }
+      )
+    }
+
+    const oldEmployeeUserId = currentCheckout.employeeUserId
+    const newEmployeeUserId = body.employeeUserId !== undefined ? (body.employeeUserId || null) : oldEmployeeUserId
+
+    // Update checkout record
     const checkout = await prisma.assetsCheckout.update({
       where: {
         id: checkoutId,
@@ -45,6 +72,57 @@ export async function PATCH(
         employeeUser: true,
       },
     })
+
+    // Log assignedEmployee change if employee changed
+    if (oldEmployeeUserId !== newEmployeeUserId) {
+      try {
+        // Get employee names for logging
+        const oldEmployee = oldEmployeeUserId 
+          ? await prisma.employeeUser.findUnique({ where: { id: oldEmployeeUserId } })
+          : null
+        const newEmployee = newEmployeeUserId
+          ? await prisma.employeeUser.findUnique({ where: { id: newEmployeeUserId } })
+          : null
+
+        const oldEmployeeName = oldEmployee?.name || oldEmployeeUserId || ''
+        const newEmployeeName = newEmployee?.name || newEmployeeUserId || ''
+
+        // Use checkout date or current date for eventDate
+        const eventDate = parseDateTime(body.checkoutDate) || checkout.checkoutDate || new Date()
+
+        // Create history log for assignedEmployee change
+        await prisma.assetsHistoryLogs.create({
+          data: {
+            assetId: checkout.assetId,
+            eventType: 'edited',
+            field: 'assignedEmployee',
+            changeFrom: oldEmployeeName,
+            changeTo: newEmployeeName,
+            actionBy: userName,
+            eventDate: eventDate instanceof Date ? eventDate : new Date(eventDate),
+          },
+        })
+      } catch (error) {
+        console.error('Error creating assignedEmployee history log:', error)
+        // Still try to create log with IDs as fallback
+        try {
+          await prisma.assetsHistoryLogs.create({
+            data: {
+              assetId: checkout.assetId,
+              eventType: 'edited',
+              field: 'assignedEmployee',
+              changeFrom: oldEmployeeUserId || '',
+              changeTo: newEmployeeUserId || '',
+              actionBy: userName,
+              eventDate: parseDateTime(body.checkoutDate) || checkout.checkoutDate || new Date(),
+            },
+          })
+        } catch (fallbackError) {
+          console.error('Error creating fallback history log:', fallbackError)
+          // Don't fail the request if history logging fails
+        }
+      }
+    }
 
     return NextResponse.json({ checkout })
   } catch (error) {

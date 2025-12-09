@@ -70,10 +70,26 @@ export async function GET(request: NextRequest) {
       })
     )
 
+    // Get unique field values for the filter dropdown
+    const uniqueFieldsResult = await retryDbOperation(() =>
+      prisma.assetsHistoryLogs.groupBy({
+        by: ['field'],
+        where: {
+          field: { not: null },
+        },
+      })
+    )
+
+    const uniqueFields = uniqueFieldsResult
+      .map((item) => item.field)
+      .filter((field): field is string => field !== null && field !== '')
+      .sort()
+
     const totalPages = Math.ceil(totalCount / pageSize)
 
     return NextResponse.json({
       logs,
+      uniqueFields,
       pagination: {
         page,
         pageSize,

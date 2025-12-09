@@ -125,3 +125,26 @@ export const parseDateOnlyString = (dateString: string | null | undefined): Date
   const date = new Date(dateString)
   return isNaN(date.getTime()) ? null : date
 }
+
+/**
+ * Parses a date string and returns a DateTime (timestamp) with current time if only date is provided
+ * Use this for eventDate fields that need to store timestamps
+ */
+export const parseDateTime = (dateString: string | null | undefined): Date | null => {
+  if (!dateString) {
+    return new Date() // Use current timestamp if no date provided
+  }
+  
+  // If it's a date-only string (YYYY-MM-DD), combine with current time
+  const yyyymmddMatch = dateString.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+  if (yyyymmddMatch) {
+    const [, year, month, day] = yyyymmddMatch
+    const now = new Date()
+    // Use the provided date but keep current time
+    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day), now.getHours(), now.getMinutes(), now.getSeconds())
+  }
+  
+  // Try parsing as full datetime string
+  const parsedDate = new Date(dateString)
+  return isNaN(parsedDate.getTime()) ? new Date() : parsedDate
+}

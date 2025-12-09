@@ -171,16 +171,12 @@ export function SignUpForm({
             </Button>
           </Field>
           
-          <FieldDescription>
+          <FieldDescription className="text-center">
             Already have an account? <Link href="/login" className="text-primary hover:underline">Login</Link>
           </FieldDescription>
           
         </FieldGroup>
       </form>
-      <FieldDescription className="px-6 text-center">
-        By clicking continue, you agree to our <a href="#">Terms of Service</a>{" "}
-        and <a href="#">Privacy Policy</a>.
-      </FieldDescription>
     </div>
   )
 }

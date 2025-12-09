@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useForm, Controller, type SubmitHandler } from 'react-hook-form'
@@ -174,7 +174,8 @@ function AutomatedReportsPageContent() {
   const { register, handleSubmit, control, reset, watch, setValue, clearErrors, formState: { errors } } = form
   const frequency = watch('frequency')
   const reportType = watch('reportType')
-  const formEmailRecipients = watch('emailRecipients') || []
+  const emailRecipientsValue = watch('emailRecipients')
+  const formEmailRecipients = useMemo(() => emailRecipientsValue || [], [emailRecipientsValue])
 
   const createMutation = useMutation({
     mutationFn: async (data: AutomatedReportScheduleFormData) => {

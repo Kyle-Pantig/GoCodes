@@ -132,7 +132,14 @@ export default function Permissions() {
 
   const isAdmin = permissions.role === 'admin'
   const enabledPermissions = Object.entries(permissions)
-    .filter(([key, value]) => key !== 'role' && value === true)
+    .filter(([key, value]) => {
+      // Exclude non-permission fields: role, isActive, isApproved
+      if (key === 'role' || key === 'isActive' || key === 'isApproved') {
+        return false
+      }
+      // Only include permissions that are true AND have a label defined
+      return value === true && key in permissionLabels
+    })
     .map(([key]) => key as keyof Omit<UserPermissions, 'role'>)
 
   return (

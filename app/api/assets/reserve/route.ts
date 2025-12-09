@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { parseDate } from '@/lib/date-utils'
+import { parseDate, parseDateTime } from '@/lib/date-utils'
 import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
+import { clearCache } from '@/lib/cache-utils'
 
 export async function GET(request: NextRequest) {
   const auth = await verifyAuth()
@@ -109,6 +110,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Get user info for history logging - use name from metadata, fallback to email
+    const userName = auth.user.user_metadata?.name || 
+                     auth.user.user_metadata?.full_name || 
+                     auth.user.email?.split('@')[0] || 
+                     auth.user.email || 
+                     auth.user.id
+
+    const parsedReservationDate = parseDateTime(reservationDate)!
+
     // Create reservation record in a transaction
     const result = await prisma.$transaction(async (tx) => {
       // Verify asset exists
@@ -118,6 +128,30 @@ export async function POST(request: NextRequest) {
 
       if (!asset) {
         throw new Error(`Asset with ID ${assetId} not found`)
+      }
+
+      // Prepare history logs
+      const historyLogs: Array<{
+        field: string
+        changeFrom: string
+        changeTo: string
+      }> = []
+
+      // Update asset status to "Reserved" if not already reserved
+      if (asset.status !== "Reserved") {
+        await tx.assets.update({
+          where: { id: assetId },
+          data: {
+            status: "Reserved",
+          },
+        })
+
+        // Log status change
+        historyLogs.push({
+          field: 'status',
+          changeFrom: asset.status || '',
+          changeTo: 'Reserved',
+        })
       }
 
       // Create reservation record (history tracking)
@@ -137,8 +171,32 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      // Create history logs for status change
+      if (historyLogs.length > 0) {
+        await Promise.all(
+          historyLogs.map((log) =>
+            tx.assetsHistoryLogs.create({
+              data: {
+                assetId,
+                eventType: 'edited',
+                field: log.field,
+                changeFrom: log.changeFrom,
+                changeTo: log.changeTo,
+                actionBy: userName,
+                eventDate: parsedReservationDate,
+              },
+            })
+          )
+        )
+      }
+
       return reservation
     })
+
+    // Invalidate dashboard and activities cache when reservation is created
+    await clearCache('dashboard-stats')
+    await clearCache('activities-')
+    await clearCache('stats-reserve') // Clear reserve stats cache for real-time updates
 
     return NextResponse.json({ 
       success: true,

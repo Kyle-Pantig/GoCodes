@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { parseDate } from '@/lib/date-utils'
+import { parseDate, parseDateTime } from '@/lib/date-utils'
 import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
 import { clearCache } from '@/lib/cache-utils'
@@ -44,18 +44,15 @@ export async function POST(request: NextRequest) {
       const checkinRecords = await Promise.all(
         assetIds.map(async (assetId: string) => {
           const assetUpdate = updates?.[assetId] || {}
-          // Get the asset and its most recent checkout
+          // Get the asset and all its checkouts
           const asset = await tx.assets.findUnique({
             where: { id: assetId },
             include: {
               checkouts: {
                 orderBy: { checkoutDate: 'desc' },
-                take: 1,
                 include: {
                   employeeUser: true,
-                  checkins: {
-                    take: 1,
-                  },
+                  checkins: true, // Get all checkins to determine if checkout is active
                 },
               },
             },
@@ -69,18 +66,17 @@ export async function POST(request: NextRequest) {
             throw new Error(`Asset ${asset.assetTagId} is not checked out. Current status: ${asset.status}`)
           }
 
-          // Get the most recent checkout that hasn't been checked in yet
-          const activeCheckout = asset.checkouts.find(
-            checkout => checkout.checkins.length === 0
-          ) || asset.checkouts[0]
+          // Get ALL active checkouts (those without checkins) that have employees assigned
+          const activeCheckouts = asset.checkouts.filter(
+            checkout => checkout.checkins.length === 0 && checkout.employeeUserId !== null
+          )
 
-          if (!activeCheckout) {
+          if (activeCheckouts.length === 0) {
             throw new Error(`No active checkout found for asset ${asset.assetTagId}`)
           }
 
-          if (!activeCheckout.employeeUserId) {
-            throw new Error(`Checkout record for asset ${asset.assetTagId} does not have an employee assigned`)
-          }
+          // Use the most recent active checkout for history logging
+          const activeCheckout = activeCheckouts[0]
 
           // Prepare history logs
           const historyLogs: Array<{
@@ -96,6 +92,30 @@ export async function POST(request: NextRequest) {
             changeFrom: asset.status,
             changeTo: 'Available',
           })
+
+          // Log assignedEmployee clearing (employee assignment ends when checked in)
+          if (activeCheckout.employeeUserId) {
+            try {
+              const employee = await tx.employeeUser.findUnique({ 
+                where: { id: activeCheckout.employeeUserId } 
+              })
+              const employeeName = employee?.name || activeCheckout.employeeUserId
+              
+              historyLogs.push({
+                field: 'assignedEmployee',
+                changeFrom: employeeName,
+                changeTo: '',
+              })
+            } catch (error) {
+              console.error('Error fetching employee for checkin history log:', error)
+              // Still log with employeeUserId as fallback
+              historyLogs.push({
+                field: 'assignedEmployee',
+                changeFrom: activeCheckout.employeeUserId,
+                changeTo: '',
+              })
+            }
+          }
 
           // Update asset status to Available and location if provided
           const assetUpdateData: Record<string, unknown> = {
@@ -137,19 +157,23 @@ export async function POST(request: NextRequest) {
                     changeFrom: log.changeFrom,
                     changeTo: log.changeTo,
                     actionBy: userName,
-                    eventDate: parseDate(checkinDate)!,
+                    eventDate: parseDateTime(checkinDate) || new Date(),
                   },
                 })
               )
             )
           }
 
-          // Create checkin record (history tracking)
-          const checkin = await tx.assetsCheckin.create({
+          // Create checkin records for ALL active checkouts (not just one)
+          // This ensures all active checkouts are marked as checked in
+          const checkinRecords = await Promise.all(
+            activeCheckouts.map(async (checkout) => {
+              // employeeUserId is guaranteed to be non-null due to filter above
+              return await tx.assetsCheckin.create({
             data: {
               assetId,
-              checkoutId: activeCheckout.id,
-              employeeUserId: activeCheckout.employeeUserId,
+                  checkoutId: checkout.id,
+                  employeeUserId: checkout.employeeUserId!,
               checkinDate: parseDate(checkinDate)!,
               condition: assetUpdate.condition || null,
               notes: assetUpdate.notes || null,
@@ -160,8 +184,11 @@ export async function POST(request: NextRequest) {
               checkout: true,
             },
           })
+            })
+          )
 
-          return checkin
+          // Return the most recent checkin record (for backward compatibility)
+          return checkinRecords[0]
         })
       )
 
@@ -171,6 +198,7 @@ export async function POST(request: NextRequest) {
     // Invalidate dashboard and activities cache when checkin is created
     await clearCache('dashboard-stats')
     await clearCache('activities-')
+    await clearCache('stats-checkin') // Clear checkin stats cache for real-time updates
 
     return NextResponse.json({ 
       success: true,

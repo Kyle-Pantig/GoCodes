@@ -14,7 +14,7 @@ export async function GET(
         assetId: assetId,
       },
       orderBy: {
-        createdAt: 'desc',
+        eventDate: 'desc',
       },
     })
 

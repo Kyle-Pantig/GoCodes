@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { parseDate } from '@/lib/date-utils'
+import { parseDate, parseDateTime } from '@/lib/date-utils'
 import { verifyAuth } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/permission-utils'
+import { clearCache } from '@/lib/cache-utils'
 
 export async function POST(request: NextRequest) {
   const auth = await verifyAuth()
@@ -135,10 +136,15 @@ export async function POST(request: NextRequest) {
               none: {}
             }
           },
+          include: {
+            employeeUser: true,
+          },
           orderBy: {
             checkoutDate: 'desc'
           }
         })
+
+        const oldEmployeeUserId = activeCheckout?.employeeUserId || null
 
         if (activeCheckout) {
           // Update existing checkout to reassign to new employee
@@ -149,6 +155,33 @@ export async function POST(request: NextRequest) {
               checkoutDate: parseDate(moveDate)!, // Update checkout date to move date
             },
           })
+
+          // Log assignedEmployee change if employee changed
+          if (oldEmployeeUserId !== employeeUserId) {
+            try {
+              const oldEmployee = oldEmployeeUserId
+                ? await tx.employeeUser.findUnique({ where: { id: oldEmployeeUserId } })
+                : null
+              const newEmployee = await tx.employeeUser.findUnique({ where: { id: employeeUserId } })
+
+              const oldEmployeeName = oldEmployee?.name || ''
+              const newEmployeeName = newEmployee?.name || ''
+
+              historyLogs.push({
+                field: 'assignedEmployee',
+                changeFrom: oldEmployeeName,
+                changeTo: newEmployeeName,
+              })
+            } catch (error) {
+              console.error('Error fetching employees for history log:', error)
+              // Still push log with IDs as fallback
+              historyLogs.push({
+                field: 'assignedEmployee',
+                changeFrom: oldEmployeeUserId || '',
+                changeTo: employeeUserId || '',
+              })
+            }
+          }
         } else {
           // No active checkout, create a new one
           await tx.assetsCheckout.create({
@@ -165,6 +198,26 @@ export async function POST(request: NextRequest) {
             changeFrom: asset.status || '',
             changeTo: 'Checked out',
           })
+
+          // Log initial employee assignment
+          try {
+            const newEmployee = await tx.employeeUser.findUnique({ where: { id: employeeUserId } })
+            const newEmployeeName = newEmployee?.name || ''
+            
+            historyLogs.push({
+              field: 'assignedEmployee',
+              changeFrom: '',
+              changeTo: newEmployeeName,
+            })
+          } catch (error) {
+            console.error('Error fetching employee for initial assignment log:', error)
+            // Still push log with ID as fallback
+            historyLogs.push({
+              field: 'assignedEmployee',
+              changeFrom: '',
+              changeTo: employeeUserId || '',
+            })
+          }
         }
       }
 
@@ -174,8 +227,9 @@ export async function POST(request: NextRequest) {
           where: { id: assetId },
           data: assetUpdateData,
         })
+      }
 
-        // Create history logs for each changed field
+      // Create history logs for each changed field (always create logs if there are any, even if asset wasn't updated)
         if (historyLogs.length > 0) {
           await Promise.all(
             historyLogs.map((log) =>
@@ -187,12 +241,11 @@ export async function POST(request: NextRequest) {
                   changeFrom: log.changeFrom,
                   changeTo: log.changeTo,
                   actionBy: userName,
-                  eventDate: parseDate(moveDate)!,
+                  eventDate: parseDateTime(moveDate) || new Date(),
                 },
               })
             )
           )
-        }
       }
 
       // Create move record (history tracking)
@@ -213,6 +266,11 @@ export async function POST(request: NextRequest) {
 
       return move
     })
+
+    // Invalidate dashboard and activities cache when move is created
+    await clearCache('dashboard-stats')
+    await clearCache('activities-')
+    await clearCache('stats-move') // Clear move stats cache for real-time updates
 
     return NextResponse.json({ 
       success: true,

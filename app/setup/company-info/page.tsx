@@ -699,7 +699,7 @@ export default function CompanyInfoPage() {
         transition={{ duration: 0.4 }}
         className="space-y-4"
       >
-        <Card className="border-dashed border-2">
+        <Card>
           <CardHeader>
             <CardTitle>Company Info</CardTitle>
             <CardDescription>Manage company information and logos</CardDescription>

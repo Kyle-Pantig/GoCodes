@@ -3,8 +3,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog,
@@ -29,7 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ArrowRight, Calendar, CheckCircle, Clock, UserPlus, UserCircle, Edit2, X, Check, History, Save } from 'lucide-react'
+import { UserPlus, X, Check, History, Save, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { cn } from '@/lib/utils'
@@ -37,13 +35,14 @@ import { cn } from '@/lib/utils'
 interface CheckoutManagerProps {
   assetId: string
   assetTagId: string
+  assetStatus?: string // Asset status to check if reserved
   invalidateQueryKey?: string[] // Optional query key to invalidate after updates
   readOnly?: boolean // If true, disable editing functionality
   open?: boolean // Control dialog visibility
   onOpenChange?: (open: boolean) => void // Handle dialog open/close
 }
 
-export function CheckoutManager({ assetId, assetTagId, invalidateQueryKey = ['assets'], readOnly = false, open, onOpenChange }: CheckoutManagerProps) {
+export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['assets'], open, onOpenChange }: CheckoutManagerProps) {
   const queryClient = useQueryClient()
   const [editingCheckoutId, setEditingCheckoutId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'assign' | 'history'>('assign')
@@ -51,22 +50,50 @@ export function CheckoutManager({ assetId, assetTagId, invalidateQueryKey = ['as
   const [isCommandOpen, setIsCommandOpen] = useState(false)
 
   // Fetch checkout records
-  const { data: checkoutData, isLoading } = useQuery({
+  const { data: checkoutData, isLoading: isLoadingCheckouts } = useQuery({
     queryKey: ['checkoutHistory', assetId],
     queryFn: async () => {
       const response = await fetch(`/api/assets/${assetId}/checkout`)
       if (!response.ok) throw new Error('Failed to fetch checkout history')
       return response.json()
     },
+    enabled: true,
+    refetchOnMount: true,
+    staleTime: 0, // Always consider stale to force refetch
   })
 
   const checkouts = checkoutData?.checkouts || []
+
+  // Fetch reservations for this asset
+  const { data: reservationData, isLoading: isLoadingReservations } = useQuery({
+    queryKey: ['reservations', assetId],
+    queryFn: async () => {
+      const response = await fetch(`/api/assets/reserve?assetId=${assetId}`)
+      if (!response.ok) throw new Error('Failed to fetch reservations')
+      return response.json()
+    },
+    enabled: true,
+    refetchOnMount: true,
+    staleTime: 0,
+  })
+
+  const reservations = reservationData?.reservations || []
+  // Get the most recent active reservation (Employee type)
+  const activeReservation = reservations.find((r: { reservationType: string; employeeUserId: string | null }) => 
+    r.reservationType === 'Employee' && r.employeeUserId
+  )
 
   // Fetch employees - fetch all pages to get complete list
   const { data: employees = [] } = useQuery({
     queryKey: ['employees', 'checkout-manager', 'all'],
     queryFn: async () => {
-      let allEmployees: any[] = []
+      interface Employee {
+        id: string
+        name: string
+        email: string
+        department?: string | null
+      }
+      let allEmployees: Employee[] = []
       let page = 1
       let hasMore = true
       const pageSize = 1000 // Large page size to minimize requests
@@ -97,11 +124,16 @@ export function CheckoutManager({ assetId, assetTagId, invalidateQueryKey = ['as
       if (!response.ok) throw new Error('Failed to update checkout')
       return response.json()
     },
-    onSuccess: (_, variables) => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['checkoutHistory', assetId] })
       queryClient.invalidateQueries({ queryKey: ['historyLogs', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['reservations', assetId] })
       // Invalidate the provided query key or default to 'assets'
       queryClient.invalidateQueries({ queryKey: invalidateQueryKey })
+      // Refetch history immediately if dialog is still open
+      if (open) {
+        await queryClient.refetchQueries({ queryKey: ['historyLogs', assetId] })
+      }
       // Clear selections immediately
       setSelectedEmployeeId(null)
       setEditingCheckoutId(null)
@@ -117,21 +149,99 @@ export function CheckoutManager({ assetId, assetTagId, invalidateQueryKey = ['as
     },
   })
 
+  // Checkout from reservation mutation
+  const checkoutFromReservationMutation = useMutation({
+    mutationFn: async ({ reservationId, employeeUserId }: { reservationId: string; employeeUserId: string }) => {
+      const response = await fetch('/api/assets/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assetIds: [assetId],
+          employeeUserId,
+          checkoutDate: new Date().toISOString().split('T')[0],
+        }),
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to checkout asset')
+      }
+      const result = await response.json()
+      
+      // Delete the reservation after successful checkout
+      const deleteResponse = await fetch(`/api/assets/reserve/${reservationId}`, {
+        method: 'DELETE',
+      })
+      if (!deleteResponse.ok) {
+        console.error('Failed to delete reservation after checkout')
+      }
+      
+      return result
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ['checkoutHistory', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['historyLogs', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['reservations', assetId] })
+      queryClient.invalidateQueries({ queryKey: invalidateQueryKey })
+      // Also invalidate general assets queries to refetch assets table
+      queryClient.invalidateQueries({ queryKey: ['assets'] })
+      queryClient.invalidateQueries({ queryKey: ['assets-list'] })
+      toast.success('Asset checked out successfully')
+      if (onOpenChange) {
+        onOpenChange(false)
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to checkout asset')
+    },
+  })
+
+  // Cancel reservation mutation
+  const cancelReservationMutation = useMutation({
+    mutationFn: async (reservationId: string) => {
+      const response = await fetch(`/api/assets/reserve/${reservationId}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to cancel reservation')
+      }
+      return response.json()
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ['reservations', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['historyLogs', assetId] })
+      queryClient.invalidateQueries({ queryKey: invalidateQueryKey })
+      toast.success('Reservation cancelled successfully')
+      if (onOpenChange) {
+        onOpenChange(false)
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to cancel reservation')
+    },
+  })
+
   const handleSaveEmployee = () => {
-    if (!editingCheckoutId) return
+    const checkoutId = editingCheckoutId || activeCheckout?.id
+    if (!checkoutId) return
     const employeeUserId = selectedEmployeeId ?? null
-    updateMutation.mutate({ checkoutId: editingCheckoutId, employeeUserId })
+    updateMutation.mutate({ checkoutId, employeeUserId })
   }
 
   // Fetch history logs for assignedEmployee field
-  const { data: historyData, isLoading: isLoadingHistory } = useQuery({
+  const { data: historyData, isLoading: isLoadingHistory, refetch: refetchHistory } = useQuery({
     queryKey: ['historyLogs', assetId],
     queryFn: async () => {
       const response = await fetch(`/api/assets/${assetId}/history`)
-      if (!response.ok) throw new Error('Failed to fetch history logs')
+      if (!response.ok) {
+        throw new Error('Failed to fetch history logs')
+      }
       return response.json()
     },
-    enabled: open === true, // Fetch when dialog is open
+    enabled: true, // Always fetch when component is mounted (open prop is for dialog wrapper, not query control)
+    refetchOnWindowFocus: false,
+    refetchOnMount: true,
+    staleTime: 0, // Always consider stale to force refetch
   })
 
   const historyLogs = historyData?.logs || []
@@ -150,13 +260,39 @@ export function CheckoutManager({ assetId, assetTagId, invalidateQueryKey = ['as
   const activeCheckout = sortedCheckouts.find((c: { checkins: Array<{ id: string }>; employeeUser: { id: string } | null }) => !c.checkins.length)
   const selectedCheckoutEmployeeId = editingCheckoutId ? sortedCheckouts.find((c: { id: string }) => c.id === editingCheckoutId)?.employeeUser?.id || null : null
 
-  // Auto-select first active checkout when dialog opens
+  // Auto-select first active checkout when dialog opens or when activeCheckout changes
   useEffect(() => {
-    if (open && !editingCheckoutId && activeCheckout) {
+    if (open && activeCheckout) {
+      // Use setTimeout to avoid synchronous setState in effect
+      const timeoutId = setTimeout(() => {
+        // Only set if not already set or if the active checkout changed
+        if (!editingCheckoutId || editingCheckoutId !== activeCheckout.id) {
       setEditingCheckoutId(activeCheckout.id)
       setSelectedEmployeeId(null) // Reset to null so user must explicitly select a new employee
+        }
+      }, 0)
+      return () => clearTimeout(timeoutId)
+    } else if (open && !activeCheckout) {
+      // Clear editingCheckoutId if no active checkout
+      const timeoutId = setTimeout(() => {
+        setEditingCheckoutId(null)
+        setSelectedEmployeeId(null)
+      }, 0)
+      return () => clearTimeout(timeoutId)
     }
   }, [open, activeCheckout, editingCheckoutId])
+
+  // Refetch history when component mounts (always fetch, not dependent on open prop)
+  useEffect(() => {
+    refetchHistory()
+  }, [refetchHistory])
+  
+  // Also refetch when open prop changes to true (for dialog wrapper usage)
+  useEffect(() => {
+    if (open === true) {
+      refetchHistory()
+    }
+  }, [open, refetchHistory])
 
   const content = (
     <div className="flex flex-col gap-4 h-full">
@@ -178,7 +314,13 @@ export function CheckoutManager({ assetId, assetTagId, invalidateQueryKey = ['as
         <Button
           type="button"
           variant="ghost"
-          onClick={() => setActiveTab('history')}
+          onClick={() => {
+            setActiveTab('history')
+            // Refetch history when switching to history tab
+            if (open) {
+              refetchHistory()
+            }
+          }}
           className={`px-4 py-2 h-auto text-sm font-medium transition-colors border-b-2 rounded-none ${
             activeTab === 'history'
               ? 'border-primary text-primary'
@@ -194,61 +336,120 @@ export function CheckoutManager({ assetId, assetTagId, invalidateQueryKey = ['as
       <div className="flex-1 overflow-hidden">
         {activeTab === 'assign' ? (
           <div className="space-y-4">
-            {/* Checkout Selection */}
-            {sortedCheckouts.filter((c: { checkins: Array<{ id: string }> }) => !c.checkins.length).length > 0 && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Select Checkout Record</label>
-                <div className="space-y-1">
-                  {sortedCheckouts.filter((c: { checkins: Array<{ id: string }> }) => !c.checkins.length).map((checkout: {
-                    id: string
-                    checkoutDate: string
-                    employeeUser: { id: string; name: string; email: string; department: string | null } | null
-                  }) => {
-                    const checkoutDate = checkout.checkoutDate ? new Date(checkout.checkoutDate) : null
-                    const formattedDate = checkoutDate ? checkoutDate.toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric'
-                    }) : '-'
-                    const isSelected = editingCheckoutId === checkout.id
-                    
-                    return (
-                      <div
-                        key={checkout.id}
-                        className="flex items-center gap-2 py-2 cursor-pointer hover:bg-accent/50 rounded px-2 -mx-2"
-                        onClick={() => {
-                          setEditingCheckoutId(checkout.id)
-                          setSelectedEmployeeId(null) // Reset to null so user must explicitly select a new employee
-                        }}
-                      >
-                        {isSelected && <Check className="h-4 w-4 text-primary shrink-0" />}
-                        <div className="flex-1 min-w-0 text-sm">
-                          {checkout.employeeUser ? (
-                            <>
-                              <div>
-                                Current Assigned to: <span className="font-medium">{checkout.employeeUser.name}</span>
-                                <span className="text-muted-foreground ml-2">• {formattedDate}</span>
-                              </div>
-                              {(checkout.employeeUser.email || checkout.employeeUser.department) && (
-                                <div className="text-xs text-muted-foreground mt-0.5">
-                                  {checkout.employeeUser.email}
-                                  {checkout.employeeUser.department && ` • ${checkout.employeeUser.department}`}
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-muted-foreground">No employee assigned</span>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
+            {/* Loading State */}
+            {(isLoadingReservations || isLoadingCheckouts) ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex flex-col items-center gap-2">
+                  <Spinner className="h-6 w-6" />
+                  <p className="text-sm text-muted-foreground">Loading records...</p>
                 </div>
               </div>
+            ) : (
+              <>
+                {/* Reservation Display */}
+                {activeReservation && assetStatus === 'Reserved' && activeReservation.employeeUser && (
+                  <div className="space-y-3 p-3 border rounded-md">
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Reserved by:</span>{' '}
+                      <span className="font-medium">{activeReservation.employeeUser.name}</span>
+                      {activeReservation.reservationDate && (
+                        <span className="text-muted-foreground ml-2">
+                          • {new Date(activeReservation.reservationDate).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => {
+                          checkoutFromReservationMutation.mutate({
+                            reservationId: activeReservation.id,
+                            employeeUserId: activeReservation.employeeUserId!,
+                          })
+                        }}
+                        disabled={checkoutFromReservationMutation.isPending || cancelReservationMutation.isPending}
+                        className="flex-1"
+                      >
+                        {checkoutFromReservationMutation.isPending ? (
+                          <>
+                            <Spinner className="mr-2 h-4 w-4" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="mr-2 h-4 w-4" />
+                            Checkout
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          if (confirm('Cancel this reservation?')) {
+                            cancelReservationMutation.mutate(activeReservation.id)
+                          }
+                        }}
+                        disabled={checkoutFromReservationMutation.isPending || cancelReservationMutation.isPending}
+                        variant="outline"
+                      >
+                        {cancelReservationMutation.isPending ? (
+                          <Spinner className="h-4 w-4" />
+                        ) : (
+                          <XCircle className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Current Assignment Display */}
+                {activeCheckout && (
+                  <div className="space-y-2 pb-4 border-b">
+                    <label className="text-sm font-medium text-muted-foreground">Current Assignment</label>
+                    <div className="text-sm">
+                      {activeCheckout.employeeUser ? (
+                        <>
+                          <div>
+                            Assigned to: <span className="font-medium">{activeCheckout.employeeUser.name}</span>
+                            {activeCheckout.checkoutDate && (
+                              <span className="text-muted-foreground ml-2">
+                                • {new Date(activeCheckout.checkoutDate).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
+                                })}
+                              </span>
+                            )}
+                                  </div>
+                          {(activeCheckout.employeeUser.email || activeCheckout.employeeUser.department) && (
+                                    <div className="text-xs text-muted-foreground mt-0.5">
+                            {activeCheckout.employeeUser.email}
+                            {activeCheckout.employeeUser.department && ` • ${activeCheckout.employeeUser.department}`}
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground">No employee assigned</span>
+                            )}
+                          </div>
+                        </div>
+                )}
+
+                {!activeCheckout && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p className="text-sm">No active checkout record found.</p>
+                    <p className="text-xs mt-1">Check out this asset first to assign an employee.</p>
+                  </div>
+                )}
+              </>
             )}
 
-             {editingCheckoutId && (
+            {activeCheckout && (
                <>
+                 <div className="space-y-2">
+                   <label className="text-sm font-medium">Change Assignment</label>
                  <Command>
                    <CommandInput 
                      placeholder="Search employees..." 
@@ -311,6 +512,7 @@ export function CheckoutManager({ assetId, assetTagId, invalidateQueryKey = ['as
                     </CommandList>
                    )}
                  </Command>
+                 </div>
 
                  {/* Reassign to section */}
                  {selectedEmployeeId !== null && (() => {
@@ -364,12 +566,13 @@ export function CheckoutManager({ assetId, assetTagId, invalidateQueryKey = ['as
                 <p className="text-sm">Employee assignment changes will appear here</p>
               </div>
             ) : (
+              <div className="w-full">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[120px]">Date</TableHead>
-                    <TableHead className="w-[150px]">Changed From</TableHead>
-                    <TableHead className="w-[150px]">Changed To</TableHead>
+                      <TableHead className="min-w-[180px]">Date & Time</TableHead>
+                      <TableHead>Changed From</TableHead>
+                      <TableHead>Changed To</TableHead>
                     <TableHead>Action By</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -387,11 +590,21 @@ export function CheckoutManager({ assetId, assetTagId, invalidateQueryKey = ['as
                       month: 'short',
                       day: 'numeric'
                     }) : '-'
+                      const formattedTime = eventDate ? eventDate.toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true
+                      }) : ''
                     
                     return (
                       <TableRow key={log.id}>
-                        <TableCell className="font-medium text-sm">
-                          {formattedDate}
+                          <TableCell className="font-medium text-sm whitespace-nowrap">
+                            <div className="flex flex-col">
+                              <span>{formattedDate}</span>
+                              {formattedTime && (
+                                <span className="text-xs text-muted-foreground">{formattedTime}</span>
+                              )}
+                            </div>
                         </TableCell>
                         <TableCell className="text-sm">
                           {log.changeFrom || <span className="text-muted-foreground">(empty)</span>}
@@ -407,6 +620,7 @@ export function CheckoutManager({ assetId, assetTagId, invalidateQueryKey = ['as
                   })}
                 </TableBody>
               </Table>
+              </div>
             )}
           </ScrollArea>
         )}

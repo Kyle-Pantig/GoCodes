@@ -452,7 +452,7 @@ function DisposeAssetPageContent() {
     params.delete('method')
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
     router.replace(newUrl)
-    hasProcessedUrlParams.current = false
+    // Don't reset hasProcessedUrlParams here - let it be controlled by the caller
   }, [searchParams, router])
 
   // Handle URL query parameters for assetId and method
@@ -555,8 +555,10 @@ function DisposeAssetPageContent() {
       disposeReason: '',
       assetUpdates: [],
     })
-    // Reset the URL params processed flag so new URL params can be processed
-    hasProcessedUrlParams.current = false
+    // Only reset the flag if URL params are already cleared (allows new URL params to be processed)
+    if (!searchParams.get('assetId')) {
+      hasProcessedUrlParams.current = false
+    }
   }
 
   // Handle QR code scan result
@@ -668,12 +670,14 @@ function DisposeAssetPageContent() {
       return response.json()
     },
     onSuccess: () => {
+      // Mark URL params as processed BEFORE clearing form to prevent re-processing
+      hasProcessedUrlParams.current = true
       queryClient.invalidateQueries({ queryKey: ["assets"] })
       queryClient.invalidateQueries({ queryKey: ["dispose-stats"] })
       toast.success('Assets disposed successfully')
       // Reset form
-      clearForm()
       clearUrlParams()
+      clearForm()
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to dispose assets')

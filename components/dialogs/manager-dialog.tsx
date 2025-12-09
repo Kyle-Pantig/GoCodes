@@ -25,7 +25,7 @@ export function ManagerDialog({
   description,
   children,
   className,
-  contentClassName = 'max-w-3xl max-h-[90vh] shadow-xl',
+  contentClassName = 'max-w-3xl! max-h-[90vh] shadow-xl',
 }: ManagerDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
