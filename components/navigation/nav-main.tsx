@@ -31,6 +31,7 @@ export function NavMain({
     items?: {
       title: string
       url: string
+      icon?: LucideIcon
     }[]
   }[]
 }) {
@@ -88,15 +89,61 @@ export function NavMain({
               </CollapsibleTrigger>
               <CollapsibleContent suppressHydrationWarning>
                 <SidebarMenuSub>
-                    {item.items.map((subItem) => (
-                    <SidebarMenuSubItem key={subItem.title}>
-                      <SidebarMenuSubButton asChild>
-                        <Link href={subItem.url}>
-                          <span>{subItem.title}</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  ))}
+                    {item.items.map((subItem) => {
+                      // Check if this submenu item is active
+                      // First check exact match
+                      if (pathname === subItem.url) {
+                        return (
+                          <SidebarMenuSubItem key={subItem.title}>
+                            <SidebarMenuSubButton asChild isActive={true}>
+                              <Link href={subItem.url}>
+                                {subItem.icon && <subItem.icon />}
+                                <span>{subItem.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        )
+                      }
+                      
+                      // Check if pathname starts with this subItem.url + '/'
+                      // But only if there's no more specific submenu item that matches
+                      const pathStartsWithSubItem = pathname.startsWith(subItem.url + '/')
+                      if (pathStartsWithSubItem) {
+                        // Check if there's a more specific submenu item that also matches
+                        // item.items is guaranteed to exist here since we're inside the map
+                        const hasMoreSpecificMatch = item.items!.some(otherSubItem => 
+                          otherSubItem.url !== subItem.url && 
+                          otherSubItem.url.startsWith(subItem.url + '/') &&
+                          pathname.startsWith(otherSubItem.url)
+                        )
+                        
+                        // Only highlight if there's no more specific match
+                        const isSubItemActive = !hasMoreSpecificMatch
+                        
+                        return (
+                          <SidebarMenuSubItem key={subItem.title}>
+                            <SidebarMenuSubButton asChild isActive={isSubItemActive}>
+                              <Link href={subItem.url}>
+                                {subItem.icon && <subItem.icon />}
+                                <span>{subItem.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        )
+                      }
+                      
+                      // Not active
+                      return (
+                        <SidebarMenuSubItem key={subItem.title}>
+                          <SidebarMenuSubButton asChild isActive={false}>
+                            <Link href={subItem.url}>
+                              {subItem.icon && <subItem.icon />}
+                              <span>{subItem.title}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      )
+                    })}
                 </SidebarMenuSub>
               </CollapsibleContent>
             </SidebarMenuItem>

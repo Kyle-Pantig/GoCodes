@@ -12,6 +12,32 @@ import {
   FileText,
   ClipboardList,
   Cog,
+  UserCircle,
+  History,
+  Tags,
+  MapPin,
+  Building2,
+  Briefcase,
+  Building,
+  ArrowLeftRight,
+  FileCheck,
+  TrendingDown,
+  Map,
+  ShieldCheck,
+  Calendar,
+  Receipt,
+  Zap,
+  ScrollText,
+  Film,
+  Download,
+  Upload,
+  Trash2,
+  Plus,
+  ArrowRight,
+  ArrowLeft,
+  Move,
+  Bookmark,
+  Undo,
 } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import Image from "next/image"
@@ -52,42 +78,52 @@ const data = {
         {
           title: "All Assets",
           url: "/assets",
+          icon: Boxes,
         },
         {
           title: "Add Asset",
           url: "/assets/add",
+          icon: Plus,
         },
         {
           title: "Check Out",
           url: "/assets/checkout",
+          icon: ArrowRight,
         },
         {
           title: "Check In",
           url: "/assets/checkin",
+          icon: ArrowLeft,
         },
         {
           title: "Move Asset",
           url: "/assets/move",
+          icon: Move,
         },
         {
           title: "Reserve Asset",
           url: "/assets/reserve",
+          icon: Bookmark,
         },
         {
           title: "Lease Asset",
           url: "/assets/lease",
+          icon: ScrollText,
         },
         {
           title: "Lease Return",
           url: "/assets/lease-return",
+          icon: Undo,
         },
         {
           title: "Dispose Asset",
           url: "/assets/dispose",
+          icon: Trash2,
         },
         {
           title: "Maintenance",
           url: "/assets/maintenance",
+          icon: Wrench,
         },
       ],
     },
@@ -99,6 +135,7 @@ const data = {
         {
           title: "Users",
           url: "/employees",
+          icon: Users,
         },
       ],
     },
@@ -110,10 +147,12 @@ const data = {
         {
           title: "Assets",
           url: "/lists/assets",
+          icon: Boxes,
         },
         {
           title: "Maintenances",
           url: "/lists/maintenances",
+          icon: Wrench,
         },
       ],
     },
@@ -125,22 +164,27 @@ const data = {
         {
           title: "Media",
           url: "/tools/media",
+          icon: Film,
         },
         {
           title: "Audit",
           url: "/tools/audit",
+          icon: ShieldCheck,
         },
         {
           title: "Import",
           url: "/tools/import",
+          icon: Download,
         },
         {
           title: "Export",
           url: "/tools/export",
+          icon: Upload,
         },
         {
           title: "Trash",
           url: "/tools/trash",
+          icon: Trash2,
         },
       ],
     },
@@ -152,14 +196,17 @@ const data = {
         {
           title: "Return Forms",
           url: "/forms/return-form",
+          icon: ArrowLeftRight,
         },
         {
           title: "Accountability Form",
           url: "/forms/accountability-form",
+          icon: FileCheck,
         },
         {
           title: "History",
           url: "/forms/history",
+          icon: History,
         },
       ],
     },
@@ -171,42 +218,52 @@ const data = {
         {
           title: "Asset Reports",
           url: "/reports/assets",
+          icon: Boxes,
         },
         {
           title: "Checkout Reports",
           url: "/reports/checkout",
+          icon: ArrowLeftRight,
         },
         {
           title: "Location Reports",
           url: "/reports/location",
+          icon: Map,
         },
         {
           title: "Maintenance Reports",
           url: "/reports/maintenance",
+          icon: Wrench,
         },
         {
           title: "Audit Reports",
           url: "/reports/audit",
+          icon: ShieldCheck,
         },
         {
           title: "Depreciation Reports",
           url: "/reports/depreciation",
+          icon: TrendingDown,
         },
         {
           title: "Leased Asset Reports",
           url: "/reports/lease",
+          icon: ScrollText,
         },
         {
           title: "Reservation Reports",
           url: "/reports/reservation",
+          icon: Calendar,
         },
         {
           title: "Transaction Reports",
           url: "/reports/transaction",
+          icon: Receipt,
         },
         {
           title: "Automated Reports",
           url: "/reports/automated-reports",
+          icon: Zap,
         },
       ],
     },
@@ -218,22 +275,27 @@ const data = {
         {
           title: "Categories",
           url: "/setup/categories",
+          icon: Tags,
         },
         {
           title: "Locations",
           url: "/setup/locations",
+          icon: MapPin,
         },
         {
           title: "Sites",
           url: "/setup/sites",
+          icon: Building2,
         },
         {
           title: "Departments",
           url: "/setup/departments",
+          icon: Briefcase,
         },
         {
           title: "Company Info",
           url: "/setup/company-info",
+          icon: Building,
         },
       ],
     },
@@ -245,14 +307,17 @@ const data = {
         {
           title: "Account Details",
           url: "/account",
+          icon: UserCircle,
         },
         {
           title: "Asset Events",
           url: "/settings/asset-events",
+          icon: History,
         },
         {
           title: "Users",
           url: "/settings/users",
+          icon: Users,
         },
       ],
     },
