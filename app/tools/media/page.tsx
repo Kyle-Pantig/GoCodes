@@ -993,7 +993,7 @@ function MediaPageContent() {
                 variant="outline"
                 size="lg"
                 onClick={activeTab === 'media' ? handleToggleSelectAll : handleToggleSelectAllDocuments}
-                className="rounded-full"
+                className="rounded-full btn-glass-elevated"
               >
                 {activeTab === 'media' 
                   ? (allSelected ? 'Deselect All' : 'Select All')
@@ -1004,28 +1004,27 @@ function MediaPageContent() {
                 variant="outline"
                 size="lg"
                 onClick={handleToggleSelectionMode}
-                className="rounded-full"
+                className="rounded-full btn-glass-elevated"
               >
                 Cancel
               </Button>
             </div>
-            {hasSelectedItems && (
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  if (!canManageMedia) {
-                    toast.error(`You do not have permission to delete ${activeTab === 'media' ? 'images' : 'documents'}`)
-                    return
-                  }
-                  setIsBulkDeleteDialogOpen(true)
-                }}
-                className="h-10 w-10 rounded-full"
-                title="Delete Selected"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                if (!canManageMedia) {
+                  toast.error(`You do not have permission to delete ${activeTab === 'media' ? 'images' : 'documents'}`)
+                  return
+                }
+                setIsBulkDeleteDialogOpen(true)
+              }}
+              disabled={!hasSelectedItems}
+              className="h-10 w-10 rounded-full btn-glass-elevated"
+              title="Delete Selected"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </>
         )
       } else {
@@ -1036,14 +1035,14 @@ function MediaPageContent() {
               variant="outline"
               size="lg"
               onClick={handleToggleSelectionMode}
-              className="rounded-full bg-white/10 dark:bg-white/5 bg-clip-padding backdrop-filter backdrop-blur-md border border-white/30 dark:border-white/15 shadow-[0_2px_4px_rgba(0,0,0,0.15),inset_0_0.5px_0_rgba(255,255,255,0.4),inset_0_-0.5px_0_rgba(0,0,0,0.2),inset_0.5px_0_0_rgba(255,255,255,0.3),inset_-0.5px_0_0_rgba(0,0,0,0.15)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.4),inset_0_0.5px_0_rgba(255,255,255,0.2),inset_0_-0.5px_0_rgba(0,0,0,0.3),inset_0.5px_0_0_rgba(255,255,255,0.15),inset_-0.5px_0_0_rgba(0,0,0,0.2)]"
+              className="rounded-full btn-glass-elevated"
             >
               Select
             </Button>
             {isMounted && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" className="h-10 w-10 rounded-full">
+                  <Button variant="outline" size="icon" className="h-10 w-10 rounded-full btn-glass-elevated">
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -1337,6 +1336,7 @@ function MediaPageContent() {
                   size="sm"
                   onClick={handleRefresh}
                   disabled={isLoadingData}
+                  className="btn-glass-elevated"
                 >
                   <RotateCw className={`h-4 w-4 mr-2 ${isLoadingData ? 'animate-spin' : ''}`} />
                   Reload
@@ -1431,6 +1431,7 @@ function MediaPageContent() {
                   size="sm"
                   onClick={handleRefresh}
                   disabled={isLoadingData}
+                  className="btn-glass-elevated"
                 >
                   <RotateCw className={`h-4 w-4 mr-2 ${isLoadingData ? 'animate-spin' : ''}`} />
                   Reload
