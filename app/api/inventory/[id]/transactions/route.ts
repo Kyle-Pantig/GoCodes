@@ -17,8 +17,27 @@ export async function GET(
     const pageSize = parseInt(searchParams.get('pageSize') || '50', 10)
     const transactionType = searchParams.get('type')
 
+    // Check if it's a UUID (contains hyphens) or itemCode
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+    
+    // First, get the inventory item to get its ID
+    const inventoryItem = await prisma.inventoryItem.findFirst({
+      where: {
+        ...(isUUID ? { id } : { itemCode: id }),
+        isDeleted: false,
+      },
+      select: { id: true },
+    })
+
+    if (!inventoryItem) {
+      return NextResponse.json(
+        { error: 'Inventory item not found' },
+        { status: 404 }
+      )
+    }
+
     const whereClause: any = {
-      inventoryItemId: id,
+      inventoryItemId: inventoryItem.id,
     }
 
     if (transactionType) {
@@ -97,6 +116,24 @@ export async function POST(
       )
     }
 
+    // Check if it's a UUID (contains hyphens) or itemCode
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+
+    // Get current item (source) - support both UUID and itemCode
+    const sourceItem = await prisma.inventoryItem.findFirst({
+      where: {
+        ...(isUUID ? { id } : { itemCode: id }),
+        isDeleted: false,
+      },
+    })
+
+    if (!sourceItem) {
+      return NextResponse.json(
+        { error: 'Source inventory item not found' },
+        { status: 404 }
+      )
+    }
+
     // For TRANSFER, destinationItemId is required
     if (transactionType === 'TRANSFER' && !destinationItemId) {
       return NextResponse.json(
@@ -113,23 +150,16 @@ export async function POST(
       )
     }
 
-    // Get current item (source)
-    const sourceItem = await prisma.inventoryItem.findUnique({
-      where: { id },
-    })
-
-    if (!sourceItem) {
-      return NextResponse.json(
-        { error: 'Source inventory item not found' },
-        { status: 404 }
-      )
-    }
-
     // Get destination item if TRANSFER
     let destinationItem = null
     if (transactionType === 'TRANSFER') {
-      destinationItem = await prisma.inventoryItem.findUnique({
-        where: { id: destinationItemId },
+      // Check if destinationItemId is UUID or itemCode
+      const isDestUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(destinationItemId)
+      destinationItem = await prisma.inventoryItem.findFirst({
+        where: {
+          ...(isDestUUID ? { id: destinationItemId } : { itemCode: destinationItemId }),
+          isDeleted: false,
+        },
       })
 
       if (!destinationItem) {

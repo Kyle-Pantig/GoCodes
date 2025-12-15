@@ -43,7 +43,7 @@ export default function RootLayout({
             </AppLayout>
           </ThemeProvider>
         </QueryProvider>
-        <Toaster />
+        <Toaster position="top-right" />
       </body>
     </html>
   );

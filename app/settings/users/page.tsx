@@ -61,6 +61,8 @@ import { Badge } from '@/components/ui/badge'
 import { Field, FieldLabel, FieldContent, FieldError } from '@/components/ui/field'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
+import { useMobileDock } from '@/components/mobile-dock-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 interface AssetUser {
   id: string
@@ -411,6 +413,8 @@ function UsersPageContent() {
   const searchParams = useSearchParams()
   const { hasPermission } = usePermissions()
   const canManageUsers = hasPermission('canManageUsers')
+  const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
   
   const [sorting, setSorting] = useState<SortingState>([])
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
@@ -865,9 +869,14 @@ function UsersPageContent() {
       toast.error('You do not have permission to delete users')
       return
     }
+    // Prevent user from deleting themselves
+    if (currentUserId && user.userId === currentUserId) {
+      toast.error('You cannot delete your own account')
+      return
+    }
     setSelectedUser(user)
     setIsDeleteDialogOpen(true)
-  }, [canManageUsers])
+  }, [canManageUsers, currentUserId])
 
   const handleApprove = useCallback((user: AssetUser) => {
     if (!canManageUsers) {
@@ -1016,6 +1025,49 @@ function UsersPageContent() {
     },
   })
 
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile) {
+      setDockContent(
+        <>
+          <Button 
+            onClick={() => {
+              if (!canManageUsers) {
+                toast.error('You do not have permission to create users')
+                return
+              }
+              setIsCreateDialogOpen(true)
+            }} 
+            variant="outline"
+            size="lg"
+            className="rounded-full"
+          >
+            <UserPlus className="mr-2 h-4 w-4" />
+            Add User
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => {
+              setIsManualRefresh(true)
+              queryClient.invalidateQueries({ queryKey: ['users'] })
+            }}
+            className="h-10 w-10 rounded-full"
+            title="Refresh table"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </>
+      )
+    } else {
+      setDockContent(null)
+    }
+    
+    return () => {
+      setDockContent(null)
+    }
+  }, [isMobile, setDockContent, canManageUsers, queryClient])
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: -20 }}
@@ -1033,54 +1085,68 @@ function UsersPageContent() {
       <Card className="pb-0 gap-0">
         <CardHeader className='shrink-0 pb-3' >
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div className="flex items-center w-full md:flex-1 md:max-w-md border rounded-md overflow-hidden">
-              <Select
-                value={searchType}
-                onValueChange={(value: 'unified' | 'userId' | 'email' | 'role') => {
-                  setSearchType(value)
-                  updateURL({ searchType: value, page: 1 })
+            <div className="flex items-center w-full md:flex-1 md:max-w-md gap-2">
+              <div className="flex items-center flex-1 border rounded-md overflow-hidden">
+                <Select
+                  value={searchType}
+                  onValueChange={(value: 'unified' | 'userId' | 'email' | 'role') => {
+                    setSearchType(value)
+                    updateURL({ searchType: value, page: 1 })
+                  }}
+                >
+                  <SelectTrigger className="w-[140px] h-8 rounded-none border-0 border-r focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none" size='sm'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unified">Unified Search</SelectItem>
+                    <SelectItem value="userId">User ID</SelectItem>
+                    <SelectItem value="email">Email</SelectItem>
+                    <SelectItem value="role">Role</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="relative flex-1">
+                  {searchInput ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchInput('')
+                        updateURL({ search: '', page: 1 })
+                      }}
+                      className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer z-10"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : (
+                    <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+                  )}
+                  <Input
+                    placeholder={
+                      searchType === 'unified'
+                        ? 'Search by user ID, email or role...'
+                        : searchType === 'userId'
+                        ? 'Search by User ID'
+                        : searchType === 'email'
+                        ? 'Search by Email'
+                        : 'Search by Role'
+                    }
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    className="pl-8 h-8 rounded-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
+                  />
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  setIsManualRefresh(true)
+                  queryClient.invalidateQueries({ queryKey: ['users'] })
                 }}
+                className="h-8 w-8 shrink-0 md:hidden"
+                title="Refresh table"
               >
-                <SelectTrigger className="w-[140px] h-8 rounded-none border-0 border-r focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none" size='sm'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unified">Unified Search</SelectItem>
-                  <SelectItem value="userId">User ID</SelectItem>
-                  <SelectItem value="email">Email</SelectItem>
-                  <SelectItem value="role">Role</SelectItem>
-                </SelectContent>
-              </Select>
-              <div className="relative flex-1">
-                {searchInput ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchInput('')
-                      updateURL({ search: '', page: 1 })
-                    }}
-                    className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer z-10"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                ) : (
-                  <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
-                )}
-                <Input
-                  placeholder={
-                    searchType === 'unified'
-                      ? 'Search by user ID, email or role...'
-                      : searchType === 'userId'
-                      ? 'Search by User ID'
-                      : searchType === 'email'
-                      ? 'Search by Email'
-                      : 'Search by Role'
-                  }
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  className="pl-8 h-8 rounded-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
-                />
-            </div>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
             </div>
             <div className="flex items-center gap-2">
               <Button 
@@ -1092,7 +1158,7 @@ function UsersPageContent() {
                   setIsCreateDialogOpen(true)
                 }} 
                 size="sm"
-                className="flex-1 md:flex-initial"
+                className="flex-1 md:flex-initial hidden md:flex"
               >
                <UserPlus className="mr-2 h-4 w-4" />
                Add User
@@ -1104,7 +1170,7 @@ function UsersPageContent() {
                   setIsManualRefresh(true)
                   queryClient.invalidateQueries({ queryKey: ['users'] })
                 }}
-                className="h-8 w-8"
+                className="h-8 w-8 hidden md:flex"
                 title="Refresh table"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -2119,6 +2185,14 @@ function UsersPageContent() {
         onOpenChange={setIsDeleteDialogOpen}
         onConfirm={() => {
           if (selectedUser) {
+            // Prevent user from deleting themselves
+            const isDeletingSelf = currentUserId && selectedUser.userId === currentUserId
+            if (isDeletingSelf) {
+              toast.error('You cannot delete your own account')
+              setIsDeleteDialogOpen(false)
+              setSelectedUser(null)
+              return
+            }
             deleteMutation.mutate(selectedUser.id)
           }
         }}

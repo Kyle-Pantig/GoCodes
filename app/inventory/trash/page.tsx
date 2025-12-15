@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Trash2, RotateCcw, AlertTriangle, Package, Search, RotateCw, X, MoreHorizontal, ArrowLeft, ArrowRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Trash2, RotateCcw, AlertTriangle, Package, Search, RotateCw, X, MoreHorizontal, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -43,6 +43,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useMobileDock } from '@/components/mobile-dock-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 interface DeletedInventoryItem {
   id: string
@@ -57,8 +59,8 @@ interface DeletedInventoryItem {
   deletedAt: string
 }
 
-async function fetchDeletedInventoryItems(page: number = 1, pageSize: number = 50, search?: string, searchType: string = 'unified') {
-  // Fetch all deleted inventory items with a large page size to get accurate count
+async function fetchDeletedInventoryItems(search?: string, searchType: string = 'unified') {
+  // Fetch all deleted inventory items without pagination
   const response = await fetch(`/api/inventory?includeDeleted=true&page=1&pageSize=10000`)
   if (!response.ok) throw new Error('Failed to fetch deleted inventory items')
   const data = await response.json()
@@ -93,21 +95,12 @@ async function fetchDeletedInventoryItems(page: number = 1, pageSize: number = 5
     })
   }
   
-  // Calculate pagination based on filtered results
   const total = allDeletedItems.length
-  const totalPages = Math.ceil(total / pageSize)
-  const skip = (page - 1) * pageSize
-  const paginatedItems = allDeletedItems.slice(skip, skip + pageSize)
   
   return {
-    items: paginatedItems,
+    items: allDeletedItems,
     pagination: {
-      page,
-      pageSize,
       total,
-      totalPages,
-      hasNextPage: page < totalPages,
-      hasPreviousPage: page > 1,
     },
   }
 }
@@ -115,15 +108,13 @@ async function fetchDeletedInventoryItems(page: number = 1, pageSize: number = 5
 function InventoryTrashPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
   
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canViewInventory = hasPermission('canViewAssets')
   const canManageTrash = hasPermission('canManageTrash')
   const queryClient = useQueryClient()
-  
-  // Get page, pageSize, and search from URL
-  const page = parseInt(searchParams.get('page') || '1', 10)
-  const pageSize = parseInt(searchParams.get('pageSize') || '50', 10)
   
   // Separate states for search input (immediate UI) and search query (debounced API calls)
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '')
@@ -149,25 +140,8 @@ function InventoryTrashPageContent() {
   const isInitialMount = useRef(true)
 
   // Update URL parameters
-  const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string; searchType?: string }) => {
+  const updateURL = useCallback((updates: { search?: string; searchType?: string }) => {
     const params = new URLSearchParams(searchParams.toString())
-    
-    if (updates.page !== undefined) {
-      if (updates.page === 1) {
-        params.delete('page')
-      } else {
-        params.set('page', updates.page.toString())
-      }
-    }
-    
-    if (updates.pageSize !== undefined) {
-      if (updates.pageSize === 50) {
-        params.delete('pageSize')
-      } else {
-        params.set('pageSize', updates.pageSize.toString())
-      }
-      params.delete('page')
-    }
     
     if (updates.search !== undefined) {
       if (updates.search === '') {
@@ -176,7 +150,6 @@ function InventoryTrashPageContent() {
       } else {
         params.set('search', updates.search)
       }
-      params.delete('page')
     }
 
     if (updates.searchType !== undefined) {
@@ -185,7 +158,6 @@ function InventoryTrashPageContent() {
       } else {
         params.set('searchType', updates.searchType)
       }
-      params.delete('page')
     }
     
     router.push(`?${params.toString()}`, { scroll: false })
@@ -206,7 +178,7 @@ function InventoryTrashPageContent() {
       previousSearchInputRef.current = searchInput
       const currentSearch = searchParams.get('search') || ''
       if (searchInput !== currentSearch) {
-        updateURL({ search: searchInput, searchType, page: 1 })
+        updateURL({ search: searchInput, searchType })
       }
     }, 500)
 
@@ -221,8 +193,8 @@ function InventoryTrashPageContent() {
 
   // Fetch deleted inventory items
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['deletedInventoryItems', page, pageSize, searchQuery, searchType],
-    queryFn: () => fetchDeletedInventoryItems(page, pageSize, searchQuery || undefined, searchType),
+    queryKey: ['deletedInventoryItems', searchQuery, searchType],
+    queryFn: () => fetchDeletedInventoryItems(searchQuery || undefined, searchType),
     enabled: (canViewInventory || canManageTrash) && !permissionsLoading,
     placeholderData: (previousData) => previousData,
   })
@@ -234,13 +206,6 @@ function InventoryTrashPageContent() {
     }
   }, [isFetching, isManualRefresh])
 
-  const handlePageSizeChange = (newPageSize: string) => {
-    updateURL({ pageSize: parseInt(newPageSize), page: 1 })
-  }
-
-  const handlePageChange = (newPage: number) => {
-    updateURL({ page: newPage })
-  }
 
   // Restore mutation
   const restoreMutation = useMutation({
@@ -348,7 +313,7 @@ function InventoryTrashPageContent() {
     return Math.max(0, 30 - daysSinceDeleted)
   }
 
-  const deletedItems = data?.items || []
+  const deletedItems = useMemo(() => data?.items || [], [data?.items])
   const pagination = data?.pagination
 
   // Create column definitions
@@ -729,6 +694,94 @@ function InventoryTrashPageContent() {
     }
   }
 
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile) {
+      setDockContent(
+        selectedItems.size > 0 ? (
+          <>
+            <Button
+              onClick={() => {
+                if (!canManageTrash) {
+                  toast.error('You do not have permission to restore items')
+                  return
+                }
+                setIsBulkRestoreDialogOpen(true)
+              }}
+              variant="outline"
+              size="lg"
+              className="rounded-full"
+            >
+              Recover
+            </Button>
+            <Button
+              onClick={() => {
+                if (!canManageTrash) {
+                  toast.error('You do not have permission to permanently delete items')
+                  return
+                }
+                setIsBulkDeleteDialogOpen(true)
+              }}
+              variant="outline"
+              size="icon"
+              className="h-10 w-10 rounded-full"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              onClick={() => {
+                if (!canManageTrash) {
+                  toast.error('You do not have permission to restore items')
+                  return
+                }
+                // Select all items and restore them
+                const allItemIds = deletedItems.map((item: DeletedInventoryItem) => item.id)
+                setRowSelection(
+                  allItemIds.reduce((acc: Record<string, boolean>, id: string) => ({ ...acc, [id]: true }), {})
+                )
+                setIsBulkRestoreDialogOpen(true)
+              }}
+              disabled={!pagination?.total || pagination.total === 0 || !canManageTrash}
+              variant="outline"
+              size="lg"
+              className="rounded-full"
+            >
+              Recover All
+            </Button>
+            <Button
+              onClick={() => {
+                if (!canManageTrash) {
+                  toast.error('You do not have permission to permanently delete items')
+                  return
+                }
+                if (selectedItems.size > 0) {
+                  setIsBulkDeleteDialogOpen(true)
+                } else {
+                  setIsEmptyTrashDialogOpen(true)
+                }
+              }}
+              variant="outline"
+              size="icon"
+              className="h-10 w-10 rounded-full"
+              disabled={!pagination?.total || pagination.total === 0}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </>
+        )
+      )
+    } else {
+      setDockContent(null)
+    }
+    
+    return () => {
+      setDockContent(null)
+    }
+  }, [isMobile, setDockContent, selectedItems.size, canManageTrash, setIsBulkRestoreDialogOpen, setIsBulkDeleteDialogOpen, setIsEmptyTrashDialogOpen, deletedItems, pagination?.total, setRowSelection])
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: -20 }}
@@ -746,7 +799,7 @@ function InventoryTrashPageContent() {
         <Button
           variant="outline"
           onClick={() => router.push('/inventory')}
-          className="shrink-0"
+          className="shrink-0 hidden sm:flex"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Inventory
@@ -756,62 +809,76 @@ function InventoryTrashPageContent() {
       <Card className="gap-0 pb-0">
         <CardHeader className="shrink-0 pb-3">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div className="flex items-center w-full md:flex-1 md:max-w-md border rounded-md overflow-hidden">
-              <Select
-                value={searchType}
-                onValueChange={(value: 'unified' | 'itemCode' | 'name' | 'category' | 'location' | 'supplier') => {
-                  setSearchType(value)
-                  updateURL({ searchType: value, page: 1 })
-                }}
-              >
-                <SelectTrigger className="w-[140px] h-8 rounded-none border-0 border-r focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none" size='sm'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unified">Unified Search</SelectItem>
-                  <SelectItem value="itemCode">Item Code</SelectItem>
-                  <SelectItem value="name">Name</SelectItem>
-                  <SelectItem value="category">Category</SelectItem>
-                  <SelectItem value="location">Location</SelectItem>
-                  <SelectItem value="supplier">Supplier</SelectItem>
-                </SelectContent>
-              </Select>
-              <div className="relative flex-1">
-                {searchInput ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchInput('')
-                      updateURL({ search: '', page: 1 })
-                    }}
-                    className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer z-10"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                ) : (
-                  <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
-                )}
-                <Input
-                  placeholder={
-                    searchType === 'unified'
-                      ? 'Search by item code, name, category, location...'
-                      : searchType === 'itemCode'
-                      ? 'Search by Item Code'
-                      : searchType === 'name'
-                      ? 'Search by Name'
-                      : searchType === 'category'
-                      ? 'Search by Category'
-                      : searchType === 'location'
-                      ? 'Search by Location'
-                      : 'Search by Supplier'
-                  }
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  className="pl-8 h-8 rounded-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
-                />
+            <div className="flex items-center w-full md:flex-1 md:max-w-md gap-2">
+              <div className="flex items-center flex-1 border rounded-md overflow-hidden">
+                <Select
+                  value={searchType}
+                  onValueChange={(value: 'unified' | 'itemCode' | 'name' | 'category' | 'location' | 'supplier') => {
+                    setSearchType(value)
+                    updateURL({ searchType: value })
+                  }}
+                >
+                  <SelectTrigger className="w-[140px] h-8 rounded-none border-0 border-r focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none" size='sm'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unified">Unified Search</SelectItem>
+                    <SelectItem value="itemCode">Item Code</SelectItem>
+                    <SelectItem value="name">Name</SelectItem>
+                    <SelectItem value="category">Category</SelectItem>
+                    <SelectItem value="location">Location</SelectItem>
+                    <SelectItem value="supplier">Supplier</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="relative flex-1">
+                  {searchInput ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchInput('')
+                         updateURL({ search: '' })
+                      }}
+                      className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer z-10"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : (
+                    <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+                  )}
+                  <Input
+                    placeholder={
+                      searchType === 'unified'
+                        ? 'Search by item code, name, category, location...'
+                        : searchType === 'itemCode'
+                        ? 'Search by Item Code'
+                        : searchType === 'name'
+                        ? 'Search by Name'
+                        : searchType === 'category'
+                        ? 'Search by Category'
+                        : searchType === 'location'
+                        ? 'Search by Location'
+                        : 'Search by Supplier'
+                    }
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    className="pl-8 h-8 rounded-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
+                  />
+                </div>
               </div>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  setIsManualRefresh(true)
+                  queryClient.invalidateQueries({ queryKey: ['deletedInventoryItems'] })
+                }}
+                className="h-8 w-8 shrink-0 md:hidden"
+                title="Refresh table"
+              >
+                <RotateCw className="h-4 w-4" />
+              </Button>
             </div>
-            <div className="flex gap-2 sm:gap-3 items-center justify-end">
+            <div className={cn("flex gap-2 sm:gap-3 items-center justify-end", isMobile && "hidden")}>
               {selectedItems.size > 0 && (
                 <>
                   <Button
@@ -993,72 +1060,6 @@ function InventoryTrashPageContent() {
             </div>
           )}
         </CardContent>
-
-        {/* Pagination Bar */}
-        <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-b-lg">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3">
-            <div className="flex items-center justify-center sm:justify-start gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (pagination?.hasPreviousPage) {
-                    handlePageChange(Math.max(1, page - 1))
-                  }
-                }}
-                disabled={!pagination?.hasPreviousPage || isLoading}
-                className="h-8 px-2 sm:px-3"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
-                <span className="text-muted-foreground">Page</span>
-                <div className="px-1.5 sm:px-2 py-1 rounded-md bg-primary/10 text-primary font-medium text-xs sm:text-sm">
-                  {isLoading ? '...' : (pagination?.page || page)}
-                </div>
-                <span className="text-muted-foreground">of</span>
-                <span className="text-muted-foreground">{isLoading ? '...' : (pagination?.totalPages || 1)}</span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (pagination?.hasNextPage) {
-                    handlePageChange(Math.min(pagination.totalPages, page + 1))
-                  }
-                }}
-                disabled={!pagination?.hasNextPage || isLoading}
-                className="h-8 px-2 sm:px-3"
-              >
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="flex items-center justify-center sm:justify-end gap-2 sm:gap-4">
-              <Select value={pageSize.toString()} onValueChange={handlePageSizeChange} disabled={isLoading}>
-                <SelectTrigger className="h-8 w-auto min-w-[90px] sm:min-w-[100px] text-xs sm:text-sm border-primary/20 bg-primary/10 text-primary font-medium hover:bg-primary/20">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="25">25 rows</SelectItem>
-                  <SelectItem value="50">50 rows</SelectItem>
-                  <SelectItem value="100">100 rows</SelectItem>
-                  <SelectItem value="200">200 rows</SelectItem>
-                  <SelectItem value="500">500 rows</SelectItem>
-                </SelectContent>
-              </Select>
-              <div className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
-                {isLoading ? (
-                  <Spinner className="h-4 w-4" />
-                ) : (
-                  <>
-                    <span className="hidden sm:inline">{pagination?.total || 0} records</span>
-                    <span className="sm:hidden">{pagination?.total || 0}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
       </Card>
 
       {/* Restore Confirmation Dialog */}
@@ -1089,7 +1090,13 @@ function InventoryTrashPageContent() {
       {/* Bulk Restore Confirmation Dialog */}
       <BulkDeleteDialog
         open={isBulkRestoreDialogOpen}
-        onOpenChange={setIsBulkRestoreDialogOpen}
+        onOpenChange={(newOpen) => {
+          setIsBulkRestoreDialogOpen(newOpen)
+          // Clear selection when dialog is closed (cancelled) and not currently restoring
+          if (!newOpen && !isBulkRestoring) {
+            setRowSelection({})
+          }
+        }}
         onConfirm={handleBulkRestore}
         itemCount={selectedItems.size}
         itemName="Item"

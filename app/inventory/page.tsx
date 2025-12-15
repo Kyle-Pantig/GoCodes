@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -53,6 +53,8 @@ import {
   Package,
   AlertTriangle,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
   X,
@@ -73,11 +75,12 @@ import * as XLSX from 'xlsx'
 import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 import { InventoryItemDialog, type InventoryItem as InventoryItemType } from '@/components/dialogs/inventory-item-dialog'
 import { InventoryTransactionDialog } from '@/components/dialogs/inventory-transaction-dialog'
-import { InventoryTransactionHistoryDialog } from '@/components/dialogs/inventory-transaction-history-dialog'
 import { ExportFieldsDialog } from '@/components/dialogs/export-fields-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { HeaderGroup, Header } from '@tanstack/react-table'
+import { useMobileDock } from '@/components/mobile-dock-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 interface InventoryItem {
   id: string
@@ -113,18 +116,27 @@ interface PaginationInfo {
   hasPreviousPage: boolean
 }
 
-interface InventoryTransaction {
-  id: string
-  inventoryItemId: string
-  transactionType: 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER'
-  quantity: number
-  unitCost: number | null
-  totalCost: number | null
-  transactionDate: string
-  reference: string | null
-  notes: string | null
-  actionBy: string | null
-  createdAt: string
+interface CategorySummary {
+  category: string
+  count: number
+  totalStock: number
+  totalCost: number
+}
+
+interface StatusSummary {
+  status: string
+  count: number
+  totalStock: number
+  totalCost: number
+}
+
+interface SummaryData {
+  totalItems: number
+  totalStock: number
+  totalCost: number
+  byCategory: CategorySummary[]
+  byStatus: StatusSummary[]
+  lowStockItems: InventoryItem[]
 }
 
 async function fetchInventoryItems(params: {
@@ -186,14 +198,6 @@ async function deleteInventoryItem(id: string) {
   return response.json()
 }
 
-async function fetchTransactions(itemId: string, page: number = 1, pageSize: number = 50) {
-  const response = await fetch(`/api/inventory/${itemId}/transactions?page=${page}&pageSize=${pageSize}`)
-  if (!response.ok) {
-    throw new Error('Failed to fetch transactions')
-  }
-  return response.json()
-}
-
 async function createTransaction(itemId: string, data: {
   transactionType: 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER'
   quantity: number
@@ -250,7 +254,13 @@ const createColumns = (
         className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
       >
         Item Code
-        <ArrowUpDown className="ml-2 h-4 w-4" />
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
       </Button>
     ),
     cell: ({ row }) => (
@@ -267,19 +277,40 @@ const createColumns = (
         className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
       >
         Name
-        <ArrowUpDown className="ml-2 h-4 w-4" />
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
       </Button>
     ),
   },
   {
     id: 'category',
     accessorKey: 'category',
-    header: 'Category',
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+      >
+        Category
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
+      </Button>
+    ),
     cell: ({ row }) => row.original.category || 'N/A',
   },
   {
     id: 'currentStock',
-    accessorKey: 'currentStock',
+    accessorFn: (row) => parseFloat(row.currentStock.toString()),
     header: ({ column }) => (
       <Button
         variant="ghost"
@@ -287,7 +318,13 @@ const createColumns = (
         className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
       >
         Stock
-        <ArrowUpDown className="ml-2 h-4 w-4" />
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
       </Button>
     ),
     cell: ({ row }) => {
@@ -304,7 +341,37 @@ const createColumns = (
   },
   {
     id: 'status',
-    header: 'Status',
+    accessorFn: (row) => {
+      const stock = Math.floor(parseFloat(row.currentStock.toString()))
+      const minStock = row.minStockLevel
+        ? Math.floor(parseFloat(row.minStockLevel.toString()))
+        : null
+      const maxStock = row.maxStockLevel
+        ? Math.floor(parseFloat(row.maxStockLevel.toString()))
+        : null
+      
+      // Return a sortable value: 0 = Out of Stock, 1 = Low Stock, 2 = In Stock, 3 = Overstock
+      if (stock === 0) return 0
+      if (minStock !== null && stock <= minStock) return 1
+      if (maxStock !== null && stock > maxStock) return 3
+      return 2
+    },
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+      >
+        Status
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
+      </Button>
+    ),
     cell: ({ row }) => {
       const item = row.original
       const stock = Math.floor(parseFloat(item.currentStock.toString()))
@@ -315,28 +382,23 @@ const createColumns = (
         ? Math.floor(parseFloat(item.maxStockLevel.toString()))
         : null
       
-      let status: 'out' | 'low' | 'ok' | 'over' = 'ok'
       let statusLabel = 'In Stock'
       let statusVariant: 'default' | 'destructive' | 'secondary' | 'outline' = 'default'
       let statusIcon = CheckCircle2
       
       if (stock === 0) {
-        status = 'out'
         statusLabel = 'Out of Stock'
         statusVariant = 'destructive'
         statusIcon = XCircle
       } else if (minStock !== null && stock <= minStock) {
-        status = 'low'
         statusLabel = 'Low Stock'
         statusVariant = 'destructive'
         statusIcon = AlertTriangle
       } else if (maxStock !== null && stock > maxStock) {
-        status = 'over'
         statusLabel = 'Overstock'
         statusVariant = 'secondary'
         statusIcon = TrendingUp
       } else {
-        status = 'ok'
         statusLabel = 'In Stock'
         statusVariant = 'default'
         statusIcon = CheckCircle2
@@ -353,8 +415,23 @@ const createColumns = (
   },
   {
     id: 'unitCost',
-    accessorKey: 'unitCost',
-    header: 'Unit Cost',
+    accessorFn: (row) => row.unitCost ? parseFloat(row.unitCost.toString()) : 0,
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+      >
+        Unit Cost
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
+      </Button>
+    ),
     cell: ({ row }) => {
       const cost = row.original.unitCost
       return cost
@@ -368,55 +445,190 @@ const createColumns = (
   {
     id: 'location',
     accessorKey: 'location',
-    header: 'Location',
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+      >
+        Location
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
+      </Button>
+    ),
     cell: ({ row }) => row.original.location || 'N/A',
   },
   {
     id: 'supplier',
     accessorKey: 'supplier',
-    header: 'Supplier',
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+      >
+        Supplier
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
+      </Button>
+    ),
     cell: ({ row }) => row.original.supplier || 'N/A',
   },
   {
     id: 'brand',
     accessorKey: 'brand',
-    header: 'Brand',
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+      >
+        Brand
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
+      </Button>
+    ),
     cell: ({ row }) => row.original.brand || 'N/A',
   },
   {
     id: 'model',
     accessorKey: 'model',
-    header: 'Model',
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+      >
+        Model
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
+      </Button>
+    ),
     cell: ({ row }) => row.original.model || 'N/A',
   },
   {
     id: 'sku',
     accessorKey: 'sku',
-    header: 'SKU',
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+      >
+        SKU
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
+      </Button>
+    ),
     cell: ({ row }) => row.original.sku || 'N/A',
   },
   {
     id: 'barcode',
     accessorKey: 'barcode',
-    header: 'Barcode',
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+      >
+        Barcode
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
+      </Button>
+    ),
     cell: ({ row }) => row.original.barcode || 'N/A',
   },
   {
     id: 'unit',
     accessorKey: 'unit',
-    header: 'Unit',
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+      >
+        Unit
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
+      </Button>
+    ),
     cell: ({ row }) => row.original.unit || 'N/A',
   },
   {
     id: 'description',
     accessorKey: 'description',
-    header: 'Description',
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+      >
+        Description
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
+      </Button>
+    ),
     cell: ({ row }) => row.original.description || 'N/A',
   },
   {
     id: 'remarks',
     accessorKey: 'remarks',
-    header: 'Remarks',
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
+      >
+        Remarks
+        {column.getIsSorted() === 'asc' ? (
+          <ArrowUp className="ml-2 h-4 w-4" />
+        ) : column.getIsSorted() === 'desc' ? (
+          <ArrowDown className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
+      </Button>
+    ),
     cell: ({ row }) => row.original.remarks || 'N/A',
   },
   {
@@ -466,11 +678,13 @@ const createColumns = (
 function InventoryPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   const queryClient = useQueryClient()
   const isInitialMount = useRef(true)
   const [isManualRefresh, setIsManualRefresh] = useState(false)
   const { hasPermission } = usePermissions()
+  const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
   
   // Get page, pageSize, and filters from URL
   const page = parseInt(searchParams.get('page') || '1', 10)
@@ -505,9 +719,7 @@ function InventoryPageContent() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false)
-  const [isHistoryDialogOpen, setIsHistoryDialogOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
-  const [transactionHistoryPage, setTransactionHistoryPage] = useState(1)
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
@@ -520,7 +732,7 @@ function InventoryPageContent() {
   const canManageImport = hasPermission('canManageImport')
 
   // Available export fields
-  const exportFields = [
+  const exportFields = useMemo(() => [
     { key: 'itemCode', label: 'Item Code' },
     { key: 'name', label: 'Name' },
     { key: 'description', label: 'Description' },
@@ -537,16 +749,16 @@ function InventoryPageContent() {
     { key: 'sku', label: 'SKU' },
     { key: 'barcode', label: 'Barcode' },
     { key: 'remarks', label: 'Remarks' },
-  ]
+  ], [])
 
   // Summary fields for export
-  const summaryFields = [
+  const summaryFields = useMemo(() => [
     { key: 'summary', label: 'Summary' },
     { key: 'byCategory', label: 'By Category' },
     { key: 'byStatus', label: 'By Status' },
     { key: 'totalCost', label: 'Total Cost' },
     { key: 'lowStock', label: 'Low Stock Items' },
-  ]
+  ], [])
 
   // Initialize export fields - select all by default when dialog opens
   useEffect(() => {
@@ -761,16 +973,20 @@ function InventoryPageContent() {
     },
   })
 
-  // Transaction history query
-  const { data: transactionHistory, isLoading: isLoadingHistory } = useQuery({
-    queryKey: ['inventory-transactions', selectedItem?.id, transactionHistoryPage],
-    queryFn: () => selectedItem ? fetchTransactions(selectedItem.id, transactionHistoryPage, 20) : null,
-    enabled: isHistoryDialogOpen && !!selectedItem,
-  })
 
   // Create transaction mutation
   const createTransactionMutation = useMutation({
-    mutationFn: ({ itemId, data }: { itemId: string; data: any }) => createTransaction(itemId, data),
+    mutationFn: ({ itemId, data }: { 
+      itemId: string
+      data: {
+        transactionType: 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER'
+        quantity: number
+        unitCost?: number | null
+        reference?: string | null
+        notes?: string | null
+        destinationItemId?: string | null
+      }
+    }) => createTransaction(itemId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
@@ -782,14 +998,14 @@ function InventoryPageContent() {
     },
   })
 
-  const handleAdd = () => {
+  const handleAdd = useCallback(() => {
     if (!canManageInventory) {
       toast.error('You do not have permission to add inventory')
       return
     }
     setSelectedItem(null)
     setIsAddDialogOpen(true)
-  }
+  }, [canManageInventory])
 
   const handleEdit = useCallback((item: InventoryItem) => {
     if (!canManageInventory) {
@@ -819,10 +1035,8 @@ function InventoryPageContent() {
   }, [canManageInventory])
 
   const handleViewTransactions = useCallback((item: InventoryItem) => {
-    setSelectedItem(item)
-    setTransactionHistoryPage(1)
-    setIsHistoryDialogOpen(true)
-  }, [])
+    router.push(`/inventory/${item.itemCode}/transaction-history`)
+  }, [router])
 
   // Format number with commas and 2 decimal places
   const formatNumber = (value: number | null | undefined): string => {
@@ -836,7 +1050,7 @@ function InventoryPageContent() {
   }
 
   // Calculate summary data
-  const calculateSummaryData = useCallback((): any => {
+  const calculateSummaryData = useCallback((): SummaryData | null => {
     if (!data?.items) return null
 
     const items = data.items
@@ -911,101 +1125,8 @@ function InventoryPageContent() {
     }
   }, [data?.items])
 
-  // Export inventory items to Excel or PDF
-  const handleExport = useCallback(async () => {
-    if (selectedExportFields.size === 0 && selectedSummaryFields.size === 0) {
-      toast.error('Please select at least one field to export')
-      return
-    }
-
-    setIsExporting(true)
-    try {
-      if (exportFormat === 'pdf') {
-        // Handle PDF export - still needs summary data for HTML generation
-        const summaryData = calculateSummaryData() || {}
-        await handlePDFExport([], summaryData)
-      } else {
-        // Handle Excel export via API
-        const params = new URLSearchParams()
-        params.set('format', 'excel')
-        if (searchQuery) params.set('search', searchQuery)
-        if (categoryFilter && categoryFilter !== 'all') params.set('category', categoryFilter)
-        if (lowStockFilter) params.set('lowStock', 'true')
-        
-        // Summary fields
-        params.set('includeSummary', selectedSummaryFields.has('summary').toString())
-        params.set('includeByCategory', selectedSummaryFields.has('byCategory').toString())
-        params.set('includeByStatus', selectedSummaryFields.has('byStatus').toString())
-        params.set('includeTotalCost', selectedSummaryFields.has('totalCost').toString())
-        params.set('includeLowStock', selectedSummaryFields.has('lowStock').toString())
-        params.set('includeItemList', (selectedExportFields.size > 0).toString())
-        
-        // Item fields
-        if (selectedExportFields.size > 0) {
-          params.set('itemFields', Array.from(selectedExportFields).join(','))
-        }
-
-        const response = await fetch(`/api/inventory/export?${params.toString()}`)
-        
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: 'Export failed' }))
-          throw new Error(errorData.error || 'Export failed')
-        }
-
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `inventory-export-${new Date().toISOString().split('T')[0]}.xlsx`
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-        document.body.removeChild(a)
-
-        toast.success('Inventory exported successfully')
-      }
-      
-      setIsExportDialogOpen(false)
-    } catch (error) {
-      console.error('Export error:', error)
-      toast.error(`Failed to export inventory items as ${exportFormat.toUpperCase()}`)
-    } finally {
-      setIsExporting(false)
-    }
-  }, [selectedExportFields, selectedSummaryFields, exportFormat, searchQuery, categoryFilter, lowStockFilter, calculateSummaryData])
-
-  // PDF Export handler
-  const handlePDFExport = useCallback(async (allData: any[], summaryData: any) => {
-    // Generate HTML for PDF
-    const html = generateInventoryReportHTML(allData, summaryData, selectedSummaryFields, selectedExportFields, data?.items || [])
-    
-    const response = await fetch('/api/inventory/pdf', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ html }),
-    })
-
-    if (!response.ok) {
-      throw new Error('PDF generation failed')
-    }
-
-    const blob = await response.blob()
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `inventory-report-${new Date().toISOString().split('T')[0]}.pdf`
-    document.body.appendChild(a)
-    a.click()
-    window.URL.revokeObjectURL(url)
-    document.body.removeChild(a)
-
-    toast.success('PDF exported successfully')
-  }, [selectedSummaryFields, selectedExportFields, data?.items])
-
   // Generate HTML for PDF report
-  const generateInventoryReportHTML = useCallback((allData: any[], summaryData: any, summaryFields: Set<string>, itemFields: Set<string>, items: InventoryItem[]) => {
+  const generateInventoryReportHTML = useCallback((_allData: InventoryItem[], summaryData: SummaryData | null, summaryFields: Set<string>, itemFields: Set<string>, items: InventoryItem[]) => {
     let html = `
       <!DOCTYPE html>
       <html>
@@ -1050,7 +1171,7 @@ function InventoryPageContent() {
           <table>
             <tr><th>Category</th><th>Count</th><th>Total Stock</th><th>Total Cost</th></tr>
         `
-        summaryData.byCategory.forEach((cat: any) => {
+        summaryData.byCategory.forEach((cat) => {
           html += `<tr><td>${cat.category}</td><td>${cat.count}</td><td>${Math.floor(cat.totalStock)}</td><td>₱${formatNumber(cat.totalCost)}</td></tr>`
         })
         html += `</table>`
@@ -1062,7 +1183,7 @@ function InventoryPageContent() {
           <table>
             <tr><th>Status</th><th>Count</th><th>Total Stock</th><th>Total Cost</th></tr>
         `
-        summaryData.byStatus.forEach((statusItem: any) => {
+        summaryData.byStatus.forEach((statusItem) => {
           html += `<tr><td>${statusItem.status}</td><td>${statusItem.count}</td><td>${Math.floor(statusItem.totalStock)}</td><td>₱${formatNumber(statusItem.totalCost)}</td></tr>`
         })
         html += `</table>`
@@ -1083,7 +1204,7 @@ function InventoryPageContent() {
           <table>
             <tr><th>Item Code</th><th>Name</th><th>Current Stock</th><th>Min Level</th></tr>
         `
-        summaryData.lowStockItems.forEach((item: any) => {
+        summaryData.lowStockItems.forEach((item) => {
           html += `<tr><td>${item.itemCode}</td><td>${item.name}</td><td>${Math.floor(parseFloat(item.currentStock.toString()))}</td><td>${item.minStockLevel ? Math.floor(parseFloat(item.minStockLevel.toString())) : ''}</td></tr>`
         })
         html += `</table>`
@@ -1189,6 +1310,99 @@ function InventoryPageContent() {
     return html
   }, [])
 
+  // PDF Export handler
+  const handlePDFExport = useCallback(async (_allData: InventoryItem[], summaryData: SummaryData | null) => {
+    // Generate HTML for PDF
+    const html = generateInventoryReportHTML(_allData, summaryData, selectedSummaryFields, selectedExportFields, data?.items || [])
+    
+    const response = await fetch('/api/inventory/pdf', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ html }),
+    })
+
+    if (!response.ok) {
+      throw new Error('PDF generation failed')
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `inventory-report-${new Date().toISOString().split('T')[0]}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+
+    toast.success('PDF exported successfully')
+  }, [selectedSummaryFields, selectedExportFields, data?.items, generateInventoryReportHTML])
+
+  // Export inventory items to Excel or PDF
+  const handleExport = useCallback(async () => {
+    if (selectedExportFields.size === 0 && selectedSummaryFields.size === 0) {
+      toast.error('Please select at least one field to export')
+      return
+    }
+
+    setIsExporting(true)
+    try {
+      if (exportFormat === 'pdf') {
+        // Handle PDF export - still needs summary data for HTML generation
+        const summaryData = calculateSummaryData()
+        await handlePDFExport([], summaryData)
+      } else {
+        // Handle Excel export via API
+        const params = new URLSearchParams()
+        params.set('format', 'excel')
+        if (searchQuery) params.set('search', searchQuery)
+        if (categoryFilter && categoryFilter !== 'all') params.set('category', categoryFilter)
+        if (lowStockFilter) params.set('lowStock', 'true')
+        
+        // Summary fields
+        params.set('includeSummary', selectedSummaryFields.has('summary').toString())
+        params.set('includeByCategory', selectedSummaryFields.has('byCategory').toString())
+        params.set('includeByStatus', selectedSummaryFields.has('byStatus').toString())
+        params.set('includeTotalCost', selectedSummaryFields.has('totalCost').toString())
+        params.set('includeLowStock', selectedSummaryFields.has('lowStock').toString())
+        params.set('includeItemList', (selectedExportFields.size > 0).toString())
+        
+        // Item fields
+        if (selectedExportFields.size > 0) {
+          params.set('itemFields', Array.from(selectedExportFields).join(','))
+        }
+
+        const response = await fetch(`/api/inventory/export?${params.toString()}`)
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Export failed' }))
+          throw new Error(errorData.error || 'Export failed')
+        }
+
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `inventory-export-${new Date().toISOString().split('T')[0]}.xlsx`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+
+        toast.success('Inventory exported successfully')
+      }
+      
+      setIsExportDialogOpen(false)
+    } catch (error) {
+      console.error('Export error:', error)
+      toast.error(`Failed to export inventory items as ${exportFormat.toUpperCase()}`)
+    } finally {
+      setIsExporting(false)
+    }
+  }, [selectedExportFields, selectedSummaryFields, exportFormat, searchQuery, categoryFilter, lowStockFilter, calculateSummaryData, handlePDFExport])
+
   const handleExportClick = useCallback((format: 'excel' | 'pdf' = 'excel') => {
     if (!data?.items || data.items.length === 0) {
       toast.error('No items to export')
@@ -1212,7 +1426,7 @@ function InventoryPageContent() {
 
   const handleSelectAllExportFields = useCallback(() => {
     setSelectedExportFields(new Set(exportFields.map(f => f.key)))
-  }, [])
+  }, [exportFields])
 
   const handleDeselectAllExportFields = useCallback(() => {
     setSelectedExportFields(new Set())
@@ -1232,7 +1446,7 @@ function InventoryPageContent() {
 
   const handleSelectAllSummaryFields = useCallback(() => {
     setSelectedSummaryFields(new Set(summaryFields.map(f => f.key)))
-  }, [])
+  }, [summaryFields])
 
   const handleDeselectAllSummaryFields = useCallback(() => {
     setSelectedSummaryFields(new Set())
@@ -1345,7 +1559,7 @@ function InventoryPageContent() {
       const fileData = await file.arrayBuffer()
       const workbook = XLSX.read(fileData)
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const jsonData = XLSX.utils.sheet_to_json(sheet) as Record<string, any>[]
+      const jsonData = XLSX.utils.sheet_to_json(sheet) as Record<string, string | number | null | undefined>[]
 
       if (jsonData.length === 0) {
         toast.error('No data found in the file')
@@ -1353,7 +1567,7 @@ function InventoryPageContent() {
       }
 
       // Helper function to safely parse numbers
-      const parseNumber = (value: any): number | null => {
+      const parseNumber = (value: string | number | null | undefined): number | null => {
         if (value === null || value === undefined || value === '') return null
         if (typeof value === 'string') {
           const cleaned = value.replace(/,/g, '').trim()
@@ -1524,6 +1738,89 @@ function InventoryPageContent() {
     setShouldCloseSelect(false)
   }, [table])
 
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile) {
+      setDockContent(
+        <>
+          <Button 
+            onClick={handleAdd}
+            variant="outline"
+            size="lg"
+            className="rounded-full"
+          >
+            Add Item
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="rounded-full h-10 w-10">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger disabled={!data?.items || data.items.length === 0}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Export
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onClick={() => handleExportClick('excel')} disabled={!data?.items || data.items.length === 0}>
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExportClick('pdf')} disabled={!data?.items || data.items.length === 0}>
+                    <FileText className="mr-2 h-4 w-4" />
+                    PDF
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuItem onClick={handleDownloadTemplate}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Download Template
+              </DropdownMenuItem>
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onClick={() => {
+                    if (!canManageImport) {
+                      toast.error('You do not have permission to import inventory items')
+                      return
+                    }
+                    fileInputRef.current?.click()
+                  }}
+                  disabled={isImporting}
+                >
+                  {isImporting ? (
+                    <>
+                      <Spinner className="mr-2 h-4 w-4" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Import from Excel
+                    </>
+                  )}
+                </DropdownMenuItem>
+              </>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => router.push('/inventory/trash')}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Recently Deleted
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>
+      )
+    } else {
+      setDockContent(null)
+    }
+    
+    return () => {
+      setDockContent(null)
+    }
+  }, [isMobile, setDockContent, handleAdd, handleExportClick, handleDownloadTemplate, canManageImport, isImporting, data?.items, router, fileInputRef])
+
   if (error) {
     return (
       <div className="space-y-6 p-6">
@@ -1545,14 +1842,14 @@ function InventoryPageContent() {
       transition={{ duration: 0.5 }}
       className="space-y-6 max-h-screen"
     >
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Inventory</h1>
           <p className="text-muted-foreground">
             Manage stock-type items (consumables, spare parts)
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="hidden sm:flex items-center gap-2 shrink-0">
           <Button 
             onClick={handleAdd}
           >
@@ -1960,8 +2257,12 @@ function InventoryPageContent() {
             deleteMutation.mutate(selectedItem.id)
           }
         }}
-        itemName={selectedItem?.name || ''}
+        itemName={selectedItem?.itemCode || ''}
         isLoading={deleteMutation.isPending}
+        title={selectedItem ? `Move ${selectedItem.itemCode} to Trash?` : 'Move to Trash?'}
+        description="This item will be moved to Trash and can be restored later if needed."
+        confirmLabel="Move to Trash"
+        loadingLabel="Moving to Trash..."
       />
 
       {/* Add Transaction Dialog */}
@@ -1983,21 +2284,6 @@ function InventoryPageContent() {
         isLoading={createTransactionMutation.isPending}
       />
 
-      {/* Transaction History Dialog */}
-      <InventoryTransactionHistoryDialog
-        open={isHistoryDialogOpen}
-        onOpenChange={setIsHistoryDialogOpen}
-        item={selectedItem ? {
-          id: selectedItem.id,
-          name: selectedItem.name,
-          currentStock: selectedItem.currentStock,
-          unit: selectedItem.unit,
-        } : null}
-        transactions={transactionHistory?.transactions}
-        pagination={transactionHistory?.pagination}
-        isLoading={isLoadingHistory}
-        onPageChange={(page) => setTransactionHistoryPage(page)}
-      />
 
       {/* Export Fields Dialog */}
       <ExportFieldsDialog
@@ -2019,6 +2305,7 @@ function InventoryPageContent() {
         onSelectAllSummary={handleSelectAllSummaryFields}
         onDeselectAllSummary={handleDeselectAllSummaryFields}
       />
+
     </motion.div>
   )
 }

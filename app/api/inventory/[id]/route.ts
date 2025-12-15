@@ -13,9 +13,12 @@ export async function GET(
   try {
     const { id } = await params
 
+    // Check if it's a UUID (contains hyphens) or itemCode
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+    
     const item = await prisma.inventoryItem.findFirst({
       where: {
-        id,
+        ...(isUUID ? { id } : { itemCode: id }),
         isDeleted: false,
       },
       include: {
