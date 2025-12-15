@@ -1036,7 +1036,7 @@ function MediaPageContent() {
               variant="outline"
               size="lg"
               onClick={handleToggleSelectionMode}
-              className="rounded-full"
+              className="rounded-full bg-white/10 dark:bg-white/5 bg-clip-padding backdrop-filter backdrop-blur-md border border-white/30 dark:border-white/15 shadow-[0_2px_4px_rgba(0,0,0,0.15),inset_0_0.5px_0_rgba(255,255,255,0.4),inset_0_-0.5px_0_rgba(0,0,0,0.2),inset_0.5px_0_0_rgba(255,255,255,0.3),inset_-0.5px_0_0_rgba(0,0,0,0.15)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.4),inset_0_0.5px_0_rgba(255,255,255,0.2),inset_0_-0.5px_0_rgba(0,0,0,0.3),inset_0.5px_0_0_rgba(255,255,255,0.15),inset_-0.5px_0_0_rgba(0,0,0,0.2)]"
             >
               Select
             </Button>
