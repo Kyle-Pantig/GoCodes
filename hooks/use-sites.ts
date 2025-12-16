@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { createClient } from '@/lib/supabase-client'
 
 export interface Site {
   id: string
@@ -13,15 +14,46 @@ interface CreateSiteData {
   description?: string | null
 }
 
+// Get API base URL - use FastAPI if enabled
+const getApiBaseUrl = () => {
+  const useFastAPI = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true'
+  const fastApiUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000'
+  return useFastAPI ? fastApiUrl : ''
+}
+
+// Helper function to get auth token from Supabase session
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    return session?.access_token || null
+  } catch (error) {
+    console.error('Failed to get auth token:', error)
+    return null
+  }
+}
+
 // Fetch sites
 export const useSites = (enabled: boolean = true, search?: string) => {
   return useQuery({
     queryKey: ["sites", search],
     queryFn: async () => {
+      const baseUrl = getApiBaseUrl()
       const url = search
-        ? `/api/sites?search=${encodeURIComponent(search)}`
-        : "/api/sites"
-      const response = await fetch(url)
+        ? `${baseUrl}/api/sites?search=${encodeURIComponent(search)}`
+        : `${baseUrl}/api/sites`
+      
+      // Get auth token and add to headers
+      const token = await getAuthToken()
+      const headers: HeadersInit = {}
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(url, {
+        credentials: 'include', // Send cookies for authentication
+        headers,
+      })
       if (!response.ok) {
         return []
       }
@@ -41,9 +73,21 @@ export const useCreateSite = () => {
   
   return useMutation({
     mutationFn: async (data: CreateSiteData) => {
-      const response = await fetch("/api/sites", {
+      const baseUrl = getApiBaseUrl()
+      
+      // Get auth token and add to headers
+      const token = await getAuthToken()
+      const headers: HeadersInit = { 
+        "Content-Type": "application/json",
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(`${baseUrl}/api/sites`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
+        credentials: 'include', // Send cookies for authentication
         body: JSON.stringify(data),
       })
       if (!response.ok) {
@@ -128,9 +172,21 @@ export const useUpdateSite = () => {
   
   return useMutation({
     mutationFn: async ({ id, ...data }: CreateSiteData & { id: string }) => {
-      const response = await fetch(`/api/sites/${id}`, {
+      const baseUrl = getApiBaseUrl()
+      
+      // Get auth token and add to headers
+      const token = await getAuthToken()
+      const headers: HeadersInit = { 
+        "Content-Type": "application/json",
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(`${baseUrl}/api/sites/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers,
+        credentials: 'include', // Send cookies for authentication
         body: JSON.stringify(data),
       })
       if (!response.ok) {
@@ -161,8 +217,19 @@ export const useDeleteSite = () => {
   
   return useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`/api/sites/${id}`, {
+      const baseUrl = getApiBaseUrl()
+      
+      // Get auth token and add to headers
+      const token = await getAuthToken()
+      const headers: HeadersInit = {}
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(`${baseUrl}/api/sites/${id}`, {
         method: "DELETE",
+        headers,
+        credentials: 'include', // Send cookies for authentication
       })
       if (!response.ok) {
         const error = await response.json()

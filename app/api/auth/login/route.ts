@@ -40,8 +40,18 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error('[LOGIN API] Supabase auth error:', error.message)
+      // Return generic error message for invalid credentials to avoid revealing if email exists
+      // This is a security best practice to prevent email enumeration attacks
+      const isInvalidCredentials = error.message.includes('Invalid login credentials') || 
+                                   error.message.includes('Invalid credentials') ||
+                                   error.message.includes('Email not confirmed')
+      
       return NextResponse.json(
-        { error: error.message },
+        { 
+          error: isInvalidCredentials 
+            ? 'Invalid email or password. Please check your credentials and try again.' 
+            : error.message 
+        },
         { status: 401 }
       )
     }

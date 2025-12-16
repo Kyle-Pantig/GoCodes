@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { createClient } from '@/lib/supabase-client'
 
 export interface Location {
   id: string
@@ -13,15 +14,46 @@ interface CreateLocationData {
   description?: string | null
 }
 
+// Get API base URL - use FastAPI if enabled
+const getApiBaseUrl = () => {
+  const useFastAPI = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true'
+  const fastApiUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000'
+  return useFastAPI ? fastApiUrl : ''
+}
+
+// Helper function to get auth token from Supabase session
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    return session?.access_token || null
+  } catch (error) {
+    console.error('Failed to get auth token:', error)
+    return null
+  }
+}
+
 // Fetch locations
 export const useLocations = (enabled: boolean = true, search?: string) => {
   return useQuery({
     queryKey: ["locations", search],
     queryFn: async () => {
+      const baseUrl = getApiBaseUrl()
       const url = search
-        ? `/api/locations?search=${encodeURIComponent(search)}`
-        : "/api/locations"
-      const response = await fetch(url)
+        ? `${baseUrl}/api/locations?search=${encodeURIComponent(search)}`
+        : `${baseUrl}/api/locations`
+      
+      // Get auth token and add to headers
+      const token = await getAuthToken()
+      const headers: HeadersInit = {}
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(url, {
+        credentials: 'include', // Send cookies for authentication
+        headers,
+      })
       if (!response.ok) {
         return []
       }
@@ -41,14 +73,26 @@ export const useCreateLocation = () => {
   
   return useMutation({
     mutationFn: async (data: CreateLocationData) => {
-      const response = await fetch("/api/locations", {
+      const baseUrl = getApiBaseUrl()
+      
+      // Get auth token and add to headers
+      const token = await getAuthToken()
+      const headers: HeadersInit = { 
+        "Content-Type": "application/json",
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(`${baseUrl}/api/locations`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
+        credentials: 'include', // Send cookies for authentication
         body: JSON.stringify(data),
       })
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || "Failed to create location")
+        throw new Error(error.detail || error.error || "Failed to create location")
       }
       return response.json()
     },
@@ -128,14 +172,26 @@ export const useUpdateLocation = () => {
   
   return useMutation({
     mutationFn: async ({ id, ...data }: CreateLocationData & { id: string }) => {
-      const response = await fetch(`/api/locations/${id}`, {
+      const baseUrl = getApiBaseUrl()
+      
+      // Get auth token and add to headers
+      const token = await getAuthToken()
+      const headers: HeadersInit = { 
+        "Content-Type": "application/json",
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(`${baseUrl}/api/locations/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers,
+        credentials: 'include', // Send cookies for authentication
         body: JSON.stringify(data),
       })
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || "Failed to update location")
+        throw new Error(error.detail || error.error || "Failed to update location")
       }
       return response.json()
     },
@@ -165,12 +221,23 @@ export const useDeleteLocation = () => {
   
   return useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`/api/locations/${id}`, {
+      const baseUrl = getApiBaseUrl()
+      
+      // Get auth token and add to headers
+      const token = await getAuthToken()
+      const headers: HeadersInit = {}
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(`${baseUrl}/api/locations/${id}`, {
         method: "DELETE",
+        headers,
+        credentials: 'include', // Send cookies for authentication
       })
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || "Failed to delete location")
+        throw new Error(error.detail || error.error || "Failed to delete location")
       }
       return response.json()
     },

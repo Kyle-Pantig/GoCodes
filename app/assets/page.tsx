@@ -2969,25 +2969,25 @@ function AssetsPageContent() {
         >
         <Card className="pb-0 gap-0">
           <CardHeader className='px-4 gap-0'>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-start justify-between gap-2 sm:block">
-                <div>
-                  <CardTitle>Assets List</CardTitle>
-                  <CardDescription>
-                    View and manage all assets in the system
-                  </CardDescription>
-                </div>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => {
-                    queryClient.invalidateQueries({ queryKey: ['assets'] })
-                  }}
+            <div>
+              <CardTitle>Assets List</CardTitle>
+              <CardDescription>
+                View and manage all assets in the system
+              </CardDescription>
+            </div>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ['assets'] })
+                }}
                   className={cn("h-8 w-8 bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150 sm:hidden shrink-0")}
-                  title="Refresh table"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
+                title="Refresh table"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
               </div>
               <div className="flex flex-wrap items-center gap-3 justify-end">
                 <Button
@@ -3001,122 +3001,122 @@ function AssetsPageContent() {
                 >
                   <RefreshCw className="h-4 w-4" />
                 </Button>
-                <Button
+              <Button
+                onClick={() => {
+                  if (!hasPermission('canManageExport')) {
+                    toast.error('You do not have permission to export assets')
+                    return
+                  }
+                  setIsExportDialogOpen(true)
+                }}
+                variant="outline"
+                size="sm"
+                className={cn("flex-1 sm:flex-initial bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150", isMobile && "hidden")}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+                <>
+              <Button
                   onClick={() => {
-                    if (!hasPermission('canManageExport')) {
-                      toast.error('You do not have permission to export assets')
+                    if (!hasPermission('canManageImport')) {
+                      toast.error('You do not have permission to import assets')
                       return
                     }
-                    setIsExportDialogOpen(true)
+                    document.getElementById('import-file')?.click()
                   }}
-                  variant="outline"
-                  size="sm"
-                  className={cn("flex-1 sm:flex-initial bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150", isMobile && "hidden")}
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Export
-                </Button>
-                  <>
-                <Button
-                    onClick={() => {
-                      if (!hasPermission('canManageImport')) {
-                        toast.error('You do not have permission to import assets')
-                        return
-                      }
-                      document.getElementById('import-file')?.click()
-                    }}
-                  variant="outline"
-                  size="sm"
-                  className={cn("flex-1 sm:flex-initial bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150", isMobile && "hidden")}
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  Import
-                </Button>
-                <input
-                  id="import-file"
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  className="hidden"
-                  onChange={handleImport}
-                />
-                  </>
-                {selectedAssets.size > 0 && (
-                  <Button
-                    onClick={() => {
-                      if (!hasPermission('canDeleteAssets')) {
-                        toast.error('You do not have permission to delete assets')
-                        return
-                      }
-                      handleBulkDeleteClick()
-                    }}
-                    variant="destructive"
-                    size="sm"
-                    className={cn("flex-1 sm:flex-initial", isMobile && "hidden")}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    <span className="sm:hidden">Move to Trash</span>
-                    <span className="hidden sm:inline">Move to Trash ({selectedAssets.size})</span>
-                  </Button>
-                )}
-                <Select value={table.getState().pagination.pageSize.toString()} onValueChange={(value) => {
-                  table.setPageSize(Number(value))
-                }}>
-                  <SelectTrigger className="w-full sm:w-[120px] bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm" size='sm'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10">10 rows</SelectItem>
-                    <SelectItem value="25">25 rows</SelectItem>
-                    <SelectItem value="50">50 rows</SelectItem>
-                    <SelectItem value="100">100 rows</SelectItem>
-                    <SelectItem value="250">250 rows</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select 
-                open={isSelectOpen} 
-                onOpenChange={handleSelectOpenChange}
-                value=""
-                onValueChange={(value) => {
-                  toggleColumn(value)
-                }}
+                variant="outline"
+                size="sm"
+                className={cn("flex-1 sm:flex-initial bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150", isMobile && "hidden")}
               >
-                <SelectTrigger className="w-full sm:w-[200px] " size='sm'>
-                  <span className="flex-1 text-left truncate">
-                    {visibleColumns.length > 0 
-                      ? `${visibleColumns.length} column${visibleColumns.length !== 1 ? 's' : ''} selected`
-                        : 'Select columns'
+                <Upload className="mr-2 h-4 w-4" />
+                Import
+              </Button>
+              <input
+                id="import-file"
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={handleImport}
+              />
+                </>
+              {selectedAssets.size > 0 && (
+                <Button
+                  onClick={() => {
+                    if (!hasPermission('canDeleteAssets')) {
+                      toast.error('You do not have permission to delete assets')
+                      return
                     }
-                  </span>
+                    handleBulkDeleteClick()
+                  }}
+                  variant="destructive"
+                  size="sm"
+                  className={cn("flex-1 sm:flex-initial", isMobile && "hidden")}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  <span className="sm:hidden">Move to Trash</span>
+                  <span className="hidden sm:inline">Move to Trash ({selectedAssets.size})</span>
+                </Button>
+              )}
+              <Select value={table.getState().pagination.pageSize.toString()} onValueChange={(value) => {
+                table.setPageSize(Number(value))
+              }}>
+                <SelectTrigger className="w-full sm:w-[120px] bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm" size='sm'>
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem
-                    value={allSelected ? 'deselect-all' : 'select-all'}
-                    className="font-semibold border-b"
-                  >
-                    {allSelected ? 'Deselect All' : 'Select All'}
-                  </SelectItem>
-                  {ALL_COLUMNS.map((column) => {
-                    const isVisible = column.key === 'images' 
-                      ? columnVisibility.images 
-                      : visibleColumns.includes(column.key)
-                    return (
-                    <SelectItem
-                      key={column.key}
-                      value={column.key}
-                      disabled={false}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Checkbox checked={isVisible} />
-                        {column.label}
-                      </div>
-                    </SelectItem>
-                  )
-                  })}
+                  <SelectItem value="10">10 rows</SelectItem>
+                  <SelectItem value="25">25 rows</SelectItem>
+                  <SelectItem value="50">50 rows</SelectItem>
+                  <SelectItem value="100">100 rows</SelectItem>
+                  <SelectItem value="250">250 rows</SelectItem>
                 </SelectContent>
               </Select>
-              </div>
+              <Select 
+              open={isSelectOpen} 
+              onOpenChange={handleSelectOpenChange}
+              value=""
+              onValueChange={(value) => {
+                toggleColumn(value)
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-[200px] " size='sm'>
+                <span className="flex-1 text-left truncate">
+                  {visibleColumns.length > 0 
+                    ? `${visibleColumns.length} column${visibleColumns.length !== 1 ? 's' : ''} selected`
+                      : 'Select columns'
+                  }
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem
+                  value={allSelected ? 'deselect-all' : 'select-all'}
+                  className="font-semibold border-b"
+                >
+                  {allSelected ? 'Deselect All' : 'Select All'}
+                </SelectItem>
+                {ALL_COLUMNS.map((column) => {
+                  const isVisible = column.key === 'images' 
+                    ? columnVisibility.images 
+                    : visibleColumns.includes(column.key)
+                  return (
+                  <SelectItem
+                    key={column.key}
+                    value={column.key}
+                    disabled={false}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Checkbox checked={isVisible} />
+                      {column.label}
+                    </div>
+                  </SelectItem>
+                )
+                })}
+              </SelectContent>
+            </Select>
             </div>
-          </CardHeader>
+          </div>
+        </CardHeader>
         <CardContent className="p-0 relative">
           {/* Search Bar and Filters - Always visible */}
               <div className="px-4 pt-3 sm:p-6 pb-4 border-b">

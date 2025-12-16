@@ -40,19 +40,32 @@ export async function POST(request: NextRequest) {
                      auth.user.id
 
     // Create checkin records and update assets in a transaction
-    const result = await prisma.$transaction(async (tx) => {
+    // Increased timeout to 30 seconds for production environments with higher latency
+    const result = await prisma.$transaction(
+      async (tx) => {
       const checkinRecords = await Promise.all(
         assetIds.map(async (assetId: string) => {
           const assetUpdate = updates?.[assetId] || {}
           // Get the asset and all its checkouts
+            // Optimized: Only fetch necessary fields to reduce query time
           const asset = await tx.assets.findUnique({
             where: { id: assetId },
-            include: {
+              select: {
+                id: true,
+                assetTagId: true,
+                status: true,
+                location: true,
               checkouts: {
                 orderBy: { checkoutDate: 'desc' },
-                include: {
-                  employeeUser: true,
-                  checkins: true, // Get all checkins to determine if checkout is active
+                  select: {
+                    id: true,
+                    employeeUserId: true,
+                    checkoutDate: true,
+                    checkins: {
+                      select: {
+                        id: true, // Only need to check if checkins exist
+                      },
+                    },
                 },
               },
             },
@@ -96,8 +109,10 @@ export async function POST(request: NextRequest) {
           // Log assignedEmployee clearing (employee assignment ends when checked in)
           if (activeCheckout.employeeUserId) {
             try {
+              // Optimized: Only fetch name field to reduce query time
               const employee = await tx.employeeUser.findUnique({ 
-                where: { id: activeCheckout.employeeUserId } 
+                where: { id: activeCheckout.employeeUserId },
+                select: { name: true }
               })
               const employeeName = employee?.name || activeCheckout.employeeUserId
               
@@ -193,7 +208,12 @@ export async function POST(request: NextRequest) {
       )
 
       return checkinRecords
-    })
+      },
+      {
+        timeout: 30000, // 30 seconds timeout for production environments
+        maxWait: 10000, // Maximum time to wait for a transaction slot
+      }
+    )
 
     // Invalidate dashboard and activities cache when checkin is created
     await clearCache('dashboard-stats')
