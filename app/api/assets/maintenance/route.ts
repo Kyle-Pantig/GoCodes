@@ -58,8 +58,8 @@ export async function GET(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const prismaClient = prisma as any
     const maintenances = await retryDbOperation(() => prismaClient.assetsMaintenance.findMany({
-      where,
-      include: {
+        where,
+        include: {
           asset: {
             select: {
               id: true,
@@ -93,11 +93,11 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      skip,
-      take: pageSize,
+        orderBy: {
+          createdAt: 'desc',
+        },
+        skip,
+        take: pageSize,
     }))
 
     const totalPages = Math.ceil(total / pageSize)
