@@ -695,13 +695,18 @@ function AssetEventsPageContent() {
   const hasSelectedAssets = selectedCount > 0
 
   // Automatically enable selection mode when user manually selects an event
+  // Automatically disable selection mode when all events are unselected on desktop
   useEffect(() => {
     const selectedCount = Object.keys(rowSelection).length
     if (selectedCount > 0 && !isSelectionMode) {
       // User manually selected an event - automatically enable selection mode
       setIsSelectionMode(true)
+    } else if (selectedCount === 0 && isSelectionMode && !isMobile) {
+      // User unselected all events on desktop - automatically disable selection mode
+      // On mobile, we keep selection mode active until user clicks cancel button
+      setIsSelectionMode(false)
     }
-  }, [rowSelection, isSelectionMode])
+  }, [rowSelection, isSelectionMode, isMobile])
 
   const handleBulkDelete = useCallback(() => {
     if (!isAdmin) {

@@ -2066,6 +2066,7 @@ function AssetsPageContent() {
   }, [visibleColumns])
 
   // Automatically enable selection mode when user manually selects an asset
+  // Automatically disable selection mode when all assets are unselected on desktop
   useEffect(() => {
     const selectedCount = Object.keys(rowSelection).length
     if (selectedCount > 0 && !isSelectionMode) {
@@ -2073,8 +2074,13 @@ function AssetsPageContent() {
       setIsSelectionMode(true)
       // Ensure select column is visible
       setColumnVisibility(prev => ({ ...prev, select: true }))
+    } else if (selectedCount === 0 && isSelectionMode && !isMobile) {
+      // User unselected all assets on desktop - automatically disable selection mode
+      // On mobile, we keep selection mode active until user clicks cancel button
+      // Note: We keep the select column visible so users can still select items
+      setIsSelectionMode(false)
     }
-  }, [rowSelection, isSelectionMode])
+  }, [rowSelection, isSelectionMode, isMobile])
 
   // Update table columns when selection state changes
   useEffect(() => {
