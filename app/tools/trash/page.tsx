@@ -920,7 +920,7 @@ function TrashPageContent() {
                   className="pl-8 h-8 rounded-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
                 />
               </div>
-              </div>
+            </div>
               <Button
                 variant="outline"
                 size="icon"

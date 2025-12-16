@@ -811,6 +811,31 @@ export const maintenanceSchema = z.object({
       'Date cancelled must be a valid date'
     ),
   isRepeating: z.boolean(),
+  
+  // Inventory items (optional array)
+  inventoryItems: z
+    .array(
+      z.object({
+        inventoryItemId: z.string().min(1, 'Inventory item ID is required'),
+        quantity: z.union([
+          z.number().positive('Quantity must be greater than 0'),
+          z.string().refine((val) => {
+            const num = Number(val)
+            return !isNaN(num) && num > 0
+          }, 'Quantity must be a valid positive number'),
+        ]),
+        unitCost: z.union([
+          z.number().nonnegative('Unit cost must be 0 or greater'),
+          z.string().refine((val) => {
+            if (!val || val === '') return true
+            const num = Number(val)
+            return !isNaN(num) && num >= 0
+          }, 'Unit cost must be a valid number'),
+        ]).optional(),
+      })
+    )
+    .default([])
+    .optional(),
 })
 
 export type MaintenanceFormData = z.infer<typeof maintenanceSchema>

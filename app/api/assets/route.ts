@@ -302,11 +302,19 @@ export async function GET(request: NextRequest) {
       },
           ...(withMaintenance ? {
             maintenances: {
-              select: {
-                id: true,
-                status: true,
-                dueDate: true,
-                createdAt: true,
+              include: {
+                inventoryItems: {
+                  include: {
+                    inventoryItem: {
+                      select: {
+                        id: true,
+                        itemCode: true,
+                        name: true,
+                        unit: true,
+                      },
+                    },
+                  },
+                },
               },
         orderBy: { createdAt: 'desc' },
               take: 1,

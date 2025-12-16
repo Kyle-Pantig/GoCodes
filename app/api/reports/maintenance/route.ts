@@ -67,8 +67,9 @@ export async function GET(request: NextRequest) {
     )
     
     // Get paginated maintenance records
-    const maintenances = await retryDbOperation(() =>
-      prisma.assetsMaintenance.findMany({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prismaClientForMaintenances = prisma as any
+    const maintenances = await retryDbOperation(() => prismaClientForMaintenances.assetsMaintenance.findMany({
         where: whereClause,
         include: {
           asset: {
@@ -86,14 +87,26 @@ export async function GET(request: NextRequest) {
               },
             },
           },
+          inventoryItems: {
+            include: {
+              inventoryItem: {
+                select: {
+                  id: true,
+                  itemCode: true,
+                  name: true,
+                  unit: true,
+                  unitCost: true,
+                },
+              },
+            },
+          },
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        skip,
-        take: pageSize,
-      })
-    )
+      orderBy: {
+        createdAt: 'desc',
+      },
+      skip,
+      take: pageSize,
+    }))
     
     // Calculate pagination info
     const totalPages = Math.ceil(totalMaintenances / pageSize)
@@ -101,8 +114,7 @@ export async function GET(request: NextRequest) {
     const hasPreviousPage = page > 1
 
     // Get ALL maintenances for summary calculations (no pagination)
-    const allMaintenances = await retryDbOperation(() =>
-      prisma.assetsMaintenance.findMany({
+    const allMaintenances = await retryDbOperation(() => prismaClientForMaintenances.assetsMaintenance.findMany({
         where: whereClause,
         include: {
           asset: {
@@ -120,12 +132,25 @@ export async function GET(request: NextRequest) {
               },
             },
           },
+          inventoryItems: {
+            include: {
+              inventoryItem: {
+                select: {
+                  id: true,
+                  itemCode: true,
+                  name: true,
+                  unit: true,
+                  unitCost: true,
+              },
+            },
+          },
         },
-      })
-    )
+      },
+    })) as typeof maintenances
 
     // Filter by category if needed (for summary)
-    let filteredAllMaintenances = allMaintenances
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let filteredAllMaintenances: any[] = allMaintenances as any[]
     if (category) {
       filteredAllMaintenances = filteredAllMaintenances.filter(
         (m) => m.asset.category?.id === category
@@ -147,6 +172,22 @@ export async function GET(request: NextRequest) {
       dueDate.setHours(0, 0, 0, 0)
       return dueDate >= today
     })
+
+    // Get maintenance history (completed) - from ALL maintenances
+    const completedMaintenances = filteredAllMaintenances.filter(
+      (m) => m.status === 'Completed'
+    )
+    
+    // Get maintenances by status for cost calculations
+    const scheduledMaintenances = filteredAllMaintenances.filter((m) => m.status === 'Scheduled')
+    const cancelledMaintenances = filteredAllMaintenances.filter((m) => m.status === 'Cancelled')
+    const inProgressMaintenances = filteredAllMaintenances.filter((m) => m.status === 'In progress')
+    
+    // Calculate total costs by status
+    const totalCostCompleted = completedMaintenances.reduce((sum, m) => sum + (Number(m.cost) || 0), 0)
+    const totalCostScheduled = scheduledMaintenances.reduce((sum, m) => sum + (Number(m.cost) || 0), 0)
+    const totalCostCancelled = cancelledMaintenances.reduce((sum, m) => sum + (Number(m.cost) || 0), 0)
+    const totalCostInProgress = inProgressMaintenances.reduce((sum, m) => sum + (Number(m.cost) || 0), 0)
 
     // Group by status - from ALL maintenances
     const byStatus = new Map<string, {
@@ -170,26 +211,22 @@ export async function GET(request: NextRequest) {
 
       const group = byStatus.get(statusKey)!
       group.count++
+      // Count cost for all maintenances
       group.totalCost += Number(maintenance.cost) || 0
       group.maintenances.push(maintenance)
     })
 
-    // Calculate total maintenance costs - from ALL maintenances
-    const totalCost = filteredAllMaintenances.reduce(
+    // Calculate total maintenance costs - only from COMPLETED maintenances
+    const totalCost = completedMaintenances.reduce(
       (sum, m) => sum + (Number(m.cost) || 0),
       0
     )
 
-    // Calculate average cost per maintenance
+    // Calculate average cost per maintenance - only from COMPLETED maintenances
     const averageCost =
-      filteredAllMaintenances.length > 0
-        ? totalCost / filteredAllMaintenances.length
+      completedMaintenances.length > 0
+        ? totalCost / completedMaintenances.length
         : 0
-
-    // Get maintenance history (completed) - from ALL maintenances
-    const completedMaintenances = filteredAllMaintenances.filter(
-      (m) => m.status === 'Completed'
-    )
 
     // Sort upcoming by due date
     const sortedUpcoming = [...upcomingMaintenance].sort((a, b) => {
@@ -199,7 +236,8 @@ export async function GET(request: NextRequest) {
     })
 
     // Filter paginated maintenances by category if needed
-    let filteredMaintenances = maintenances
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let filteredMaintenances: any[] = maintenances as any[]
     if (category) {
       filteredMaintenances = filteredMaintenances.filter(
         (m) => m.asset.category?.id === category
@@ -214,6 +252,12 @@ export async function GET(request: NextRequest) {
         completed: completedMaintenances.length,
         totalCost: totalCost,
         averageCost: averageCost,
+        totalCostByStatus: {
+          completed: totalCostCompleted,
+          scheduled: totalCostScheduled,
+          cancelled: totalCostCancelled,
+          inProgress: totalCostInProgress,
+        },
         byStatus: Array.from(byStatus.values()).map((group) => ({
           status: group.status,
           count: group.count,
@@ -250,6 +294,20 @@ export async function GET(request: NextRequest) {
         isUpcoming: maintenance.dueDate
           ? new Date(maintenance.dueDate) >= today && maintenance.status === 'Scheduled'
           : false,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        inventoryItems: maintenance.inventoryItems.map((item: any) => ({
+          id: item.id,
+          inventoryItemId: item.inventoryItemId,
+          quantity: Number(item.quantity),
+          unitCost: item.unitCost ? Number(item.unitCost) : null,
+          inventoryItem: {
+            id: item.inventoryItem.id,
+            itemCode: item.inventoryItem.itemCode,
+            name: item.inventoryItem.name,
+            unit: item.inventoryItem.unit,
+            unitCost: item.inventoryItem.unitCost ? Number(item.inventoryItem.unitCost) : null,
+          },
+        })),
       })),
       upcoming: sortedUpcoming.slice(0, 20).map((maintenance) => ({
         id: maintenance.id,

@@ -63,8 +63,6 @@ export async function GET(request: NextRequest) {
         'Under Repair': summary.underRepair?.toString() || '0',
         'Upcoming': summary.upcoming?.toString() || '0',
         'Completed': summary.completed?.toString() || '0',
-        'Total Cost': formatNumber(summary.totalCost),
-        'Average Cost': formatNumber(summary.averageCost),
       },
       {
         'Metric': '---',
@@ -72,8 +70,48 @@ export async function GET(request: NextRequest) {
         'Under Repair': '---',
         'Upcoming': '---',
         'Completed': '---',
-        'Total Cost': '---',
-        'Average Cost': '---',
+      },
+      {
+        'Metric': 'TOTAL COST BY STATUS',
+        'Value': '',
+        'Under Repair': '',
+        'Upcoming': '',
+        'Completed': '',
+      },
+      {
+        'Metric': 'Total Cost - Completed',
+        'Value': summary.totalCostByStatus?.completed ? formatNumber(summary.totalCostByStatus.completed) : '0.00',
+        'Under Repair': '',
+        'Upcoming': '',
+        'Completed': '',
+      },
+      {
+        'Metric': 'Total Cost - Scheduled',
+        'Value': summary.totalCostByStatus?.scheduled ? formatNumber(summary.totalCostByStatus.scheduled) : '0.00',
+        'Under Repair': '',
+        'Upcoming': '',
+        'Completed': '',
+      },
+      {
+        'Metric': 'Total Cost - In Progress',
+        'Value': summary.totalCostByStatus?.inProgress ? formatNumber(summary.totalCostByStatus.inProgress) : '0.00',
+        'Under Repair': '',
+        'Upcoming': '',
+        'Completed': '',
+      },
+      {
+        'Metric': 'Total Cost - Cancelled',
+        'Value': summary.totalCostByStatus?.cancelled ? formatNumber(summary.totalCostByStatus.cancelled) : '0.00',
+        'Under Repair': '',
+        'Upcoming': '',
+        'Completed': '',
+      },
+      {
+        'Metric': '---',
+        'Value': '---',
+        'Under Repair': '---',
+        'Upcoming': '---',
+        'Completed': '---',
       },
       {
         'Metric': 'MAINTENANCES BY STATUS',
@@ -81,8 +119,6 @@ export async function GET(request: NextRequest) {
         'Under Repair': '',
         'Upcoming': '',
         'Completed': '',
-        'Total Cost': '',
-        'Average Cost': '',
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...(summary.byStatus || []).map((statusItem: any) => ({
@@ -91,31 +127,52 @@ export async function GET(request: NextRequest) {
         'Under Repair': '',
         'Upcoming': '',
         'Completed': '',
-        'Total Cost': formatNumber(statusItem.totalCost),
-        'Average Cost': formatNumber(statusItem.averageCost),
+        'Total Cost': statusItem.totalCost > 0 ? formatNumber(statusItem.totalCost) : '-',
+        'Average Cost': statusItem.totalCost > 0 ? formatNumber(statusItem.averageCost) : '-',
       })),
     ]
 
     // Prepare maintenance list data
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const maintenanceListData: any[] = maintenances.map((maintenance: any) => ({
-      'Asset Tag ID': maintenance.assetTagId || '',
-      'Asset Description': maintenance.assetDescription || '',
-      'Category': maintenance.category || '',
-      'Asset Status': maintenance.assetStatus || '',
-      'Asset Cost': maintenance.assetCost ? formatNumber(Number(maintenance.assetCost)) : '',
-      'Title': maintenance.title || '',
-      'Details': maintenance.details || '',
-      'Status': maintenance.status || '',
-      'Due Date': maintenance.dueDate || '',
-      'Date Completed': maintenance.dateCompleted || '',
-      'Date Cancelled': maintenance.dateCancelled || '',
-      'Maintenance By': maintenance.maintenanceBy || '',
-      'Cost': maintenance.cost ? formatNumber(Number(maintenance.cost)) : '',
-      'Is Repeating': maintenance.isRepeating ? 'Yes' : 'No',
-      'Is Overdue': maintenance.isOverdue ? 'Yes' : 'No',
-      'Is Upcoming': maintenance.isUpcoming ? 'Yes' : 'No',
-    }))
+    const maintenanceListData: any[] = maintenances.map((maintenance: any) => {
+      // Format inventory items as a string
+      const inventoryItemsStr = maintenance.inventoryItems && maintenance.inventoryItems.length > 0
+        ? maintenance.inventoryItems.map((item: { inventoryItem: { itemCode: string; unit: string | null }; quantity: number }) => 
+            `${item.inventoryItem.itemCode} (${item.quantity} ${item.inventoryItem.unit || 'units'})`
+          ).join('; ')
+        : ''
+      
+      // Format inventory items count
+      const inventoryItemsCount = maintenance.inventoryItems?.length || 0
+      
+      // Calculate total inventory cost
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const totalInventoryCost = maintenance.inventoryItems?.reduce((sum: number, item: any) => {
+        const itemCost = (item.unitCost || item.inventoryItem.unitCost || 0) * (item.quantity || 0)
+        return sum + itemCost
+      }, 0) || 0
+
+      return {
+        'Asset Tag ID': maintenance.assetTagId || '',
+        'Asset Description': maintenance.assetDescription || '',
+        'Category': maintenance.category || '',
+        'Asset Status': maintenance.assetStatus || '',
+        'Asset Cost': maintenance.assetCost ? formatNumber(Number(maintenance.assetCost)) : '',
+        'Title': maintenance.title || '',
+        'Details': maintenance.details || '',
+        'Status': maintenance.status || '',
+        'Due Date': maintenance.dueDate || '',
+        'Date Completed': maintenance.dateCompleted || '',
+        'Date Cancelled': maintenance.dateCancelled || '',
+        'Cost': maintenance.cost ? formatNumber(Number(maintenance.cost)) : '',
+        'Inventory Items Count': inventoryItemsCount.toString(),
+        'Inventory Items': inventoryItemsStr,
+        'Total Inventory Cost': formatNumber(totalInventoryCost),
+        'Is Repeating': maintenance.isRepeating ? 'Yes' : 'No',
+        'Is Overdue': maintenance.isOverdue ? 'Yes' : 'No',
+        'Is Upcoming': maintenance.isUpcoming ? 'Yes' : 'No',
+      }
+    })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let exportData: any[] | { summary: any[]; maintenanceList: any[] } = []

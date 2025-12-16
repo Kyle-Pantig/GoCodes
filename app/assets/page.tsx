@@ -1891,7 +1891,7 @@ function AssetsPageContent() {
 
   // Check if any assets are selected (before table is created, use rowSelection directly)
   const hasSelectedAssetsInitial = Object.keys(rowSelection).length > 0
-  
+
   // Create columns
   const columns = useMemo(() => createColumns(AssetActions, AssetTagCell, isSelectionMode, hasSelectedAssetsInitial), [isSelectionMode, hasSelectedAssetsInitial])
 

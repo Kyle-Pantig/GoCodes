@@ -732,8 +732,8 @@ function AssetEventsPageContent() {
         const allSelected = selectedCount === logsCount && logsCount > 0
         const hasSelectedItems = selectedCount > 0
         
-        setDockContent(
-          <>
+      setDockContent(
+        <>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
@@ -752,9 +752,9 @@ function AssetEventsPageContent() {
                 Cancel
               </Button>
             </div>
-            <Button
-              variant="outline"
-              size="icon"
+          <Button
+            variant="outline"
+            size="icon"
               onClick={() => {
                 if (!isAdmin) {
                   toast.error('You do not have permission to delete events')
@@ -765,9 +765,9 @@ function AssetEventsPageContent() {
               disabled={!hasSelectedItems}
               className="h-10 w-10 rounded-full btn-glass-elevated"
               title="Delete Selected"
-            >
+          >
               <Trash2 className="h-4 w-4" />
-            </Button>
+          </Button>
           </>
         )
       } else {
@@ -782,16 +782,16 @@ function AssetEventsPageContent() {
             >
               Select
             </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="rounded-full h-10 w-10 btn-glass-elevated"
+          <Button
+            variant="outline"
+            size="icon"
+            className="rounded-full h-10 w-10 btn-glass-elevated"
               onClick={handleRefresh}
-            >
+          >
               <RefreshCw className="h-4 w-4" />
-            </Button>
-          </>
-        )
+          </Button>
+        </>
+      )
       }
     } else {
       setDockContent(null)

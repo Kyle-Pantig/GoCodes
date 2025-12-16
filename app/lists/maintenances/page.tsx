@@ -13,8 +13,6 @@ import {
   ColumnDef,
   SortingState,
   VisibilityState,
-  HeaderGroup,
-  Header,
 } from '@tanstack/react-table'
 import {
   Table,
@@ -34,7 +32,7 @@ import {
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Search, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, Edit2, Image as ImageIcon, X, RefreshCw } from 'lucide-react'
+import { Search, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Package, Edit2, X, RefreshCw, Trash2, ChevronDown } from 'lucide-react'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field, FieldLabel, FieldContent } from '@/components/ui/field'
@@ -43,78 +41,18 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
-import Image from 'next/image'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ImagePreviewDialog } from '@/components/dialogs/image-preview-dialog'
 import { useMobileDock } from '@/components/mobile-dock-provider'
 import { useMobilePagination } from '@/components/mobile-pagination-provider'
 import { useIsMobile } from '@/hooks/use-mobile'
 import Link from 'next/link'
-
-interface Asset {
-  id: string
-  assetTagId: string
-  description: string
-  status: string | null
-  category: {
-    name: string
-  } | null
-  subCategory: {
-    name: string
-  } | null
-  location: string | null
-  brand: string | null
-  model: string | null
-  cost: number | null
-  purchaseDate: string | null
-  purchasedFrom: string | null
-  serialNo: string | null
-  additionalInformation: string | null
-  xeroAssetNo: string | null
-  owner: string | null
-  pbiNumber: string | null
-  poNumber: string | null
-  paymentVoucherNumber: string | null
-  assetType: string | null
-  deliveryDate: string | null
-  unaccountedInventory: boolean | null
-  remarks: string | null
-  qr: string | null
-  oldAssetTag: string | null
-  depreciableAsset: boolean | null
-  depreciableCost: number | null
-  salvageValue: number | null
-  assetLifeMonths: number | null
-  depreciationMethod: string | null
-  dateAcquired: string | null
-  department: string | null
-  site: string | null
-  issuedTo: string | null
-  checkouts?: {
-    id: string
-    checkoutDate: string | null
-    expectedReturnDate: string | null
-  }[]
-  auditHistory?: {
-    id: string
-    auditDate: string | null
-    auditType: string | null
-    auditor: string | null
-  }[]
-  maintenances?: {
-    id: string
-    title: string
-    status: string
-    maintenanceBy: string | null
-    dueDate: string | null
-    cost: number | null
-    dateCompleted: string | null
-    dateCancelled: string | null
-    createdAt: string
-  }[]
-  imagesCount?: number
-  createdAt: string
-}
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Separator } from '@/components/ui/separator'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 
 interface PaginationInfo {
   page: number
@@ -123,26 +61,62 @@ interface PaginationInfo {
   totalPages: number
 }
 
-async function fetchMaintenances(search?: string, searchFields?: string[], page: number = 1, pageSize: number = 50): Promise<{ assets: Asset[], pagination: PaginationInfo }> {
+interface MaintenanceRecord {
+  id: string
+  assetId: string
+  title: string
+  details: string | null
+  status: string
+  dueDate: string | null
+  dateCompleted: string | null
+  dateCancelled: string | null
+  maintenanceBy: string | null
+  cost: number | null
+  isRepeating: boolean
+  createdAt: string
+  updatedAt: string
+  asset: {
+    id: string
+    assetTagId: string
+    description: string | null
+    category: {
+      id: string
+      name: string
+    } | null
+    subCategory: {
+      id: string
+      name: string
+    } | null
+  }
+  inventoryItems: Array<{
+    id: string
+    quantity: number
+    unitCost: number | null
+    inventoryItem: {
+      id: string
+      itemCode: string
+      name: string
+      unit: string | null
+      unitCost: number | null
+    }
+  }>
+}
+
+async function fetchMaintenances(search?: string, page: number = 1, pageSize: number = 50): Promise<{ maintenances: MaintenanceRecord[], pagination: PaginationInfo }> {
   const params = new URLSearchParams({
     page: page.toString(),
     pageSize: pageSize.toString(),
-    status: 'Maintenance',
-    withMaintenance: 'true',
   })
   if (search) {
     params.append('search', search)
-    if (searchFields && searchFields.length > 0) {
-      params.append('searchFields', searchFields.join(','))
-    }
   }
   
-  const response = await fetch(`/api/assets?${params.toString()}`)
+  const response = await fetch(`/api/assets/maintenance?${params.toString()}`)
   if (!response.ok) {
     throw new Error('Failed to fetch maintenances')
   }
   const data = await response.json()
-  return { assets: data.assets, pagination: data.pagination }
+  return { maintenances: data.maintenances, pagination: data.pagination }
 }
 
 const formatDate = (dateString: string | null) => {
@@ -162,158 +136,31 @@ const formatCurrency = (value: number | null) => {
   }).format(Number(value))
 }
 
-// Helper function to get badge color classes for maintenance status
-const getMaintenanceStatusBadgeClass = (status: string): string => {
-  const statusLC = status.toLowerCase().replace(' ', '')
-  switch (statusLC) {
-    case "scheduled":
-      return "bg-yellow-500 text-white"
-    case "inprogress":
-      return "bg-blue-500 text-white"
-    case "completed":
-      return "bg-green-500 text-white"
-    case "cancelled":
-      return "bg-red-500 text-white"
-    default:
-      return "bg-gray-500 text-white"
-  }
-}
-
-// Calculate time ago
-const getTimeAgo = (dateString: string): string => {
-  const date = new Date(dateString)
-  const now = new Date()
-  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
-
-  if (diffInSeconds < 60) return 'Just now'
-  if (diffInSeconds < 3600) {
-    const minutes = Math.floor(diffInSeconds / 60)
-    return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`
-  }
-  if (diffInSeconds < 86400) {
-    const hours = Math.floor(diffInSeconds / 3600)
-    return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`
-  }
-  const diffInDays = Math.floor(diffInSeconds / 86400)
-  if (diffInDays < 30) {
-    return `${diffInDays} ${diffInDays === 1 ? 'day' : 'days'} ago`
-  }
-  const diffInMonths = Math.floor(diffInDays / 30)
-  if (diffInMonths < 12) {
-    return `${diffInMonths} ${diffInMonths === 1 ? 'month' : 'months'} ago`
-  }
-  const diffInYears = Math.floor(diffInMonths / 12)
-  return `${diffInYears} ${diffInYears === 1 ? 'year' : 'years'} ago`
-}
 
 type MaintenanceStatus = "Scheduled" | "In progress" | "Completed" | "Cancelled" | ""
 
 const ALL_COLUMNS = [
   { key: 'assetTag', label: 'Asset Tag ID' },
   { key: 'description', label: 'Description' },
-  { key: 'purchasedFrom', label: 'Purchased From' },
-  { key: 'purchaseDate', label: 'Purchase Date' },
-  { key: 'brand', label: 'Brand' },
-  { key: 'cost', label: 'Cost' },
-  { key: 'model', label: 'Model' },
-  { key: 'serialNo', label: 'Serial No' },
-  { key: 'additionalInformation', label: 'Additional Information' },
-  { key: 'xeroAssetNo', label: 'Xero Asset No.' },
-  { key: 'owner', label: 'Owner' },
-  { key: 'subCategory', label: 'Sub Category' },
-  { key: 'pbiNumber', label: 'PBI Number' },
+  { key: 'title', label: 'Title' },
   { key: 'status', label: 'Status' },
-  { key: 'issuedTo', label: 'Issued To' },
-  { key: 'poNumber', label: 'PO Number' },
-  { key: 'paymentVoucherNumber', label: 'Payment Voucher Number' },
-  { key: 'assetType', label: 'Asset Type' },
-  { key: 'deliveryDate', label: 'Delivery Date' },
-  { key: 'unaccountedInventory', label: 'Unaccounted Inventory' },
-  { key: 'remarks', label: 'Remarks' },
-  { key: 'qr', label: 'QR' },
-  { key: 'oldAssetTag', label: 'Old Asset Tag' },
-  { key: 'depreciableAsset', label: 'Depreciable Asset' },
-  { key: 'depreciableCost', label: 'Depreciable Cost' },
-  { key: 'salvageValue', label: 'Salvage Value' },
-  { key: 'assetLifeMonths', label: 'Asset Life (months)' },
-  { key: 'depreciationMethod', label: 'Depreciation Method' },
-  { key: 'dateAcquired', label: 'Date Acquired' },
-  { key: 'category', label: 'Category' },
-  { key: 'department', label: 'Department' },
-  { key: 'site', label: 'Site' },
-  { key: 'location', label: 'Location' },
-  { key: 'checkoutDate', label: 'Checkout Date' },
-  { key: 'expectedReturnDate', label: 'Expected Return Date' },
-  { key: 'lastAuditDate', label: 'Last Audit Date' },
-  { key: 'lastAuditType', label: 'Last Audit Type' },
-  { key: 'lastAuditor', label: 'Last Auditor' },
-  { key: 'auditCount', label: 'Audit Count' },
-  { key: 'maintenanceTitle', label: 'Maintenance Title' },
-  { key: 'maintenanceStatus', label: 'Maintenance Status' },
+  { key: 'dueDate', label: 'Due Date' },
+  { key: 'dateCompleted', label: 'Date Completed' },
   { key: 'maintenanceBy', label: 'Maintenance By' },
-  { key: 'maintenanceDueDate', label: 'Maintenance Due Date' },
-  { key: 'maintenanceCost', label: 'Maintenance Cost' },
-  { key: 'maintenanceTimeAgo', label: 'Maintenance Time Ago' },
-  { key: 'images', label: 'Images' },
+  { key: 'cost', label: 'Cost' },
+  { key: 'inventoryItems', label: 'Inventory Items' },
+  { key: 'actions', label: 'Actions' },
 ]
 
-// Map column keys to API search field names
-const COLUMN_TO_SEARCH_FIELD: Record<string, string[]> = {
-  'assetTag': ['assetTagId'],
-  'description': ['description'],
-  'brand': ['brand'],
-  'model': ['model'],
-  'serialNo': ['serialNo'],
-  'owner': ['owner'],
-  'issuedTo': ['issuedTo'],
-  'department': ['department'],
-  'site': ['site'],
-  'location': ['location'],
-  'category': ['category.name'],
-  'subCategory': ['subCategory.name'],
-  'status': ['status'],
-  'purchasedFrom': ['purchasedFrom'],
-  'purchaseDate': ['purchaseDate'],
-  'cost': ['cost'],
-  'additionalInformation': ['additionalInformation'],
-  'xeroAssetNo': ['xeroAssetNo'],
-  'pbiNumber': ['pbiNumber'],
-  'poNumber': ['poNumber'],
-  'paymentVoucherNumber': ['paymentVoucherNumber'],
-  'assetType': ['assetType'],
-  'deliveryDate': ['deliveryDate'],
-  'unaccountedInventory': ['unaccountedInventory'],
-  'remarks': ['remarks'],
-  'qr': ['qr'],
-  'oldAssetTag': ['oldAssetTag'],
-  'depreciableAsset': ['depreciableAsset'],
-  'depreciableCost': ['depreciableCost'],
-  'salvageValue': ['salvageValue'],
-  'assetLifeMonths': ['assetLifeMonths'],
-  'depreciationMethod': ['depreciationMethod'],
-  'dateAcquired': ['dateAcquired'],
-  'checkoutDate': ['checkouts.checkoutDate'],
-  'expectedReturnDate': ['checkouts.expectedReturnDate'],
-  'lastAuditDate': ['auditHistory.auditDate'],
-  'lastAuditType': ['auditHistory.auditType'],
-  'lastAuditor': ['auditHistory.auditor'],
-  'auditCount': [], // Not searchable
-  'maintenanceTitle': ['maintenances.title'],
-  'maintenanceStatus': ['maintenances.status'],
-  'maintenanceBy': ['maintenances.maintenanceBy'],
-  'maintenanceDueDate': ['maintenances.dueDate'],
-  'maintenanceCost': ['maintenances.cost'],
-  'maintenanceTimeAgo': [], // Not searchable (computed field)
-  'images': [], // Not searchable
-}
-
 // Create column definitions for TanStack Table
-const createColumns = (
+// Create columns for maintenance records
+const createMaintenanceColumns = (
   onEditMaintenance?: (maintenance: { id: string; status: string; dateCompleted?: string | null; dateCancelled?: string | null }) => void,
-  canManageMaintenance?: boolean
-): ColumnDef<Asset>[] => [
+  canManageMaintenance?: boolean,
+  onDeleteMaintenance?: (id: string) => void
+): ColumnDef<MaintenanceRecord>[] => [
   {
-    accessorKey: 'assetTagId',
+    accessorKey: 'asset.assetTagId',
     id: 'assetTag',
     header: ({ column }) => {
       return (
@@ -333,11 +180,11 @@ const createColumns = (
         </Button>
       )
     },
-    cell: ({ row }) => <div className="font-medium">{row.original.assetTagId}</div>,
+    cell: ({ row }) => <div className="font-medium">{row.original.asset.assetTagId}</div>,
     enableSorting: true,
   },
   {
-    accessorKey: 'description',
+    accessorKey: 'asset.description',
     id: 'description',
     header: ({ column }) => {
       return (
@@ -357,12 +204,12 @@ const createColumns = (
         </Button>
       )
     },
-    cell: ({ row }) => <div className="max-w-[300px] truncate">{row.original.description}</div>,
+    cell: ({ row }) => <div className="max-w-[300px] truncate">{row.original.asset.description || '-'}</div>,
     enableSorting: true,
   },
   {
-    accessorKey: 'category.name',
-    id: 'category',
+    accessorKey: 'title',
+    id: 'title',
     header: ({ column }) => {
       return (
         <Button
@@ -370,7 +217,7 @@ const createColumns = (
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
         >
-          Category
+          Title
           {column.getIsSorted() === 'asc' ? (
             <ArrowUp className="ml-2 h-4 w-4" />
           ) : column.getIsSorted() === 'desc' ? (
@@ -381,48 +228,8 @@ const createColumns = (
         </Button>
       )
     },
-    cell: ({ row }) => {
-      const category = row.original.category?.name || '-'
-      return <div>{category}</div>
-    },
+    cell: ({ row }) => <div>{row.original.title}</div>,
     enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.category?.name || ''
-      const b = rowB.original.category?.name || ''
-      return a.localeCompare(b)
-    },
-  },
-  {
-    accessorKey: 'subCategory.name',
-    id: 'subCategory',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Sub Category
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => {
-      const subCategory = row.original.subCategory?.name || '-'
-      return <div>{subCategory}</div>
-    },
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.subCategory?.name || ''
-      const b = rowB.original.subCategory?.name || ''
-      return a.localeCompare(b)
-    },
   },
   {
     accessorKey: 'status',
@@ -445,12 +252,55 @@ const createColumns = (
         </Button>
       )
     },
-    cell: ({ row }) => <div>{row.original.status || '-'}</div>,
+    cell: ({ row }) => {
+      const status = row.original.status
+      return (
+        <Badge className={cn("text-xs text-white border-0", 
+          status === 'Completed' ? 'bg-green-500' :
+          status === 'In progress' ? 'bg-blue-500' :
+          status === 'Scheduled' ? 'bg-yellow-500' :
+          status === 'Cancelled' ? 'bg-red-500' :
+          'bg-gray-500'
+        )}>
+          {status}
+        </Badge>
+      )
+    },
     enableSorting: true,
+    sortingFn: (rowA, rowB) => {
+      const statusA = rowA.original.status
+      const statusB = rowB.original.status
+      
+      // Priority order: Scheduled (1), In progress (2), then others alphabetically
+      const getStatusPriority = (status: string): number => {
+        if (status === 'Scheduled') return 1
+        if (status === 'In progress') return 2
+        return 3
+      }
+      
+      const priorityA = getStatusPriority(statusA)
+      const priorityB = getStatusPriority(statusB)
+      
+      // If priorities are different, sort by priority
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB
+      }
+      
+      // If same priority, sort by dueDate (earlier dates first)
+      const dueDateA = rowA.original.dueDate ? new Date(rowA.original.dueDate).getTime() : Number.MAX_SAFE_INTEGER
+      const dueDateB = rowB.original.dueDate ? new Date(rowB.original.dueDate).getTime() : Number.MAX_SAFE_INTEGER
+      
+      if (dueDateA !== dueDateB) {
+        return dueDateA - dueDateB
+      }
+      
+      // If same dueDate, sort alphabetically by status
+      return statusA.localeCompare(statusB)
+    },
   },
   {
-    accessorKey: 'location',
-    id: 'location',
+    accessorKey: 'dueDate',
+    id: 'dueDate',
     header: ({ column }) => {
       return (
         <Button
@@ -458,7 +308,7 @@ const createColumns = (
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
         >
-          Location
+          Due Date
           {column.getIsSorted() === 'asc' ? (
             <ArrowUp className="ml-2 h-4 w-4" />
           ) : column.getIsSorted() === 'desc' ? (
@@ -469,12 +319,17 @@ const createColumns = (
         </Button>
       )
     },
-    cell: ({ row }) => <div>{row.original.location || '-'}</div>,
+    cell: ({ row }) => formatDate(row.original.dueDate),
     enableSorting: true,
+    sortingFn: (rowA, rowB) => {
+      const a = rowA.original.dueDate ? new Date(rowA.original.dueDate).getTime() : 0
+      const b = rowB.original.dueDate ? new Date(rowB.original.dueDate).getTime() : 0
+      return a - b
+    },
   },
   {
-    accessorKey: 'brand',
-    id: 'brand',
+    accessorKey: 'dateCompleted',
+    id: 'dateCompleted',
     header: ({ column }) => {
       return (
         <Button
@@ -482,7 +337,7 @@ const createColumns = (
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
         >
-          Brand
+          Date Completed
           {column.getIsSorted() === 'asc' ? (
             <ArrowUp className="ml-2 h-4 w-4" />
           ) : column.getIsSorted() === 'desc' ? (
@@ -493,12 +348,17 @@ const createColumns = (
         </Button>
       )
     },
-    cell: ({ row }) => <div>{row.original.brand || '-'}</div>,
+    cell: ({ row }) => formatDate(row.original.dateCompleted),
     enableSorting: true,
+    sortingFn: (rowA, rowB) => {
+      const a = rowA.original.dateCompleted ? new Date(rowA.original.dateCompleted).getTime() : 0
+      const b = rowB.original.dateCompleted ? new Date(rowB.original.dateCompleted).getTime() : 0
+      return a - b
+    },
   },
   {
-    accessorKey: 'model',
-    id: 'model',
+    accessorKey: 'maintenanceBy',
+    id: 'maintenanceBy',
     header: ({ column }) => {
       return (
         <Button
@@ -506,7 +366,7 @@ const createColumns = (
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
         >
-          Model
+          Maintenance By
           {column.getIsSorted() === 'asc' ? (
             <ArrowUp className="ml-2 h-4 w-4" />
           ) : column.getIsSorted() === 'desc' ? (
@@ -517,7 +377,7 @@ const createColumns = (
         </Button>
       )
     },
-    cell: ({ row }) => <div>{row.original.model || '-'}</div>,
+    cell: ({ row }) => <div>{row.original.maintenanceBy || '-'}</div>,
     enableSorting: true,
   },
   {
@@ -541,7 +401,10 @@ const createColumns = (
         </Button>
       )
     },
-    cell: ({ row }) => <div>{formatCurrency(row.original.cost)}</div>,
+    cell: ({ row }) => {
+      const cost = row.original.cost
+      return <div>{cost ? formatCurrency(cost) : '-'}</div>
+    },
     enableSorting: true,
     sortingFn: (rowA, rowB) => {
       const a = rowA.original.cost ?? 0
@@ -550,1005 +413,120 @@ const createColumns = (
     },
   },
   {
-    accessorKey: 'purchaseDate',
-    id: 'purchaseDate',
-    header: ({ column }) => {
+    accessorFn: (row) => row.inventoryItems?.length || 0,
+    id: 'inventoryItems',
+    header: () => {
       return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Purchase Date
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => formatDate(row.original.purchaseDate),
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.purchaseDate ? new Date(rowA.original.purchaseDate).getTime() : 0
-      const b = rowB.original.purchaseDate ? new Date(rowB.original.purchaseDate).getTime() : 0
-      return a - b
-    },
-  },
-  {
-    accessorKey: 'purchasedFrom',
-    id: 'purchasedFrom',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Purchased From
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.purchasedFrom || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'serialNo',
-    id: 'serialNo',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Serial No
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.serialNo || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'additionalInformation',
-    id: 'additionalInformation',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Additional Information
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div className="max-w-[300px] truncate">{row.original.additionalInformation || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'xeroAssetNo',
-    id: 'xeroAssetNo',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Xero Asset No.
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.xeroAssetNo || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'owner',
-    id: 'owner',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Owner
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.owner || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'pbiNumber',
-    id: 'pbiNumber',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          PBI Number
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.pbiNumber || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'poNumber',
-    id: 'poNumber',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          PO Number
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.poNumber || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'paymentVoucherNumber',
-    id: 'paymentVoucherNumber',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Payment Voucher Number
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.paymentVoucherNumber || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'assetType',
-    id: 'assetType',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Asset Type
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.assetType || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'deliveryDate',
-    id: 'deliveryDate',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Delivery Date
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => formatDate(row.original.deliveryDate),
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.deliveryDate ? new Date(rowA.original.deliveryDate).getTime() : 0
-      const b = rowB.original.deliveryDate ? new Date(rowB.original.deliveryDate).getTime() : 0
-      return a - b
-    },
-  },
-  {
-    accessorKey: 'department',
-    id: 'department',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Department
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.department || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'site',
-    id: 'site',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Site
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.site || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'issuedTo',
-    id: 'issuedTo',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Issued To
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.issuedTo || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'unaccountedInventory',
-    id: 'unaccountedInventory',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Unaccounted Inventory
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.unaccountedInventory ? 'Yes' : 'No'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'remarks',
-    id: 'remarks',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Remarks
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div className="max-w-[300px] truncate">{row.original.remarks || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'qr',
-    id: 'qr',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          QR
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.qr || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'oldAssetTag',
-    id: 'oldAssetTag',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Old Asset Tag
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.oldAssetTag || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'depreciableAsset',
-    id: 'depreciableAsset',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Depreciable Asset
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.depreciableAsset ? 'Yes' : 'No'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'depreciableCost',
-    id: 'depreciableCost',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Depreciable Cost
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{formatCurrency(row.original.depreciableCost)}</div>,
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.depreciableCost ?? 0
-      const b = rowB.original.depreciableCost ?? 0
-      return a - b
-    },
-  },
-  {
-    accessorKey: 'salvageValue',
-    id: 'salvageValue',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Salvage Value
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{formatCurrency(row.original.salvageValue)}</div>,
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.salvageValue ?? 0
-      const b = rowB.original.salvageValue ?? 0
-      return a - b
-    },
-  },
-  {
-    accessorKey: 'assetLifeMonths',
-    id: 'assetLifeMonths',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Asset Life (months)
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.assetLifeMonths?.toString() || '-'}</div>,
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.assetLifeMonths ?? 0
-      const b = rowB.original.assetLifeMonths ?? 0
-      return a - b
-    },
-  },
-  {
-    accessorKey: 'depreciationMethod',
-    id: 'depreciationMethod',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Depreciation Method
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.depreciationMethod || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorKey: 'dateAcquired',
-    id: 'dateAcquired',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Date Acquired
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => formatDate(row.original.dateAcquired),
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.dateAcquired ? new Date(rowA.original.dateAcquired).getTime() : 0
-      const b = rowB.original.dateAcquired ? new Date(rowB.original.dateAcquired).getTime() : 0
-      return a - b
-    },
-  },
-  {
-    accessorFn: (row) => row.checkouts?.[0]?.checkoutDate || null,
-    id: 'checkoutDate',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Checkout Date
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => formatDate(row.original.checkouts?.[0]?.checkoutDate || null),
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.checkouts?.[0]?.checkoutDate ? new Date(rowA.original.checkouts[0].checkoutDate).getTime() : 0
-      const b = rowB.original.checkouts?.[0]?.checkoutDate ? new Date(rowB.original.checkouts[0].checkoutDate).getTime() : 0
-      return a - b
-    },
-  },
-  {
-    accessorFn: (row) => row.checkouts?.[0]?.expectedReturnDate || null,
-    id: 'expectedReturnDate',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Expected Return Date
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => formatDate(row.original.checkouts?.[0]?.expectedReturnDate || null),
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.checkouts?.[0]?.expectedReturnDate ? new Date(rowA.original.checkouts[0].expectedReturnDate).getTime() : 0
-      const b = rowB.original.checkouts?.[0]?.expectedReturnDate ? new Date(rowB.original.checkouts[0].expectedReturnDate).getTime() : 0
-      return a - b
-    },
-  },
-  {
-    accessorFn: (row) => (row as Asset).auditHistory?.[0]?.auditDate || null,
-    id: 'lastAuditDate',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Last Audit Date
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => {
-      const lastAudit = row.original.auditHistory?.[0]
-      if (!lastAudit?.auditDate) return '-'
-      try {
-        const date = new Date(lastAudit.auditDate)
-        const month = String(date.getMonth() + 1).padStart(2, '0')
-        const day = String(date.getDate()).padStart(2, '0')
-        const year = date.getFullYear()
-        return `${month}/${day}/${year}`
-      } catch {
-        return formatDate(lastAudit.auditDate)
-      }
-    },
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.auditHistory?.[0]?.auditDate ? new Date(rowA.original.auditHistory[0].auditDate).getTime() : 0
-      const b = rowB.original.auditHistory?.[0]?.auditDate ? new Date(rowB.original.auditHistory[0].auditDate).getTime() : 0
-      return a - b
-    },
-  },
-  {
-    accessorFn: (row) => (row as Asset).auditHistory?.[0]?.auditType || null,
-    id: 'lastAuditType',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Last Audit Type
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.auditHistory?.[0]?.auditType || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorFn: (row) => (row as Asset).auditHistory?.[0]?.auditor || null,
-    id: 'lastAuditor',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Last Auditor
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.auditHistory?.[0]?.auditor || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorFn: (row) => (row as Asset).auditHistory?.length || 0,
-    id: 'auditCount',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Audit Count
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => {
-      const count = row.original.auditHistory?.length || 0
-      if (count === 0) return '-'
-      return (
-        <div className="inline-flex items-center justify-center rounded-md border px-2 py-1 text-xs font-medium">
-          {count}
+        <div className="flex items-center gap-2">
+          <Package className="h-4 w-4 text-muted-foreground" />
+          <span>Inventory Items</span>
         </div>
       )
     },
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.auditHistory?.length || 0
-      const b = rowB.original.auditHistory?.length || 0
-      return a - b
-    },
-  },
-  {
-    accessorFn: (row) => (row as Asset).maintenances?.[0]?.title || null,
-    id: 'maintenanceTitle',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Maintenance Title
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.maintenances?.[0]?.title || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorFn: (row) => (row as Asset).maintenances?.[0]?.status || null,
-    id: 'maintenanceStatus',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Maintenance Status
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
     cell: ({ row }) => {
-      const maintenance = row.original.maintenances?.[0]
-      if (!maintenance) return '-'
+      const inventoryItems = row.original.inventoryItems || []
+      if (inventoryItems.length === 0) {
+        return <div className="text-muted-foreground">-</div>
+      }
       return (
-        <Badge className={cn("text-xs text-white border-0", getMaintenanceStatusBadgeClass(maintenance.status))}>
-          {maintenance.status}
-        </Badge>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" className="h-auto p-0 hover:bg-transparent">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-xs">
+                  {inventoryItems.length} {inventoryItems.length === 1 ? 'item' : 'items'}
+                  <ChevronDown className="h-3 w-3" />
+                </Badge>
+              </div>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80" align="start">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Package className="h-4 w-4 text-muted-foreground" />
+                <h4 className="font-semibold text-sm">Inventory Items Used</h4>
+              </div>
+              <Separator />
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {inventoryItems.map((item, index) => (
+                  <div key={item.id}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">{item.inventoryItem.itemCode}</div>
+                        <div className="text-xs text-muted-foreground">{item.inventoryItem.name}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-medium">
+                          {item.quantity} {item.inventoryItem.unit || 'units'}
+                        </div>
+                        {item.unitCost && (
+                          <div className="text-xs text-muted-foreground">
+                            ₱{new Intl.NumberFormat('en-US', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            }).format(item.unitCost)} each
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {index < inventoryItems.length - 1 && <Separator className="my-2" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
       )
     },
-    enableSorting: true,
-  },
-  {
-    accessorFn: (row) => (row as Asset).maintenances?.[0]?.maintenanceBy || null,
-    id: 'maintenanceBy',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Maintenance By
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => <div>{row.original.maintenances?.[0]?.maintenanceBy || '-'}</div>,
-    enableSorting: true,
-  },
-  {
-    accessorFn: (row) => (row as Asset).maintenances?.[0]?.dueDate || null,
-    id: 'maintenanceDueDate',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Maintenance Due Date
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => {
-      const dueDate = row.original.maintenances?.[0]?.dueDate
-      return dueDate ? formatDate(dueDate) : '-'
-    },
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.maintenances?.[0]?.dueDate ? new Date(rowA.original.maintenances[0].dueDate).getTime() : 0
-      const b = rowB.original.maintenances?.[0]?.dueDate ? new Date(rowB.original.maintenances[0].dueDate).getTime() : 0
-      return a - b
-    },
-  },
-  {
-    accessorFn: (row) => (row as Asset).maintenances?.[0]?.cost || null,
-    id: 'maintenanceCost',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Maintenance Cost
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => {
-      const cost = row.original.maintenances?.[0]?.cost
-      return <div>{cost ? formatCurrency(cost) : '-'}</div>
-    },
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.maintenances?.[0]?.cost ?? 0
-      const b = rowB.original.maintenances?.[0]?.cost ?? 0
-      return a - b
-    },
-  },
-  {
-    accessorFn: (row) => (row as Asset).maintenances?.[0]?.createdAt || null,
-    id: 'maintenanceTimeAgo',
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="h-8 px-0 hover:bg-transparent! has-[>svg]:px-0"
-        >
-          Maintenance Time Ago
-          {column.getIsSorted() === 'asc' ? (
-            <ArrowUp className="ml-2 h-4 w-4" />
-          ) : column.getIsSorted() === 'desc' ? (
-            <ArrowDown className="ml-2 h-4 w-4" />
-          ) : (
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          )}
-        </Button>
-      )
-    },
-    cell: ({ row }) => {
-      const createdAt = row.original.maintenances?.[0]?.createdAt
-      return createdAt ? <div className="text-xs text-muted-foreground">{getTimeAgo(createdAt)}</div> : '-'
-    },
-    enableSorting: true,
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.maintenances?.[0]?.createdAt ? new Date(rowA.original.maintenances[0].createdAt).getTime() : 0
-      const b = rowB.original.maintenances?.[0]?.createdAt ? new Date(rowB.original.maintenances[0].createdAt).getTime() : 0
-      return a - b
-    },
-  },
-  {
-    id: 'images',
-    enableHiding: true,
     enableSorting: false,
-    header: 'Images',
-    cell: ({ row }) => <AssetImagesCell asset={row.original} />,
   },
   {
-    id: 'maintenanceActions',
+    id: 'actions',
     header: () => <div className="text-center">Actions</div>,
     cell: ({ row }) => {
-      const maintenance = row.original.maintenances?.[0]
-      if (!maintenance) return <div>-</div>
+      const maintenance = row.original
+      const isReadOnly = maintenance.status === 'Completed' || maintenance.status === 'Cancelled'
+      
       return (
-        <div className="text-center">
+        <div className="flex items-center justify-center gap-1">
+          {!isReadOnly && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 p-0 rounded-full"
+              onClick={() => {
+                if (!canManageMaintenance) {
+                  toast.error('You do not have permission to take actions')
+                  return
+                }
+                onEditMaintenance?.({
+                  id: maintenance.id,
+                  status: maintenance.status,
+                  dateCompleted: maintenance.dateCompleted,
+                  dateCancelled: maintenance.dateCancelled,
+                })
+              }}
+              title="Edit"
+            >
+              <Edit2 className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 w-8 p-0 rounded-full"
+            className="h-8 w-8 p-0 rounded-full text-destructive hover:text-destructive hover:bg-destructive/10"
             onClick={() => {
               if (!canManageMaintenance) {
-                toast.error('You do not have permission to take actions')
+                toast.error('You do not have permission to delete maintenance records')
                 return
               }
-              onEditMaintenance?.({
-                id: maintenance.id,
-                status: maintenance.status,
-                dateCompleted: maintenance.dateCompleted,
-                dateCancelled: maintenance.dateCancelled,
-              })
+              onDeleteMaintenance?.(maintenance.id)
             }}
+            title="Delete"
           >
-            <Edit2 className="h-4 w-4" />
+            <Trash2 className="h-4 w-4" />
           </Button>
         </div>
       )
@@ -1557,124 +535,7 @@ const createColumns = (
     enableHiding: false,
   },
 ]
-
-// Component for asset images icon with dialog
-function AssetImagesCell({ asset }: { asset: Asset }) {
-  const [imagesDialogOpen, setImagesDialogOpen] = useState(false)
-  const [images, setImages] = useState<Array<{ id: string; imageUrl: string; assetTagId: string; fileName?: string; createdAt?: string }>>([])
-  const [loadingImages, setLoadingImages] = useState(false)
-  const [previewImageIndex, setPreviewImageIndex] = useState(0)
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
-
-  const fetchImages = async () => {
-    if (!imagesDialogOpen) return
     
-    setLoadingImages(true)
-    try {
-      const response = await fetch(`/api/assets/images/${asset.assetTagId}`)
-      if (response.ok) {
-        const data = await response.json()
-        setImages(data.images || [])
-      } else {
-        setImages([])
-      }
-    } catch (error) {
-      console.error('Error fetching images:', error)
-      setImages([])
-    } finally {
-      setLoadingImages(false)
-    }
-  }
-
-  useEffect(() => {
-    if (imagesDialogOpen) {
-      fetchImages()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imagesDialogOpen])
-
-  // If no images, show dash
-  if (!asset.imagesCount || asset.imagesCount === 0) {
-    return <span className="text-muted-foreground">-</span>
-  }
-
-  const handleImageClick = (index: number) => {
-    setPreviewImageIndex(index)
-    setImagesDialogOpen(false) // Close the grid dialog first
-    setIsPreviewOpen(true)
-  }
-
-  const existingImagesForPreview = images.map((img) => ({
-    id: img.id,
-    imageUrl: img.imageUrl,
-    fileName: img.fileName || `Image ${img.id}`,
-  }))
-
-  return (
-    <>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => setImagesDialogOpen(true)}
-        className="h-8 w-8"
-      >
-        <ImageIcon className="h-4 w-4" />
-      </Button>
-      <Dialog open={imagesDialogOpen} onOpenChange={setImagesDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle>Asset Images - {asset.assetTagId}</DialogTitle>
-            <DialogDescription>
-              Images for {asset.description}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
-            {loadingImages ? (
-              <div className="flex items-center justify-center py-8">
-                <Spinner className="h-6 w-6" />
-              </div>
-            ) : images.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No images found for this asset
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                {images.map((image, index) => (
-                  <div
-                    key={image.id}
-                    className="relative group border rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
-                    onClick={() => handleImageClick(index)}
-                  >
-                    <div className="aspect-square bg-muted relative">
-                      <Image
-                        src={image.imageUrl}
-                        alt={`Asset ${asset.assetTagId} image`}
-                        fill
-                        className="object-cover"
-                        unoptimized
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Image Preview Dialog */}
-      <ImagePreviewDialog
-        open={isPreviewOpen}
-        onOpenChange={setIsPreviewOpen}
-        existingImages={existingImagesForPreview}
-        title={`Asset Images - ${asset.assetTagId}`}
-        maxHeight="h-[70vh] max-h-[600px]"
-        initialIndex={previewImageIndex}
-      />
-    </>
-  )
-}
-
 function ListOfMaintenancesPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -1683,10 +544,11 @@ function ListOfMaintenancesPageContent() {
   const { setDockContent } = useMobileDock()
   const { setPaginationContent } = useMobilePagination()
   
-  const canViewAssets = hasPermission('canViewAssets')
   const canManageMaintenance = hasPermission('canManageMaintenance')
   
-  const [sorting, setSorting] = useState<SortingState>([])
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'status', desc: false }
+  ])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
     assetTag: true,
     description: false,
@@ -1732,8 +594,9 @@ function ListOfMaintenancesPageContent() {
     maintenanceBy: true,
     maintenanceDueDate: true,
     maintenanceCost: false,
+    maintenanceInventoryItems: true,
     maintenanceTimeAgo: false,
-    images: true,
+    images: false,
   })
   const [isSelectOpen, setIsSelectOpen] = useState(false)
   const [shouldCloseSelect, setShouldCloseSelect] = useState(false)
@@ -1752,14 +615,10 @@ function ListOfMaintenancesPageContent() {
   const [editDateCompleted, setEditDateCompleted] = useState<string>("")
   const [editDateCancelled, setEditDateCancelled] = useState<string>("")
   
-  const queryClient = useQueryClient()
+  // Delete maintenance dialog state
+  const [deletingMaintenanceId, setDeletingMaintenanceId] = useState<string | null>(null)
   
-  // Convert column visibility to visible columns array for compatibility
-  const visibleColumns = useMemo(() => {
-    return Object.entries(columnVisibility)
-      .filter(([, visible]) => visible)
-      .map(([key]) => key)
-  }, [columnVisibility])
+  const queryClient = useQueryClient()
   
   // Get page, pageSize, and search from URL
   const page = parseInt(searchParams.get('page') || '1', 10)
@@ -1768,15 +627,12 @@ function ListOfMaintenancesPageContent() {
   // Separate states for search input (immediate UI) and search query (debounced API calls)
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '')
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '')
-  const [searchType, setSearchType] = useState<string>(
-    searchParams.get('searchType') || 'unified'
-  )
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSearchQueryRef = useRef<string>(searchParams.get('search') || '')
   const previousSearchInputRef = useRef<string>(searchParams.get('search') || '')
 
   // Update URL parameters
-  const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string; searchType?: string }) => {
+  const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string }) => {
     const params = new URLSearchParams(searchParams.toString())
     
     if (updates.page !== undefined) {
@@ -1800,21 +656,10 @@ function ListOfMaintenancesPageContent() {
     if (updates.search !== undefined) {
       if (updates.search === '') {
         params.delete('search')
-        params.delete('searchType')
       } else {
         params.set('search', updates.search)
       }
       // Reset to page 1 when search changes
-      params.delete('page')
-    }
-
-    if (updates.searchType !== undefined) {
-      if (updates.searchType === 'unified') {
-        params.delete('searchType')
-      } else {
-        params.set('searchType', updates.searchType)
-      }
-      // Reset to page 1 when searchType changes
       params.delete('page')
     }
     
@@ -1823,28 +668,10 @@ function ListOfMaintenancesPageContent() {
     })
   }, [searchParams, router, startTransition])
 
-  // Get search fields based on visible columns and searchType
-  const searchFields = useMemo(() => {
-    if (searchType === 'unified') {
-      // Unified search: search in all visible columns
-      const fields: string[] = []
-      visibleColumns.forEach(colKey => {
-        const fieldMappings = COLUMN_TO_SEARCH_FIELD[colKey] || []
-        fields.push(...fieldMappings)
-      })
-      // Remove duplicates
-      return Array.from(new Set(fields))
-    } else {
-      // Specific column search: only search in the selected column
-      const fieldMappings = COLUMN_TO_SEARCH_FIELD[searchType] || []
-      return fieldMappings
-    }
-  }, [visibleColumns, searchType])
-
   const { data, isLoading, error, isFetching } = useQuery({
-    queryKey: ['maintenances-list', searchQuery, searchType, searchFields, page, pageSize],
-    queryFn: () => fetchMaintenances(searchQuery || undefined, searchFields.length > 0 ? searchFields : undefined, page, pageSize),
-    enabled: canViewAssets, // Only fetch if user has permission
+    queryKey: ['maintenances-list', searchQuery, page, pageSize],
+    queryFn: () => fetchMaintenances(searchQuery || undefined, page, pageSize),
+    enabled: canManageMaintenance, // Only fetch if user has permission
     placeholderData: (previousData) => previousData,
   })
 
@@ -1888,6 +715,47 @@ function ListOfMaintenancesPageContent() {
       toast.error(error.message || 'Failed to update maintenance')
     }
   })
+
+  // Delete maintenance mutation
+  const deleteMaintenanceMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/assets/maintenance/${id}`, {
+        method: "DELETE",
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to delete maintenance')
+      }
+
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["maintenances-list"] })
+      toast.success('Maintenance record deleted successfully')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete maintenance')
+    }
+  })
+
+  // Handle delete maintenance
+  const handleDeleteMaintenance = useCallback((id: string) => {
+    if (!canManageMaintenance) {
+      toast.error('You do not have permission to delete maintenance records')
+      return
+    }
+    
+    setDeletingMaintenanceId(id)
+  }, [canManageMaintenance])
+
+  // Handle confirm delete
+  const handleConfirmDelete = useCallback(() => {
+    if (deletingMaintenanceId) {
+      deleteMaintenanceMutation.mutate(deletingMaintenanceId)
+      setDeletingMaintenanceId(null)
+    }
+  }, [deletingMaintenanceId, deleteMaintenanceMutation])
 
 
   // Handle edit status change
@@ -1973,15 +841,10 @@ function ListOfMaintenancesPageContent() {
     }
   }, [searchInput, searchParams, updateURL])
 
-  // Sync searchInput and searchType with URL params only on initial mount or external navigation
+    // Sync searchInput with URL params only on initial mount or external navigation
   useEffect(() => {
     const urlSearch = searchParams.get('search') || ''
-    const urlSearchType = searchParams.get('searchType') || 'unified'
     const currentSearchQuery = lastSearchQueryRef.current || ''
-    
-    if (urlSearchType !== searchType) {
-      setSearchType(urlSearchType)
-    }
     
     if (urlSearch !== currentSearchQuery) {
       if (searchTimeoutRef.current) {
@@ -1993,7 +856,6 @@ function ListOfMaintenancesPageContent() {
       previousSearchInputRef.current = urlSearch
       lastSearchQueryRef.current = urlSearch
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
   
   useEffect(() => {
@@ -2013,15 +875,15 @@ function ListOfMaintenancesPageContent() {
     setEditDateCancelled(maintenance.dateCancelled ? new Date(maintenance.dateCancelled).toISOString().split('T')[0] : "")
   }, [])
 
-  // Create columns
-  const columns = useMemo(() => createColumns(handleEditMaintenance, canManageMaintenance), [handleEditMaintenance, canManageMaintenance])
+  // Create columns for maintenance records
+  const columns = useMemo(() => createMaintenanceColumns(handleEditMaintenance, canManageMaintenance, handleDeleteMaintenance), [handleEditMaintenance, canManageMaintenance, handleDeleteMaintenance])
 
-  // Memoize assets data
-  const assets = useMemo(() => data?.assets || [], [data?.assets])
+  // Memoize maintenance records data
+  const maintenances = useMemo(() => data?.maintenances || [], [data?.maintenances])
 
   // Track initial mount for animations - only animate stagger on first load
   useEffect(() => {
-    if (isInitialMount.current && data && assets.length > 0) {
+    if (isInitialMount.current && data && maintenances.length > 0) {
       // Disable staggered animations after first data load
       // Use a short delay to allow first animation to start
       const timer = setTimeout(() => {
@@ -2029,10 +891,10 @@ function ListOfMaintenancesPageContent() {
       }, 300)
       return () => clearTimeout(timer)
     }
-  }, [data, assets.length])
+  }, [data, maintenances.length])
 
   const table = useReactTable({
-    data: assets,
+    data: maintenances,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -2083,6 +945,12 @@ function ListOfMaintenancesPageContent() {
   const allSelected = Object.keys(columnVisibility).filter(
     key => columnVisibility[key as keyof VisibilityState]
   ).length === ALL_COLUMNS.length
+
+  const getColumnLabel = (columnId: string | undefined): string => {
+    if (!columnId) return ''
+    const column = ALL_COLUMNS.find(col => col.key === columnId)
+    return column?.label || columnId
+  }
 
   const toggleColumn = (columnKey: string) => {
     if (columnKey === 'select-all') {
@@ -2251,34 +1119,6 @@ function ListOfMaintenancesPageContent() {
         <CardHeader>
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             <div className="flex items-center w-full lg:flex-1 lg:max-w-md border rounded-md overflow-hidden">
-              <Select
-                value={searchType}
-                onValueChange={(value: string) => {
-                  setSearchType(value)
-                  updateURL({ searchType: value, page: 1 })
-                }}
-              >
-                <SelectTrigger className={cn("w-[140px] h-8 rounded-none border-0 border-r focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none", isMobile && "w-[100px]")} size='sm'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unified">Unified Search</SelectItem>
-                  {visibleColumns
-                    .filter(colKey => {
-                      // Only show columns that have searchable fields
-                      const fieldMappings = COLUMN_TO_SEARCH_FIELD[colKey] || []
-                      return fieldMappings.length > 0
-                    })
-                    .map(colKey => {
-                      const column = ALL_COLUMNS.find(c => c.key === colKey)
-                      return (
-                        <SelectItem key={colKey} value={colKey}>
-                          {column?.label || colKey}
-                        </SelectItem>
-                      )
-                    })}
-                </SelectContent>
-              </Select>
               <div className="relative flex-1">
                 {searchInput ? (
                   <button
@@ -2295,15 +1135,7 @@ function ListOfMaintenancesPageContent() {
                   <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
                 )}
                 <Input
-                  placeholder={
-                    searchType === 'unified'
-                      ? visibleColumns.length > 0
-                        ? `Search by ${visibleColumns.slice(0, 3).map(col => ALL_COLUMNS.find(c => c.key === col)?.label).filter(Boolean).join(', ').toLowerCase()}${visibleColumns.length > 3 ? '...' : ''}...`
-                        : 'Search maintenances...'
-                      : ALL_COLUMNS.find(c => c.key === searchType)?.label
-                        ? `Search by ${ALL_COLUMNS.find(c => c.key === searchType)?.label}`
-                        : 'Search...'
-                  }
+                  placeholder="Search maintenances by title, asset tag, description..."
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   className="pl-8 h-8 rounded-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
@@ -2321,8 +1153,8 @@ function ListOfMaintenancesPageContent() {
             >
               <SelectTrigger className="w-full" size='sm'>
                 <span className="flex-1 text-left truncate">
-                  {visibleColumns.length > 0 
-                    ? `${visibleColumns.length} column${visibleColumns.length !== 1 ? 's' : ''} selected`
+                  {Object.values(columnVisibility).filter(Boolean).length > 0 
+                    ? `${Object.values(columnVisibility).filter(Boolean).length} column${Object.values(columnVisibility).filter(Boolean).length !== 1 ? 's' : ''} selected`
                     : 'Select columns'
                   }
                 </span>
@@ -2334,15 +1166,15 @@ function ListOfMaintenancesPageContent() {
                 >
                   {allSelected ? 'Deselect All' : 'Select All'}
                 </SelectItem>
-                {ALL_COLUMNS.map((column) => (
+                {table.getAllColumns().filter(col => col.getCanHide()).map((column) => (
                   <SelectItem
-                    key={column.key}
-                    value={column.key}
+                    key={column.id}
+                    value={column.id}
                     disabled={false}
                   >
                     <div className="flex items-center gap-2">
-                      <Checkbox checked={visibleColumns.includes(column.key)} />
-                      {column.label}
+                      <Checkbox checked={column.getIsVisible()} />
+                      {getColumnLabel(column.id)}
                     </div>
                   </SelectItem>
                 ))}
@@ -2361,7 +1193,7 @@ function ListOfMaintenancesPageContent() {
           </div>
         </CardHeader>
         <CardContent className="flex-1 px-0 relative">
-          {isFetching && data && assets.length > 0 && (
+          {isFetching && data && maintenances.length > 0 && (
             <div className={cn("absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center", isMobile && "right-0 rounded-b-2xl")}>
               <Spinner variant="default" size={24} className="text-muted-foreground" />
             </div>
@@ -2375,17 +1207,17 @@ function ListOfMaintenancesPageContent() {
                   <p className="text-sm text-muted-foreground">Loading...</p>
                 </div>
               </div>
-            ) : !canViewAssets ? (
+            ) : !canManageMaintenance ? (
               <div className={cn("flex items-center justify-center py-12", isMobile && "h-136")}>
                 <div className="flex flex-col items-center gap-3 text-center">
                   <Package className="h-12 w-12 text-muted-foreground opacity-50" />
                   <p className="text-lg font-medium">Access Denied</p>
                   <p className="text-sm text-muted-foreground">
-                    You do not have permission to view assets. Please contact your administrator.
+                    You do not have permission to view maintenance records. Please contact your administrator.
                   </p>
                 </div>
               </div>
-            ) : assets.length === 0 ? (
+            ) : maintenances.length === 0 ? (
               <div className={cn("text-center py-8 text-muted-foreground", isMobile && "h-136")}>
                 <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p className="font-medium">No maintenances found</p>
@@ -2398,10 +1230,10 @@ function ListOfMaintenancesPageContent() {
                 <div className="pr-2.5">
                 <Table>
                   <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-2.5">
-                    {table.getHeaderGroups().map((headerGroup: HeaderGroup<Asset>) => (
+                    {table.getHeaderGroups().map((headerGroup) => (
                       <TableRow key={headerGroup.id} className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:bg-border after:z-30">
-                        {headerGroup.headers.map((header: Header<Asset, unknown>) => {
-                          const isActionsColumn = header.column.id === 'maintenanceActions'
+                        {headerGroup.headers.map((header) => {
+                          const isActionsColumn = header.column.id === 'actions'
                           return (
                             <TableHead 
                               key={header.id} 
@@ -2439,12 +1271,13 @@ function ListOfMaintenancesPageContent() {
                           className="group relative hover:bg-muted/90 data-[state=selected]:bg-muted border-b transition-colors after:content-[''] after:absolute after:top-0 after:bottom-0 after:right-0 after:w-px after:bg-border after:z-10"
                         >
                           {row.getVisibleCells().map((cell) => {
-                            const isActionsColumn = cell.column.id === 'maintenanceActions'
+                            const isActionsColumn = cell.column.id === 'actions'
                             return (
                               <TableCell 
                                 key={cell.id}
                                 className={cn(
-                                  isActionsColumn && "sticky text-center right-0 bg-card z-10 after:content-[''] after:absolute after:left-0 after:top-0 after:bottom-0 after:w-px after:bg-border after:z-30 rounded-br-2xl"
+                                  "bg-card transition-colors",
+                                  isActionsColumn && "sticky text-center right-0 bg-card z-10 border-r after:content-[''] after:absolute after:left-0 after:top-0 after:bottom-0 after:w-px after:bg-border after:z-30"
                                 )}
                               >
                                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -2645,6 +1478,28 @@ function ListOfMaintenancesPageContent() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Maintenance Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        open={!!deletingMaintenanceId}
+        onOpenChange={(open) => !open && setDeletingMaintenanceId(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Maintenance Record"
+        description={
+          deletingMaintenanceId
+            ? (() => {
+                const maintenance = maintenances.find(m => m.id === deletingMaintenanceId)
+                return maintenance
+                  ? `Are you sure you want to delete the maintenance record "${maintenance.title}"? This action cannot be undone.`
+                  : 'Are you sure you want to delete this maintenance record? This action cannot be undone.'
+              })()
+            : 'Are you sure you want to delete this maintenance record? This action cannot be undone.'
+        }
+        isLoading={deleteMaintenanceMutation.isPending}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        loadingLabel="Deleting..."
+      />
     </motion.div>
   )
 }

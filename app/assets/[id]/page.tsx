@@ -6,7 +6,7 @@ import { use } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { ArrowLeft, Sparkles, ImageIcon, Upload, FileText, PlusIcon, Eye, X, Trash2 } from "lucide-react"
+import { ArrowLeft, Sparkles, ImageIcon, Upload, FileText, PlusIcon, Eye, X, Trash2, Package } from "lucide-react"
 import Image from "next/image"
 import { motion, AnimatePresence } from "framer-motion"
 import { usePermissions } from '@/hooks/use-permissions'
@@ -2895,6 +2895,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                           <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[11%]">Date Completed</TableHead>
                           <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[13%]">Maintenance By</TableHead>
                           <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[10%]">Cost</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[12%]">Inventory Items</TableHead>
                           <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[12%]">Details</TableHead>
                           <TableHead className="bg-card transition-colors sticky z-10 right-0 group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 text-center w-[12%]">Actions</TableHead>
                         </TableRow>
@@ -2909,6 +2910,17 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                           maintenanceBy?: string | null
                           dateCompleted?: string | Date | null
                           cost?: number | string | null
+                          inventoryItems?: {
+                            id: string
+                            quantity: number | string
+                            unitCost: number | null
+                            inventoryItem: {
+                              id: string
+                              itemCode: string
+                              name: string
+                              unit: string | null
+                            }
+                          }[]
                         }) => (
                           <TableRow key={maintenance.id} className="group relative">
                             <TableCell>
@@ -2940,6 +2952,27 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                             </TableCell>
                             <TableCell>
                               <span className="text-sm">{formatCurrency(maintenance.cost)}</span>
+                            </TableCell>
+                            <TableCell>
+                              {maintenance.inventoryItems && maintenance.inventoryItems.length > 0 ? (
+                                <div className="flex flex-col gap-1">
+                                  <Badge variant="outline" className="text-xs w-fit">
+                                    <Package className="h-3 w-3 mr-1" />
+                                    {maintenance.inventoryItems.length} {maintenance.inventoryItems.length === 1 ? 'item' : 'items'}
+                                  </Badge>
+                                  <div className="text-xs text-muted-foreground">
+                                    {maintenance.inventoryItems.slice(0, 2).map((item, idx) => (
+                                      <span key={item.id}>
+                                        {item.inventoryItem.itemCode} ({item.quantity} {item.inventoryItem.unit || ''})
+                                        {idx < Math.min(maintenance.inventoryItems!.length, 2) - 1 && ', '}
+                                      </span>
+                                    ))}
+                                    {maintenance.inventoryItems.length > 2 && ` +${maintenance.inventoryItems.length - 2} more`}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-sm text-muted-foreground">-</span>
+                              )}
                             </TableCell>
                             <TableCell>
                               <div className="max-w-[200px]">

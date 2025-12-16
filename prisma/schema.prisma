@@ -351,12 +351,35 @@ model AssetsMaintenance {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
   
+  // Relations
+  inventoryItems    MaintenanceInventoryItem[]
+  
   @@map("assets_maintenance")
   @@index([assetId])
   @@index([dueDate])
   @@index([status])
   @@index([createdAt])
   @@index([status, dueDate])
+}
+
+model MaintenanceInventoryItem {
+  id                String   @id @default(uuid())
+  maintenanceId     String   @map("maintenance_id")
+  maintenance       AssetsMaintenance @relation(fields: [maintenanceId], references: [id], onDelete: Cascade)
+  
+  inventoryItemId   String   @map("inventory_item_id")
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  
+  quantity          Decimal  @map("quantity") @db.Decimal(12, 2)
+  unitCost          Decimal? @map("unit_cost") @db.Decimal(12, 2) // Optional: override item's unit cost at time of use
+  
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  
+  @@map("maintenance_inventory_items")
+  @@index([maintenanceId])
+  @@index([inventoryItemId])
+  @@index([maintenanceId, inventoryItemId])
 }
 
 model AssetsAuditHistory {
@@ -591,6 +614,7 @@ model InventoryItem {
   
   // Relations
   transactions      InventoryTransaction[]
+  maintenanceUsages MaintenanceInventoryItem[]
   
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")

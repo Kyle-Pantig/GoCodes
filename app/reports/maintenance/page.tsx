@@ -17,6 +17,8 @@ import {
   X,
   ArrowLeft,
   ArrowRight,
+  Package,
+  ChevronDown,
 } from 'lucide-react'
 import {
   Table,
@@ -29,6 +31,12 @@ import {
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { ReportFilters } from '@/components/reports/report-filters'
 import { format } from 'date-fns'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Separator } from '@/components/ui/separator'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +61,12 @@ interface MaintenanceReportData {
     completed: number
     totalCost: number
     averageCost: number
+    totalCostByStatus?: {
+      completed: number
+      scheduled: number
+      cancelled: number
+      inProgress: number
+    }
     byStatus: Array<{
       status: string
       count: number
@@ -79,6 +93,19 @@ interface MaintenanceReportData {
     isRepeating: boolean
     isOverdue: boolean
     isUpcoming: boolean
+    inventoryItems?: Array<{
+      id: string
+      inventoryItemId: string
+      quantity: number
+      unitCost: number | null
+      inventoryItem: {
+        id: string
+        itemCode: string
+        name: string
+        unit: string | null
+        unitCost: number | null
+      }
+    }>
   }>
   upcoming: Array<{
     id: string
@@ -434,8 +461,28 @@ function MaintenanceReportsPageContent() {
             <div style="font-size: 24px; font-weight: bold; color: #2563eb;">${data.summary.upcoming}</div>
           </div>
           <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; background: #f9fafb;">
-            <h3 style="margin: 0 0 5px 0; font-size: 14px; color: #6b7280;">Total Cost</h3>
-            <div style="font-size: 24px; font-weight: bold; color: #111827;">${formatCurrency(data.summary.totalCost)}</div>
+            <h3 style="margin: 0 0 5px 0; font-size: 14px; color: #6b7280;">Completed</h3>
+            <div style="font-size: 24px; font-weight: bold; color: #111827;">${data.summary.completed}</div>
+          </div>
+        </div>
+        
+        <!-- Cost by Status Cards -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 30px;">
+          <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; background: #f9fafb;">
+            <h3 style="margin: 0 0 5px 0; font-size: 14px; color: #6b7280;">Total Cost - Completed</h3>
+            <div style="font-size: 24px; font-weight: bold; color: #111827;">${formatCurrency(data.summary.totalCostByStatus?.completed || 0)}</div>
+          </div>
+          <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; background: #f9fafb;">
+            <h3 style="margin: 0 0 5px 0; font-size: 14px; color: #6b7280;">Total Cost - Scheduled</h3>
+            <div style="font-size: 24px; font-weight: bold; color: #111827;">${formatCurrency(data.summary.totalCostByStatus?.scheduled || 0)}</div>
+          </div>
+          <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; background: #f9fafb;">
+            <h3 style="margin: 0 0 5px 0; font-size: 14px; color: #6b7280;">Total Cost - In Progress</h3>
+            <div style="font-size: 24px; font-weight: bold; color: #111827;">${formatCurrency(data.summary.totalCostByStatus?.inProgress || 0)}</div>
+          </div>
+          <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; background: #f9fafb;">
+            <h3 style="margin: 0 0 5px 0; font-size: 14px; color: #6b7280;">Total Cost - Cancelled</h3>
+            <div style="font-size: 24px; font-weight: bold; color: #111827;">${formatCurrency(data.summary.totalCostByStatus?.cancelled || 0)}</div>
           </div>
         </div>
 
@@ -458,8 +505,8 @@ function MaintenanceReportsPageContent() {
               <tr>
                 <td><strong>${statusItem.status || 'Unknown'}</strong></td>
                 <td>${statusItem.count}</td>
-                <td>${formatCurrency(statusItem.totalCost)}</td>
-                <td>${formatCurrency(statusItem.averageCost)}</td>
+                <td>${statusItem.totalCost > 0 ? formatCurrency(statusItem.totalCost) : '-'}</td>
+                <td>${statusItem.totalCost > 0 ? formatCurrency(statusItem.averageCost) : '-'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -477,7 +524,7 @@ function MaintenanceReportsPageContent() {
               <th>Due Date</th>
               <th>Completed</th>
               <th>Cost</th>
-              <th>Maintenance By</th>
+              <th>Inventory Items</th>
             </tr>
           </thead>
           <tbody>
@@ -485,7 +532,14 @@ function MaintenanceReportsPageContent() {
               <tr>
                 <td colspan="8" style="text-align: center; color: #6b7280;">No maintenance records found</td>
               </tr>
-            ` : allMaintenances.map(maintenance => `
+            ` : allMaintenances.map(maintenance => {
+              const inventoryItemsStr = maintenance.inventoryItems && maintenance.inventoryItems.length > 0
+                ? maintenance.inventoryItems.map((item: { inventoryItem: { itemCode: string; unit: string | null }; quantity: number }) => 
+                    `${item.inventoryItem.itemCode} (${item.quantity} ${item.inventoryItem.unit || 'units'})`
+                  ).join('; ')
+                : 'N/A'
+              
+              return `
               <tr>
                 <td><strong>${maintenance.assetTagId}</strong></td>
                 <td>${maintenance.assetDescription || 'N/A'}</td>
@@ -494,9 +548,10 @@ function MaintenanceReportsPageContent() {
                 <td>${maintenance.dueDate ? format(new Date(maintenance.dueDate), 'MMM d, yyyy') : 'N/A'}</td>
                 <td>${maintenance.dateCompleted ? format(new Date(maintenance.dateCompleted), 'MMM d, yyyy') : 'N/A'}</td>
                 <td>${formatCurrency(maintenance.cost)}</td>
-                <td>${maintenance.maintenanceBy || 'N/A'}</td>
+                <td>${inventoryItemsStr}</td>
               </tr>
-            `).join('')}
+            `
+            }).join('')}
           </tbody>
         </table>
         ` : ''}
@@ -740,7 +795,7 @@ function MaintenanceReportsPageContent() {
                               <TableHead className="text-left bg-card transition-colors group-hover:bg-muted/50">Due Date</TableHead>
                               <TableHead className="text-left bg-card transition-colors group-hover:bg-muted/50">Completed</TableHead>
                               <TableHead className="text-left bg-card transition-colors group-hover:bg-muted/50">Cost</TableHead>
-                              <TableHead className="text-left bg-card transition-colors group-hover:bg-muted/50">Maintenance By</TableHead>
+                              <TableHead className="text-left bg-card transition-colors group-hover:bg-muted/50">Inventory Items</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -782,7 +837,69 @@ function MaintenanceReportsPageContent() {
                                   <TableCell>
                                     {maintenance.cost ? formatCurrency(maintenance.cost) : 'N/A'}
                                   </TableCell>
-                                  <TableCell>{maintenance.maintenanceBy || 'N/A'}</TableCell>
+                                  <TableCell>
+                                    {maintenance.inventoryItems && maintenance.inventoryItems.length > 0 ? (
+                                      <Popover>
+                                        <PopoverTrigger asChild>
+                                          <Button variant="ghost" className="h-auto p-0 hover:bg-transparent">
+                                            <div className="flex flex-col gap-1 items-start">
+                                              <Badge variant="outline" className="text-xs w-fit">
+                                                <Package className="h-3 w-3 mr-1" />
+                                                {maintenance.inventoryItems.length} {maintenance.inventoryItems.length === 1 ? 'item' : 'items'}
+                                              </Badge>
+                                              <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                                {maintenance.inventoryItems.slice(0, 2).map((item, idx) => (
+                                                  <span key={item.id}>
+                                                    {item.inventoryItem.itemCode}
+                                                    {idx < Math.min(maintenance.inventoryItems!.length, 2) - 1 && ', '}
+                                                  </span>
+                                                ))}
+                                                {maintenance.inventoryItems.length > 2 && ` +${maintenance.inventoryItems.length - 2} more`}
+                                                <ChevronDown className="h-3 w-3 ml-1" />
+                                              </div>
+                                            </div>
+                                          </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-80" align="start">
+                                          <div className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                              <Package className="h-4 w-4 text-muted-foreground" />
+                                              <h4 className="font-semibold text-sm">Inventory Items Used</h4>
+                                            </div>
+                                            <Separator />
+                                            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                                              {maintenance.inventoryItems.map((item, index) => (
+                                                <div key={item.id}>
+                                                  <div className="flex items-start justify-between gap-2">
+                                                    <div className="flex-1">
+                                                      <div className="font-medium text-sm">{item.inventoryItem.itemCode}</div>
+                                                      <div className="text-xs text-muted-foreground">{item.inventoryItem.name}</div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                      <div className="text-sm font-medium">
+                                                        {item.quantity} {item.inventoryItem.unit || 'units'}
+                                                      </div>
+                                                      {item.unitCost && (
+                                                        <div className="text-xs text-muted-foreground">
+                                                          ₱{new Intl.NumberFormat('en-US', {
+                                                            minimumFractionDigits: 2,
+                                                            maximumFractionDigits: 2,
+                                                          }).format(item.unitCost)} each
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                  {index < maintenance.inventoryItems!.length - 1 && <Separator className="my-2" />}
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        </PopoverContent>
+                                      </Popover>
+                                    ) : (
+                                      <span className="text-sm text-muted-foreground">-</span>
+                                    )}
+                                  </TableCell>
                                 </TableRow>
                               ))
                             )}

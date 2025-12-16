@@ -45,6 +45,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { maintenanceSchema, type MaintenanceFormData } from "@/lib/validations/assets"
+import { InventoryItemsSelector } from "@/components/maintenance/inventory-items-selector"
 
 interface Asset {
   id: string
@@ -134,6 +135,18 @@ function MaintenancePageContent() {
   const hasProcessedUrlParams = useRef(false)
   const isInitialMount = useRef(true)
 
+  // State for inventory items (not using form control for easier management)
+  const [inventoryItems, setInventoryItems] = useState<Array<{
+    inventoryItemId: string
+    itemCode: string
+    name: string
+    quantity: number
+    unitCost: number | null
+    availableStock: number
+    unit: string | null
+    minStockLevel: number | null
+  }>>([])
+
   const form = useForm<MaintenanceFormData>({
     resolver: zodResolver(maintenanceSchema),
     defaultValues: {
@@ -147,6 +160,7 @@ function MaintenancePageContent() {
       dateCompleted: '',
       dateCancelled: '',
       isRepeating: false,
+      inventoryItems: [],
     },
   })
 
@@ -503,11 +517,11 @@ function MaintenancePageContent() {
     }
   }
 
-  // Format currency in PHP
+  // Format currency in PHP with commas
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'PHP',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(value)
   }
 
@@ -524,6 +538,11 @@ function MaintenancePageContent() {
       dateCancelled?: string
       cost?: string
       isRepeating: boolean
+      inventoryItems?: Array<{
+        inventoryItemId: string
+        quantity: number
+        unitCost?: number
+      }>
     }) => {
       const response = await fetch('/api/assets/maintenance', {
         method: "POST",
@@ -573,6 +592,11 @@ function MaintenancePageContent() {
       dateCancelled: data.dateCancelled || undefined,
       cost: data.cost || undefined,
       isRepeating: data.isRepeating,
+      inventoryItems: inventoryItems.length > 0 ? inventoryItems.map(item => ({
+        inventoryItemId: item.inventoryItemId,
+        quantity: item.quantity,
+        unitCost: item.unitCost ?? undefined,
+      })) : undefined,
     })
   })
 
@@ -596,6 +620,7 @@ function MaintenancePageContent() {
   const clearForm = () => {
     setSelectedAsset(null)
     setAssetIdInput("")
+    setInventoryItems([])
     form.reset({
       assetId: '',
       title: '',
@@ -607,6 +632,7 @@ function MaintenancePageContent() {
       dateCompleted: '',
       dateCancelled: '',
       isRepeating: false,
+      inventoryItems: [],
     })
     // Only reset the flag if URL params are already cleared (allows new URL params to be processed)
     if (!searchParams.get('assetId')) {
@@ -774,7 +800,7 @@ function MaintenancePageContent() {
                           {maintenance.dueDate ? new Date(maintenance.dueDate).toLocaleDateString() : '-'}
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground">
-                          {maintenance.cost ? formatCurrency(Number(maintenance.cost)) : '-'}
+                          {maintenance.cost ? `₱${formatCurrency(Number(maintenance.cost))}` : '-'}
                         </TableCell>
                         <TableCell className="py-1.5 text-xs text-muted-foreground text-right">
                           {getTimeAgo(maintenance.createdAt)}
@@ -1142,6 +1168,9 @@ function MaintenancePageContent() {
               <Field>
                 <FieldLabel htmlFor="cost">
                   Maintenance Cost
+                  {inventoryItems.length > 0 && (
+                    <span className="text-xs text-muted-foreground ml-2">(Auto-calculated from inventory items)</span>
+                  )}
                 </FieldLabel>
                 <FieldContent>
                   <Controller
@@ -1156,7 +1185,7 @@ function MaintenancePageContent() {
                           min="0"
                           placeholder="0.00"
                           {...field}
-                          disabled={!canManageMaintenance || !canViewAssets || !selectedAsset}
+                          disabled={!canManageMaintenance || !canViewAssets || !selectedAsset || inventoryItems.length > 0}
                           className="w-full"
                           aria-invalid={fieldState.error ? 'true' : 'false'}
                         />
@@ -1198,6 +1227,24 @@ function MaintenancePageContent() {
                   />
                 </FieldContent>
               </Field>
+            </div>
+
+            {/* Inventory Items Section */}
+            <div className="mt-6 pt-6 border-t">
+              <InventoryItemsSelector
+                value={inventoryItems}
+                onChange={(items) => {
+                  setInventoryItems(items)
+                  // Calculate total inventory cost and update maintenance cost
+                  const totalCost = items.reduce((total, item) => {
+                    const cost = item.unitCost ? item.unitCost * item.quantity : 0
+                    return total + cost
+                  }, 0)
+                  form.setValue('cost', totalCost > 0 ? totalCost.toFixed(2) : '')
+                }}
+                disabled={!canManageMaintenance || !canViewAssets || !selectedAsset}
+                showStockWarnings={true}
+              />
             </div>
 
       </div>

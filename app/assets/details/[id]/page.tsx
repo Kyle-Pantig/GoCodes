@@ -1465,6 +1465,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                       <TableHead className="w-[12%]">Date Completed</TableHead>
                       <TableHead className="w-[15%]">Maintenance By</TableHead>
                       <TableHead className="w-[12%]">Cost</TableHead>
+                      <TableHead className="w-[14%]">Inventory Items</TableHead>
                       <TableHead className="w-[14%]">Details</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1478,6 +1479,17 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                       maintenanceBy?: string | null
                       dateCompleted?: string | Date | null
                       cost?: number | string | null
+                      inventoryItems?: {
+                        id: string
+                        quantity: number | string
+                        unitCost: number | null
+                        inventoryItem: {
+                          id: string
+                          itemCode: string
+                          name: string
+                          unit: string | null
+                        }
+                      }[]
                     }) => (
                       <TableRow key={maintenance.id}>
                         <TableCell>
@@ -1509,6 +1521,27 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                         </TableCell>
                         <TableCell>
                           <span className="text-sm">{formatCurrency(maintenance.cost)}</span>
+                        </TableCell>
+                        <TableCell>
+                          {maintenance.inventoryItems && maintenance.inventoryItems.length > 0 ? (
+                            <div className="flex flex-col gap-1">
+                              <Badge variant="outline" className="text-xs w-fit">
+                                <Package className="h-3 w-3 mr-1" />
+                                {maintenance.inventoryItems.length} {maintenance.inventoryItems.length === 1 ? 'item' : 'items'}
+                              </Badge>
+                              <div className="text-xs text-muted-foreground">
+                                {maintenance.inventoryItems.slice(0, 2).map((item, idx) => (
+                                  <span key={item.id}>
+                                    {item.inventoryItem.itemCode} ({item.quantity} {item.inventoryItem.unit || ''})
+                                    {idx < Math.min(maintenance.inventoryItems!.length, 2) - 1 && ', '}
+                                  </span>
+                                ))}
+                                {maintenance.inventoryItems.length > 2 && ` +${maintenance.inventoryItems.length - 2} more`}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div className="max-w-[200px]">
