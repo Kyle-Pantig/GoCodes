@@ -24,6 +24,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 import { cn } from '@/lib/utils'
+import { useMobileDock } from '@/components/mobile-dock-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { is } from 'date-fns/locale'
 
 interface FileHistory {
   id: string
@@ -107,6 +110,8 @@ export default function ImportPage() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isInitialMount = useRef(true)
+  const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
   const [historyPage, setHistoryPage] = useState(1)
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false)
   const [selectedTemplateFields, setSelectedTemplateFields] = useState<Set<string>>(
@@ -130,6 +135,51 @@ export default function ImportPage() {
     refetchOnMount: false, // Don't refetch on mount if data exists
     placeholderData: (previousData) => previousData,
   })
+
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile) {
+      setDockContent(
+        <>
+          <Button
+            variant="outline"
+            size="lg"
+            className="rounded-full btn-glass-elevated"
+            disabled={permissionsLoading || !canViewAssets}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (!canManageImport) {
+                toast.error('You do not have permission to import assets')
+                return
+              }
+              fileInputRef.current?.click()
+            }}
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            Select File
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => {
+              refetchHistory()
+            }}
+            disabled={isHistoryFetching || historyLoading}
+            className="h-10 w-10 rounded-full btn-glass-elevated"
+            title="Refresh history"
+          >
+            <RefreshCw className={cn("h-4 w-4", isHistoryFetching && "animate-spin")} />
+          </Button>
+        </>
+      )
+    } else {
+      setDockContent(null)
+    }
+    
+    return () => {
+      setDockContent(null)
+    }
+  }, [isMobile, setDockContent, canManageImport, permissionsLoading, canViewAssets, isHistoryFetching, historyLoading, refetchHistory])
 
   // Delete file history mutation
   const deleteMutation = useMutation({
@@ -909,7 +959,7 @@ export default function ImportPage() {
                     refetchHistory()
                   }}
                   disabled={isHistoryFetching || historyLoading}
-                  className="h-8 w-8 shrink-0"
+                  className={cn("h-8 w-8 shrink-0", isMobile && "hidden")}
                   title="Refresh history"
                 >
                   <RefreshCw className={cn("h-4 w-4", isHistoryFetching && "animate-spin")} />
@@ -919,7 +969,7 @@ export default function ImportPage() {
             <CardContent className="p-0 relative flex-1 min-h-[400px]">
               {/* Glass effect overlay when fetching */}
               {isHistoryFetching && historyData?.fileHistory && historyData.fileHistory.length > 0 && (
-                <div className="absolute left-0 right-[10px] top-0 bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center rounded-b-lg">
+                <div className={cn("absolute left-0 right-[10px] top-0 bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center rounded-b-2xl", isMobile && "right-0 rounded-b-2xl")}>
                   <Spinner variant="default" size={24} className="text-muted-foreground" />
                 </div>
               )}

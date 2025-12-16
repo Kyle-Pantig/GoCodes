@@ -93,9 +93,9 @@ const getStatusBadge = (status: string | null) => {
   const statusToShow = status || 'Checked out'
   const statusLC = statusToShow.toLowerCase()
   
-  // Show blue badge for Checked out status
+  // Show destructive (red) badge for Checked out status
   if (statusLC === 'checked out' || statusLC === 'in use') {
-    return <Badge variant="destructive" className="bg-blue-500">{statusToShow}</Badge>
+    return <Badge variant="destructive">{statusToShow}</Badge>
   }
   
   // Fallback (shouldn't happen on checkin page, but just in case)

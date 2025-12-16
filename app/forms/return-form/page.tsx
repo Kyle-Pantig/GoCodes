@@ -89,7 +89,7 @@ const getStatusBadge = (status: string | null) => {
     statusColor = 'bg-green-500'
   } else if (statusLC === 'checked out' || statusLC === 'in use') {
     statusVariant = 'destructive'
-    statusColor = 'bg-blue-500'
+    statusColor = ''
   } else if (statusLC === 'leased') {
     statusVariant = 'secondary'
     statusColor = 'bg-yellow-500'

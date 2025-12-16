@@ -123,7 +123,7 @@ export function BulkDeleteDialog({
         </DialogHeader>
         {!isDeleting && (
           <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" className='btn-glass' onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button variant={isRestore ? 'default' : 'destructive'} onClick={onConfirm}>

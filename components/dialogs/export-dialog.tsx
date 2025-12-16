@@ -207,7 +207,7 @@ export function ExportDialog({
             variant="outline"
             onClick={handleCancel}
             disabled={isExporting}
-            className="w-full sm:w-auto"
+            className="w-full sm:w-auto btn-glass"
           >
             Cancel
           </Button>

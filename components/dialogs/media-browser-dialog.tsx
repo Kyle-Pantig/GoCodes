@@ -285,6 +285,7 @@ export function MediaBrowserDialog({
             <Button
               variant="outline"
               onClick={handleClearSelection}
+              className="btn-glass"
             >
               Clear Selection
             </Button>

@@ -25,6 +25,8 @@ import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { usePermissions } from '@/hooks/use-permissions'
 import { cn } from '@/lib/utils'
 import type { AuditFormData } from '@/lib/validations/audit'
+import { useMobileDock } from '@/components/mobile-dock-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 interface Asset {
   id: string
@@ -63,7 +65,7 @@ const getStatusBadge = (status: string | null) => {
     statusColor = 'bg-green-500'
   } else if (statusLC === 'checked out' || statusLC === 'in use') {
     statusVariant = 'destructive'
-    statusColor = 'bg-blue-500'
+    statusColor = ''
   } else if (statusLC === 'leased') {
     statusVariant = 'secondary'
     statusColor = 'bg-yellow-500'
@@ -88,6 +90,8 @@ export default function AuditPage() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canAudit = hasPermission('canAudit')
   const canViewAssets = hasPermission('canViewAssets')
+  const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
   const [isScannerOpen, setIsScannerOpen] = useState(false)
   const [scannedAssets, setScannedAssets] = useState<ScannedAsset[]>([])
   const [selectedAsset, setSelectedAsset] = useState<ScannedAsset | null>(null)
@@ -106,6 +110,37 @@ export default function AuditPage() {
   useEffect(() => {
     isInitialMount.current = false
   }, [])
+
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile) {
+      setDockContent(
+        <div className="flex items-center justify-center w-full">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => {
+              if (!canAudit) {
+                toast.error('You do not have permission to conduct audits')
+                return
+              }
+              setIsScannerOpen(true)
+            }}
+            className="h-10 w-10 rounded-full btn-glass-elevated"
+            title="Scan QR Code"
+          >
+            <QrCode className="h-4 w-4" />
+          </Button>
+        </div>
+      )
+    } else {
+      setDockContent(null)
+    }
+    
+    return () => {
+      setDockContent(null)
+    }
+  }, [isMobile, setDockContent, canAudit, setIsScannerOpen])
 
 
   // Fetch recent audit history
@@ -541,7 +576,7 @@ export default function AuditPage() {
             setIsScannerOpen(true)
           }}
           size="sm"
-          className="gap-2 shrink-0"
+          className={cn("gap-2 shrink-0", isMobile && "hidden")}
         >
           <QrCode className="h-5 w-5" />
           Scan QR Code

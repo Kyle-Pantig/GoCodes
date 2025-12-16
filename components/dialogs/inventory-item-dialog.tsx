@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { ScrollArea } from '../ui/scroll-area'
-import { RefreshCw, Sparkles } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 
 export interface InventoryItem {
@@ -413,6 +413,7 @@ export function InventoryItemDialog({
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={isLoading}
+            className='btn-glass'
           >
             Cancel
           </Button>

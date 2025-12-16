@@ -319,6 +319,7 @@ export function DocumentBrowserDialog({
               size="sm"
               onClick={() => setDocumentsPage(p => Math.max(1, p - 1))}
               disabled={documentsPage === 1 || documentsLoading}
+              className='btn-glass'
             >
               Previous
             </Button>
@@ -330,6 +331,7 @@ export function DocumentBrowserDialog({
               size="sm"
               onClick={() => setDocumentsPage(p => Math.min(documentsData.pagination.totalPages, p + 1))}
               disabled={documentsPage >= documentsData.pagination.totalPages || documentsLoading}
+              className='btn-glass'
             >
               Next
             </Button>
@@ -344,6 +346,7 @@ export function DocumentBrowserDialog({
             <Button
               variant="outline"
               onClick={handleClearSelection}
+              className="btn-glass"
             >
               Clear Selection
             </Button>

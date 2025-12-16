@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Card,
@@ -36,12 +36,14 @@ import {
 } from '@/hooks/use-departments'
 import { DepartmentDialog } from '@/components/dialogs/department-dialog'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useMobileDock } from '@/components/mobile-dock-provider'
 
 export default function DepartmentsPage() {
   const queryClient = useQueryClient()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canManageSetup = hasPermission('canManageSetup')
   const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
   
   const { data: departments = [], isLoading: departmentsLoading, error: departmentsError } = useDepartments()
   const createDepartmentMutation = useCreateDepartment()
@@ -184,23 +186,34 @@ export default function DepartmentsPage() {
     }
   }
 
+  // Use ref to store latest departments to avoid dependency issues
+  const departmentsRef = useRef(departments)
+  useEffect(() => {
+    departmentsRef.current = departments
+  }, [departments])
+
   // Toggle selection mode
-  const handleToggleSelectionMode = () => {
-    setIsSelectionMode(prev => !prev)
-    if (isSelectionMode) {
+  const handleToggleSelectionMode = useCallback(() => {
+    setIsSelectionMode(prev => {
+      if (prev) {
       // Clear selections when exiting selection mode
       setSelectedDepartments(new Set())
     }
-  }
+      return !prev
+    })
+  }, [])
 
-  // Handle select/deselect all
-  const handleToggleSelectAll = () => {
-    if (selectedDepartments.size === departments.length) {
-      setSelectedDepartments(new Set())
+  // Handle select/deselect all - uses ref to avoid dependency issues
+  const handleToggleSelectAll = useCallback(() => {
+    setSelectedDepartments(prev => {
+      const currentDepartments = departmentsRef.current
+      if (prev.size === currentDepartments.length) {
+        return new Set()
     } else {
-      setSelectedDepartments(new Set(departments.map(dept => dept.id)))
+        return new Set(currentDepartments.map(dept => dept.id))
     }
-  }
+    })
+  }, [])
 
   // Bulk delete handler
   const handleBulkDelete = async () => {
@@ -276,6 +289,109 @@ export default function DepartmentsPage() {
       return () => clearTimeout(timer)
     }
   }, [isDeleting, deletingCount])
+
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile) {
+      if (isSelectionMode) {
+        // Selection mode: Select All / Deselect All (left) + Cancel (middle) + Delete icon (right, only when items selected)
+        const departmentsCount = departmentsRef.current.length
+        const allSelected = selectedDepartments.size === departmentsCount && departmentsCount > 0
+        const hasSelectedItems = selectedDepartments.size > 0
+        
+        setDockContent(
+          <>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={handleToggleSelectAll}
+                className="rounded-full btn-glass-elevated"
+              >
+                {allSelected ? 'Deselect All' : 'Select All'}
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={handleToggleSelectionMode}
+                className="rounded-full btn-glass-elevated"
+              >
+                Cancel
+              </Button>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setIsBulkDeleteDialogOpen(true)}
+              disabled={!hasSelectedItems}
+              className="h-10 w-10 rounded-full btn-glass-elevated"
+              title="Delete Selected"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </>
+        )
+      } else {
+        // Normal mode: Select (left) + Add Department (small gap) grouped together, Sort icon (right)
+        setDockContent(
+          <>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={handleToggleSelectionMode}
+                className="rounded-full btn-glass-elevated"
+              >
+                Select
+              </Button>
+              <Button 
+                onClick={() => setIsCreateDepartmentDialogOpen(true)}
+                variant="outline"
+                size="lg"
+                className="rounded-full btn-glass-elevated"
+              >
+                Add Department
+              </Button>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="rounded-full btn-glass-elevated h-10 w-10">
+                  <ArrowUpDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuRadioGroup value={sortBy} onValueChange={(v) => setSortBy(v as 'name' | 'date')}>
+                  <DropdownMenuRadioItem value="name">
+                    <TextIcon className="mr-2 h-4 w-4" />
+                    Name
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="date">
+                    <Clock className="mr-2 h-4 w-4" />
+                    Date Created
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup value={sortOrder} onValueChange={(v) => setSortOrder(v as 'asc' | 'desc')}>
+                  <DropdownMenuRadioItem value="asc">
+                    Ascending
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="desc">
+                    Descending
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        )
+      }
+    } else {
+      setDockContent(null)
+    }
+    
+    return () => {
+      setDockContent(null)
+    }
+  }, [isMobile, setDockContent, isSelectionMode, selectedDepartments.size, handleToggleSelectAll, handleToggleSelectionMode, sortBy, sortOrder])
 
   if (permissionsLoading || departmentsLoading) {
     return (
@@ -430,9 +546,9 @@ export default function DepartmentsPage() {
             </div>
           )}
         </div>
-        {/* Mobile: Selection controls when selection mode is active */}
+        {/* Mobile: Selection controls when selection mode is active - hidden when dock is active */}
         {isMobile && isSelectionMode && (
-          <div className="flex flex-wrap items-center justify-center gap-2">
+          <div className="hidden">
             <div className="flex items-center gap-2 px-2">
               <Checkbox
                 id="select-all-departments-mobile"
@@ -467,9 +583,9 @@ export default function DepartmentsPage() {
             )}
           </div>
         )}
-        {/* Mobile: Select and Add Department buttons when selection mode is NOT active */}
+        {/* Mobile: Select and Add Department buttons when selection mode is NOT active - hidden when dock is active */}
         {isMobile && !isSelectionMode && (
-          <div className="flex flex-col gap-2">
+          <div className="hidden">
           <div className="flex items-center justify-end gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

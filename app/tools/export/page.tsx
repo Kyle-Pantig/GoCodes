@@ -18,6 +18,8 @@ import * as XLSX from 'xlsx'
 import { ExportFieldsDialog } from '@/components/dialogs/export-fields-dialog'
 import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
+import { useMobileDock } from '@/components/mobile-dock-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { format } from 'date-fns'
@@ -222,6 +224,8 @@ export default function ExportPage() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canManageExport = hasPermission('canManageExport')
   const canViewAssets = hasPermission('canViewAssets')
+  const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
   
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
@@ -326,6 +330,51 @@ export default function ExportPage() {
     refetchOnWindowFocus: false, // Don't refetch on window focus
     refetchOnMount: false, // Don't refetch on mount if data exists
   })
+
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile) {
+      setDockContent(
+        <>
+          <Button 
+            onClick={() => {
+              if (!canManageExport) {
+                toast.error('You do not have permission to export assets')
+                return
+              }
+              setIsExportDialogOpen(true)
+            }}
+            variant="outline"
+            size="lg"
+            className="rounded-full btn-glass-elevated"
+            disabled={permissionsLoading || !canViewAssets || assetsLoading}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Configure & Export
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => {
+              setIsManualRefresh(true)
+              refetchHistory()
+            }}
+            disabled={isHistoryFetching || historyLoading}
+            className="h-10 w-10 rounded-full btn-glass-elevated"
+            title="Refresh history"
+          >
+            <RefreshCw className={`h-4 w-4 ${isHistoryFetching ? 'animate-spin' : ''}`} />
+          </Button>
+        </>
+      )
+    } else {
+      setDockContent(null)
+    }
+    
+    return () => {
+      setDockContent(null)
+    }
+  }, [isMobile, setDockContent, canManageExport, permissionsLoading, canViewAssets, assetsLoading, setIsExportDialogOpen, isHistoryFetching, historyLoading, refetchHistory, setIsManualRefresh])
 
   const handleFieldToggle = (fieldKey: string) => {
     setSelectedExportFields(prev => {
@@ -544,7 +593,7 @@ export default function ExportPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div className={cn("grid gap-4", isMobile ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-3 md:grid-cols-2 xl:grid-cols-3")}>
               <div className="p-4 rounded-lg border bg-card text-card-foreground shadow-sm flex flex-col gap-2">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Database className="h-4 w-4 shrink-0" />
@@ -569,7 +618,7 @@ export default function ExportPage() {
                 </div>
               </div>
 
-              <div className="p-3 sm:p-4 md:col-span-2 xl:col-span-1 rounded-lg border bg-muted/30 flex items-center justify-center">
+              <div className={cn("p-3 sm:p-4 md:col-span-2 xl:col-span-1 rounded-lg border bg-muted/30 flex items-center justify-center", isMobile && "hidden")}>
                 <Button 
                   onClick={() => {
                     if (!canManageExport) {
@@ -643,7 +692,7 @@ export default function ExportPage() {
         <CardContent className="p-0 relative">
           {/* Glass effect overlay when fetching */}
           {isHistoryFetching && historyData?.fileHistory && historyData.fileHistory.length > 0 && (
-            <div className="absolute left-0 right-[10px] top-0 bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+            <div className={cn("absolute left-0 right-[10px] top-0 bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center", isMobile && "right-0 rounded-b-2xl")}>
               <Spinner variant="default" size={24} className="text-muted-foreground" />
             </div>
           )}
@@ -737,7 +786,7 @@ export default function ExportPage() {
                           <TableCell className={cn("sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50")}>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>

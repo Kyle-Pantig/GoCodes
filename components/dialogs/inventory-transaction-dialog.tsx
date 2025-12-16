@@ -291,6 +291,7 @@ export function InventoryTransactionDialog({
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={isLoading}
+            className='btn-glass'
           >
             Cancel
           </Button>

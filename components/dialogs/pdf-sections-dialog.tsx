@@ -246,7 +246,7 @@ export function PdfSectionsDialog({
           </div>
         </ScrollArea>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" className="btn-glass" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button

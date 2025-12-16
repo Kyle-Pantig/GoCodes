@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 interface QRScannerDialogProps {
   open: boolean
@@ -273,7 +274,7 @@ export function QRScannerDialog({
             <Button
               type="button"
               variant={qrMode === 'scan' ? 'default' : 'outline'}
-              className="flex-1"
+              className={cn("flex-1", qrMode !== "scan" && "btn-glass")}
               onClick={() => setQrMode('scan')}
             >
               <QrCode className="mr-2 h-4 w-4" />
@@ -282,7 +283,7 @@ export function QRScannerDialog({
             <Button
               type="button"
               variant={qrMode === 'upload' ? 'default' : 'outline'}
-              className="flex-1"
+              className={cn("flex-1", qrMode !== "upload" && "btn-glass")}
               onClick={() => {
                 setQrMode('upload')
                 setTimeout(() => {
@@ -337,7 +338,7 @@ export function QRScannerDialog({
               <Button
                 type="button"
                 variant="outline"
-                className="mt-4"
+                className="mt-4 btn-glass"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Upload className="mr-2 h-4 w-4" />
@@ -347,7 +348,7 @@ export function QRScannerDialog({
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" className='btn-glass' onClick={() => onOpenChange(false)}>
               {multiScan ? 'Done' : 'Close'}
             </Button>
           </DialogFooter>

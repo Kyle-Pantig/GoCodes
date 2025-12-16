@@ -597,15 +597,15 @@ export function QRCodeDisplayDialog({
           </div>
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={handleDownloadQR}>
+          <Button variant="outline" className='btn-glass' onClick={handleDownloadQR}>
             <Download className="mr-2 h-4 w-4" />
             Download QR
           </Button>
-          <Button variant="outline" onClick={handlePrintQR}>
+          <Button variant="outline" className='btn-glass' onClick={handlePrintQR}>
             <Printer className="mr-2 h-4 w-4" />
             Print QR
           </Button>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" className='btn-glass' onClick={() => onOpenChange(false)}>
             Close
           </Button>
         </DialogFooter>

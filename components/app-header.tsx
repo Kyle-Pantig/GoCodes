@@ -4,7 +4,7 @@ import * as React from "react"
 import { useState, useRef } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { QrCode, Upload, MoreHorizontal, Edit, CheckCircle2, ArrowRight, ArrowLeft, Trash2, Move, Package, FileText, Wrench, ImageIcon, ClipboardCheck, User } from "lucide-react"
+import { QrCode, Upload, Edit, CheckCircle2, ArrowRight, ArrowLeft, Trash2, Move, Package, FileText, Wrench, ImageIcon, ClipboardCheck, User, MoreVertical, ChevronLeft } from "lucide-react"
 import { Scanner } from '@yudiel/react-qr-scanner'
 import { Html5Qrcode } from 'html5-qrcode'
 import { Separator } from "@/components/ui/separator"
@@ -49,6 +49,8 @@ import { AuditHistoryManager } from "@/components/audit-history-manager"
 import { ImagePreviewDialog } from "@/components/dialogs/image-preview-dialog"
 import { DownloadConfirmationDialog } from "@/components/dialogs/download-confirmation-dialog"
 import Image from "next/image"
+import { cn } from "@/lib/utils"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 const routeLabels: Record<string, string> = {
   '/': 'Home',
@@ -442,7 +444,7 @@ const getStatusBadge = (status: string | null | undefined) => {
     statusColor = 'bg-green-500'
   } else if (statusLC === 'checked out' || statusLC === 'in use') {
     statusVariant = 'destructive'
-    statusColor = 'bg-blue-500'
+    statusColor = ''
   } else if (statusLC === 'leased') {
     statusVariant = 'secondary'
     statusColor = 'bg-yellow-500'
@@ -481,6 +483,7 @@ export function AppHeader() {
   const pathname = usePathname()
   const router = useRouter()
   const { hasPermission } = usePermissions()
+  const isMobile = useIsMobile()
   const canViewAssets = hasPermission('canViewAssets')
   const canEditAssets = hasPermission('canEditAssets')
   const canAudit = hasPermission('canAudit')
@@ -745,6 +748,7 @@ export function AppHeader() {
                   variant={scanMode === 'camera' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setScanMode('camera')}
+                  className={cn(scanMode !== "camera" && "btn-glass")}
                 >
                   <QrCode className="mr-2 h-4 w-4" />
                   Camera Scan
@@ -757,6 +761,7 @@ export function AppHeader() {
                     setScanMode('upload')
                     fileInputRef.current?.click()
                   }}
+                  className={cn(scanMode !== "upload" && "btn-glass")}
                 >
                   <Upload className="mr-2 h-4 w-4" />
                   Upload Image
@@ -829,6 +834,7 @@ export function AppHeader() {
                     variant="outline"
                     size="sm"
                     onClick={() => fileInputRef.current?.click()}
+                    className="btn-glass"
                   >
                     <Upload className="mr-2 h-4 w-4" />
                     Choose File
@@ -854,17 +860,25 @@ export function AppHeader() {
                 <div className="flex items-center justify-between border-b pb-3">
                   <div>
                     <h3 className="text-lg font-semibold">{scannedAsset.assetTagId}</h3>
-                    <p className="text-sm text-muted-foreground">{scannedAsset.description}</p>
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button 
-                        variant="ghost" 
-                        size="icon"
-                        className="h-8 w-8 rounded-full"
+                        variant="outline" 
+                        size={isMobile ? "icon" : "sm"}
+                        className={cn(
+                          isMobile ? "h-8 w-8 btn-glass" : "btn-glass"
+                        )}
                         title="More Actions"
                       >
-                        <MoreHorizontal className="h-4 w-4" />
+                        {isMobile ? (
+                          <MoreVertical className="h-4 w-4" />
+                        ) : (
+                          <>
+                          <ChevronLeft className="h-4 w-4"  />
+                          <span>More Actions</span>
+                          </>
+                        )}
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
@@ -1092,8 +1106,8 @@ export function AppHeader() {
                 </div>
 
                 {/* Tabs */}
-                <ScrollArea className="w-full border-b">
-                  <div className="flex items-center gap-2 max-w-xs ">
+                <ScrollArea className="border-b">
+                  <div className="flex items-center gap-2 w-10 ">
                     <Button
                       type="button"
                       variant="ghost"
@@ -1160,6 +1174,10 @@ export function AppHeader() {
                   {activeTab === 'details' && (
                     <ScrollArea className="h-[300px]">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Description</p>
+                    <p className="text-sm text-muted-foreground break">{scannedAsset.description}</p>
+                  </div>
                   <div>
                     <p className="text-xs font-medium text-muted-foreground mb-1">Category</p>
                     <p className="text-sm">
@@ -1263,11 +1281,12 @@ export function AppHeader() {
                     clearTimeout(scanTimeoutRef.current)
                   }
                 }}
+                className="btn-glass"
               >
                 Scan Another
               </Button>
             )}
-            <Button variant="outline" onClick={() => {
+            <Button variant="outline" className="btn-glass" onClick={() => {
               setQrDialogOpen(false)
               setScannedAsset(null)
               setActiveTab('details')

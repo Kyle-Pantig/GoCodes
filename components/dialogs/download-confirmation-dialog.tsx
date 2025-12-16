@@ -70,7 +70,7 @@ export function DownloadConfirmationDialog({
             </div>
           )}
           <div className="flex justify-end gap-2 mt-6">
-            <Button variant="outline" onClick={handleCancel}>
+            <Button variant="outline" className='btn-glass' onClick={handleCancel}>
               Cancel
             </Button>
             <Button onClick={handleConfirm}>

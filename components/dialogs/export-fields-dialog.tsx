@@ -83,7 +83,7 @@ export function ExportFieldsDialog({
                 <div className="flex items-center justify-between border-b pb-2">
                   <span className="text-sm font-semibold">Summary Fields</span>
                   {onSelectAllSummary && onDeselectAllSummary && (
-                    <Button variant="outline" size="sm" onClick={toggleSelectAllSummary}>
+                    <Button variant="outline" size="sm" className='btn-glass' onClick={toggleSelectAllSummary}>
                       {allSummarySelected ? 'Deselect All' : 'Select All'}
                     </Button>
                   )}
@@ -117,7 +117,7 @@ export function ExportFieldsDialog({
                 {allSelected ? 'Deselect All' : 'Select All'}
               </Button>
             </div>
-            <ScrollArea className="h-[300px]">
+            <ScrollArea className="h-[400px]">
               <div className="space-y-2 pr-4">
                 {fields.map((field) => (
                   <label
@@ -142,6 +142,7 @@ export function ExportFieldsDialog({
             variant="outline" 
             onClick={() => onOpenChange(false)}
             disabled={isExporting}
+            className='btn-glass'
           >
             Cancel
           </Button>
