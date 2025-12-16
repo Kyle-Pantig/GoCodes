@@ -11,13 +11,24 @@ import asyncio
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-# Now import and run uvicorn
-import uvicorn
-from main import app
+# Read PORT from environment (Railway/Render/Fly.io set this)
+port = int(os.getenv("PORT", "8000"))
+print(f"🚀 Starting FastAPI server on port {port}")
 
-if __name__ == "__main__":
-    # Read PORT from environment (Railway/Render/Fly.io set this)
-    port = int(os.getenv("PORT", "8000"))
+# Check required environment variables
+required_vars = ["DATABASE_URL"]
+missing_vars = [var for var in required_vars if not os.getenv(var)]
+if missing_vars:
+    print(f"❌ ERROR: Missing required environment variables: {', '.join(missing_vars)}")
+    sys.exit(1)
+
+# Now import and run uvicorn
+try:
+    import uvicorn
+    from main import app
+    
+    print("✅ FastAPI app loaded successfully")
+    print(f"📡 Server will be available at http://0.0.0.0:{port}")
     
     uvicorn.run(
         app,
@@ -25,4 +36,9 @@ if __name__ == "__main__":
         port=port,
         loop="asyncio"
     )
+except Exception as e:
+    print(f"❌ Failed to start FastAPI server: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
 
