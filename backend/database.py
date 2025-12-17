@@ -60,6 +60,18 @@ def ensure_prisma_binaries():
         )
         if result.returncode == 0:
             print("✅ Prisma binaries downloaded successfully")
+            # Copy binary to current directory so Prisma can find it
+            # Prisma downloads to cache, but looks in current directory first
+            if cache_path.exists():
+                import shutil
+                try:
+                    shutil.copy2(cache_path, binary_path)
+                    print(f"✅ Copied binary to {binary_path}")
+                except Exception as copy_error:
+                    print(f"⚠️  Could not copy binary: {copy_error}")
+                    # Try setting environment variable as fallback
+                    os.environ["PRISMA_QUERY_ENGINE_BINARY"] = str(cache_path)
+                    print(f"✅ Set PRISMA_QUERY_ENGINE_BINARY={cache_path}")
         else:
             print(f"❌ Failed to download Prisma binaries: {result.stderr}")
             raise RuntimeError("Prisma binaries not available")
