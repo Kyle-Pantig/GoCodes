@@ -15,7 +15,6 @@ load_dotenv()
 
 # Set up logging
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 # Supabase configuration
 # Support both naming conventions: NEXT_PUBLIC_* (for frontend) and without prefix (for backend)
@@ -46,7 +45,6 @@ async def verify_auth(request: Request) -> dict:
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         access_token = auth_header.split("Bearer ")[1]
-        logger.info(f"Found token in Authorization header (length: {len(access_token)})")
     else:
         # Try to get token from cookies
         # Supabase stores session in cookies with pattern: sb-<project-ref>-auth-token
@@ -58,21 +56,16 @@ async def verify_auth(request: Request) -> dict:
             cookie_lower = cookie_name.lower()
             if 'sb-' in cookie_lower and 'auth-token' in cookie_lower:
                 auth_token_cookie = cookies.get(cookie_name)
-                logger.info(f"Found auth cookie: {cookie_name}")
                 break
         
         if auth_token_cookie:
             # Parse the cookie value (Supabase SSR stores it in various formats)
             access_token = _extract_token_from_cookie(auth_token_cookie)
-            if access_token:
-                logger.info(f"Extracted token from cookie (length: {len(access_token)})")
-            else:
+            if not access_token:
                 logger.warning("Failed to extract token from cookie")
-        else:
-            logger.debug(f"No auth cookie found. Available cookies: {list(cookies.keys())}")
     
     if not access_token:
-        logger.warning(f"No access token found. Authorization header present: {bool(auth_header)}, Origin: {request.headers.get('Origin')}, Referer: {request.headers.get('Referer')}")
+        logger.warning("No access token found")
         raise HTTPException(
             status_code=401,
             detail="Unauthorized"
@@ -80,7 +73,6 @@ async def verify_auth(request: Request) -> dict:
     
     try:
         # Verify the token using Supabase REST API
-        logger.debug(f"Verifying token with Supabase: {SUPABASE_URL}/auth/v1/user")
         async with httpx.AsyncClient() as client:
             verify_response = await client.get(
                 f"{SUPABASE_URL}/auth/v1/user",
@@ -91,9 +83,8 @@ async def verify_auth(request: Request) -> dict:
                 timeout=10.0
             )
             
-            logger.debug(f"Supabase verification response status: {verify_response.status_code}")
             if verify_response.status_code != 200:
-                logger.warning(f"Supabase verification failed: {verify_response.text[:200]}")
+                logger.warning(f"Supabase verification failed: {verify_response.status_code}")
                 raise HTTPException(
                     status_code=401,
                     detail="Unauthorized"
@@ -110,7 +101,7 @@ async def verify_auth(request: Request) -> dict:
             
             # Validate user data
             if not user_data or not isinstance(user_data, dict):
-                logger.warning(f"Invalid user data structure: {type(response_data)}")
+                logger.warning("Invalid user data structure")
                 raise HTTPException(
                     status_code=401,
                     detail="Unauthorized"
@@ -123,8 +114,6 @@ async def verify_auth(request: Request) -> dict:
                     status_code=401,
                     detail="Unauthorized"
                 )
-            
-            logger.info(f"Authentication successful for user: {user_id}")
             return {
                 "user": user_data,
                 "user_id": user_id,

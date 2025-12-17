@@ -25,8 +25,16 @@ const getApiBaseUrl = () => {
 async function getAuthToken(): Promise<string | null> {
   try {
     const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    return session?.access_token || null
+    const { data: { session }, error } = await supabase.auth.getSession()
+    if (error) {
+      console.error('Failed to get auth token:', error)
+      return null
+    }
+    if (!session?.access_token) {
+      console.warn('No active session found')
+      return null
+    }
+    return session.access_token
   } catch (error) {
     console.error('Failed to get auth token:', error)
     return null
@@ -48,13 +56,20 @@ export const useSites = (enabled: boolean = true, search?: string) => {
       const headers: HeadersInit = {}
       if (token) {
         headers['Authorization'] = `Bearer ${token}`
+      } else {
+        console.warn('No auth token available for request to:', url)
       }
       
       const response = await fetch(url, {
-        credentials: 'include', // Send cookies for authentication
+        credentials: 'include', // Send cookies for authentication (fallback)
         headers,
       })
       if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`Failed to fetch sites: ${response.status} ${response.statusText}`, errorText)
+        if (response.status === 401) {
+          throw new Error('Unauthorized - please login again')
+        }
         return []
       }
       const data = await response.json()

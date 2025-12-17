@@ -40,8 +40,6 @@ async def get_locations(
                 order={"name": "asc"}
             )
         
-        logger.info(f"Found {len(locations_data)} locations")
-        
         locations = []
         for loc in locations_data:
             try:

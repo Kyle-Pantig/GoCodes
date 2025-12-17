@@ -5,6 +5,7 @@ Main application entry point
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import logging
 from dotenv import load_dotenv
 
 from database import lifespan
@@ -12,6 +13,16 @@ from routers import locations, sites
 
 # Load environment variables
 load_dotenv()
+
+# Configure logging - reduce verbosity
+logging.basicConfig(
+    level=logging.WARNING,  # Only show warnings and errors
+    format='%(levelname)s:%(name)s:%(message)s'
+)
+
+# Reduce httpx logging verbosity
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # Create FastAPI app
 app = FastAPI(
