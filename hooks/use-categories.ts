@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { createClient } from '@/lib/supabase-client'
 
 export interface Category {
   id: string
@@ -26,18 +27,61 @@ interface CreateSubCategoryData {
   categoryId: string
 }
 
+// Get API base URL - use FastAPI if enabled
+const getApiBaseUrl = () => {
+  const useFastAPI = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true'
+  const fastApiUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000'
+  return useFastAPI ? fastApiUrl : ''
+}
+
+// Helper function to get auth token from Supabase session
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const supabase = createClient()
+    const { data: { session }, error } = await supabase.auth.getSession()
+    if (error) {
+      console.error('Failed to get auth token:', error)
+      return null
+    }
+    if (!session?.access_token) {
+      console.warn('No active session found')
+      return null
+    }
+    return session.access_token
+  } catch (error) {
+    console.error('Failed to get auth token:', error)
+    return null
+  }
+}
+
 // Fetch categories
 export const useCategories = (enabled: boolean = true) => {
   return useQuery({
     queryKey: ["categories"],
     queryFn: async () => {
-      const response = await fetch("/api/categories")
+      const baseUrl = getApiBaseUrl()
+      const url = `${baseUrl}/api/categories`
+      
+      // Get auth token and add to headers
+      const token = await getAuthToken()
+      const headers: HeadersInit = {}
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(url, {
+        credentials: 'include', // Send cookies for authentication
+        headers,
+      })
       if (!response.ok) {
-        // Return empty array on error instead of undefined
+        const errorText = await response.text()
+        console.error(`Failed to fetch categories: ${response.status} ${response.statusText}`, errorText)
+        if (response.status === 401) {
+          throw new Error('Unauthorized - please login again')
+        }
         return []
       }
       const data = await response.json()
-      // Ensure we always return an array, never undefined
       return (data.categories || []) as Category[]
     },
     enabled,
@@ -75,14 +119,31 @@ export const useCreateCategory = () => {
   
   return useMutation({
     mutationFn: async (data: CreateCategoryData) => {
-      const response = await fetch("/api/categories", {
+      const baseUrl = getApiBaseUrl()
+      const token = await getAuthToken()
+      const headers: HeadersInit = {
+        "Content-Type": "application/json"
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(`${baseUrl}/api/categories`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        credentials: 'include',
+        headers,
         body: JSON.stringify(data),
       })
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to create category")
+        const errorText = await response.text()
+        let errorMessage = "Failed to create category"
+        try {
+          const error = JSON.parse(errorText)
+          errorMessage = error.detail || error.error || errorMessage
+        } catch {
+          errorMessage = errorText || errorMessage
+        }
+        throw new Error(errorMessage)
       }
       return response.json()
     },
@@ -115,7 +176,7 @@ export const useCreateCategory = () => {
         queryClient.setQueryData(["categories"], context.previousCategories)
       }
     },
-    onSuccess: (data, _variables, context) => {
+    onSuccess: (data) => {
       // Replace optimistic category with real data
       queryClient.setQueryData<Category[]>(["categories"], (old = []) => {
         if (!old) return [data.category]
@@ -225,14 +286,31 @@ export const useUpdateCategory = () => {
   
   return useMutation({
     mutationFn: async ({ id, ...data }: CreateCategoryData & { id: string }) => {
-      const response = await fetch(`/api/categories/${id}`, {
+      const baseUrl = getApiBaseUrl()
+      const token = await getAuthToken()
+      const headers: HeadersInit = {
+        "Content-Type": "application/json"
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(`${baseUrl}/api/categories/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        credentials: 'include',
+        headers,
         body: JSON.stringify(data),
       })
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to update category")
+        const errorText = await response.text()
+        let errorMessage = "Failed to update category"
+        try {
+          const error = JSON.parse(errorText)
+          errorMessage = error.detail || error.error || errorMessage
+        } catch {
+          errorMessage = errorText || errorMessage
+        }
+        throw new Error(errorMessage)
       }
       return response.json()
     },
@@ -272,12 +350,28 @@ export const useDeleteCategory = () => {
   
   return useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`/api/categories/${id}`, {
+      const baseUrl = getApiBaseUrl()
+      const token = await getAuthToken()
+      const headers: HeadersInit = {}
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(`${baseUrl}/api/categories/${id}`, {
         method: "DELETE",
+        credentials: 'include',
+        headers,
       })
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to delete category")
+        const errorText = await response.text()
+        let errorMessage = "Failed to delete category"
+        try {
+          const error = JSON.parse(errorText)
+          errorMessage = error.detail || error.error || errorMessage
+        } catch {
+          errorMessage = errorText || errorMessage
+        }
+        throw new Error(errorMessage)
       }
       return response.json()
     },

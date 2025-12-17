@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { companyInfoSchema, type CompanyInfoFormData } from '@/lib/validations/company-info'
+import { useCompanyInfo, useSaveCompanyInfo } from '@/hooks/use-company-info'
 import {
   Card,
   CardContent,
@@ -36,43 +37,6 @@ type Country = {
   callingCodes: string[]
 }
 
-type CompanyInfo = {
-  id: string
-  companyName: string
-  contactEmail: string | null
-  contactPhone: string | null
-  address: string | null
-  zipCode: string | null
-  country: string | null
-  website: string | null
-  primaryLogoUrl: string | null
-  secondaryLogoUrl: string | null
-  createdAt: string
-  updatedAt: string
-}
-
-async function fetchCompanyInfo(): Promise<{ companyInfo: CompanyInfo | null }> {
-  const response = await fetch('/api/setup/company-info')
-  if (!response.ok) {
-    throw new Error('Failed to fetch company info')
-  }
-  return response.json()
-}
-
-async function saveCompanyInfo(data: CompanyInfoFormData & { primaryLogoUrl?: string | null; secondaryLogoUrl?: string | null }): Promise<CompanyInfo> {
-  const response = await fetch('/api/setup/company-info', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Failed to save company info')
-  }
-  return response.json().then(res => res.companyInfo)
-}
 
 async function uploadLogo(
   file: File,
@@ -128,7 +92,6 @@ async function uploadLogo(
 }
 
 export default function CompanyInfoPage() {
-  const queryClient = useQueryClient()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canManageSetup = hasPermission('canManageSetup')
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
@@ -137,13 +100,7 @@ export default function CompanyInfoPage() {
   const primaryLogoInputRef = useRef<HTMLInputElement>(null)
   const secondaryLogoInputRef = useRef<HTMLInputElement>(null)
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['company-info'],
-    queryFn: fetchCompanyInfo,
-    enabled: canManageSetup,
-  })
-
-  const companyInfo = data?.companyInfo
+  const { data: companyInfo, isLoading, error } = useCompanyInfo(canManageSetup)
 
   const form = useForm<CompanyInfoFormData>({
     resolver: zodResolver(companyInfoSchema),
@@ -269,10 +226,11 @@ export default function CompanyInfoPage() {
     }
   }, [primaryLogoPreview, secondaryLogoPreview])
 
-  const saveMutation = useMutation({
-    mutationFn: saveCompanyInfo,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['company-info'] })
+  const saveMutation = useSaveCompanyInfo()
+
+  // Handle success and error callbacks
+  useEffect(() => {
+    if (saveMutation.isSuccess) {
       toast.success('Company info saved successfully')
       // Reset form dirty state after successful save
       form.reset(form.getValues(), { keepValues: true })
@@ -283,11 +241,11 @@ export default function CompanyInfoPage() {
       setRemoveSecondaryLogo(false)
       setPrimaryLogoUrlToDelete(null)
       setSecondaryLogoUrlToDelete(null)
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to save company info')
-    },
-  })
+    }
+    if (saveMutation.isError) {
+      toast.error(saveMutation.error?.message || 'Failed to save company info')
+    }
+  }, [saveMutation.isSuccess, saveMutation.isError, saveMutation.error, form])
 
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>, logoType: 'primary' | 'secondary') => {
     const file = e.target.files?.[0]

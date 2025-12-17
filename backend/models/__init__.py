@@ -22,6 +22,20 @@ from .departments import (
     DepartmentsResponse,
     DepartmentResponse
 )
+from .company_info import (
+    CompanyInfo,
+    CompanyInfoCreate,
+    CompanyInfoUpdate,
+    CompanyInfoResponse
+)
+from .categories import (
+    Category,
+    SubCategory,
+    CategoryCreate,
+    CategoryUpdate,
+    CategoriesResponse,
+    CategoryResponse
+)
 
 __all__ = [
     "Location",
@@ -39,5 +53,15 @@ __all__ = [
     "DepartmentUpdate",
     "DepartmentsResponse",
     "DepartmentResponse",
+    "CompanyInfo",
+    "CompanyInfoCreate",
+    "CompanyInfoUpdate",
+    "CompanyInfoResponse",
+    "Category",
+    "SubCategory",
+    "CategoryCreate",
+    "CategoryUpdate",
+    "CategoriesResponse",
+    "CategoryResponse",
 ]
 

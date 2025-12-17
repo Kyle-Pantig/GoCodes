@@ -9,7 +9,7 @@ import logging
 from dotenv import load_dotenv
 
 from database import lifespan
-from routers import locations, sites, departments
+from routers import locations, sites, departments, company_info, categories
 
 # Load environment variables
 load_dotenv()
@@ -67,6 +67,8 @@ app.add_middleware(
 app.include_router(locations.router)
 app.include_router(sites.router)
 app.include_router(departments.router)
+app.include_router(company_info.router)
+app.include_router(categories.router)
 
 # Health check endpoint
 @app.get("/health")
