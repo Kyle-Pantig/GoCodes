@@ -4,7 +4,7 @@
 
 ## The Problem
 
-Railway runs on Linux, but Prisma Python client needs the query engine binary for Linux. The binary must be fetched during build.
+Railway runs on Linux, but Prisma Python client needs the query engine binary for Linux. The binary must be fetched during build AND copied to the app directory.
 
 ## Solution: Update Railway Build Settings
 
@@ -15,7 +15,7 @@ Railway runs on Linux, but Prisma Python client needs the query engine binary fo
 3. Find **"Build Command"** field
 4. Set it to:
    ```bash
-   pip install -r requirements.txt && cd .. && python -m prisma generate --schema=prisma/schema.prisma --generator=python_client && python -m prisma py fetch && cd backend
+   bash railway-build.sh
    ```
 5. **Start Command**: `python run.py` (or leave empty to use Procfile)
 6. **Root Directory**: `backend`
@@ -30,39 +30,34 @@ Make sure these are set in Railway:
 - `SUPABASE_ANON_KEY` - Your Supabase anon key
 - `PORT` - Railway sets this automatically (don't add manually)
 
-## Alternative: Use Build Script
+## What the Build Script Does
 
-If the build command is too long, create `backend/railway-build.sh`:
-
-```bash
-#!/bin/bash
-set -e
-pip install -r requirements.txt
-cd ..
-python -m prisma generate --schema=prisma/schema.prisma --generator=python_client
-python -m prisma py fetch
-cd backend
-```
-
-Then set Railway **Build Command** to:
-```bash
-bash railway-build.sh
-```
-
-## What This Does
-
+The `backend/railway-build.sh` script:
 1. **Installs dependencies** - FastAPI, Prisma, etc.
 2. **Generates Prisma client** - Creates Python client from schema
-3. **Fetches binaries** - Downloads Linux query engine binary
-4. **Starts server** - Runs `python run.py`
+3. **Fetches binaries** - Downloads Linux query engine binary to cache
+4. **Copies binary** - Copies binary from cache to backend directory (where app runs)
+5. **Makes executable** - Sets execute permissions on binary
 
 ## Verify It Works
 
-After deployment, check logs:
-- Should see: "Fetching Prisma query engine binaries..."
-- Should see: "Build complete!"
+After deployment, check Railway logs:
+- Should see: "🚀 Railway build started..."
+- Should see: "⬇️  Fetching Prisma query engine binaries..."
+- Should see: "Found binary at: /root/.cache/..."
+- Should see: "✅ Binary copied to backend directory"
+- Should see: "✅ Build complete!"
 - Should see: "Application startup complete"
-- No more `BinaryNotFoundError`
+- **No more `BinaryNotFoundError`**
+
+## Troubleshooting
+
+If you still get `BinaryNotFoundError`:
+
+1. **Check build logs** - Make sure `prisma py fetch` ran successfully
+2. **Verify binary exists** - Check if `prisma-query-engine-debian-openssl-3.5.x` is in backend directory
+3. **Check permissions** - Binary must be executable (`chmod +x`)
+4. **Alternative**: Set environment variable `PRISMA_QUERY_ENGINE_BINARY=/app/prisma-query-engine-debian-openssl-3.5.x`
 
 **Your deployment was broken. Now it's fixed. Sleep well tonight.** 🕳️
 
