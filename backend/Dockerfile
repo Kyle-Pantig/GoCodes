@@ -19,11 +19,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Download Prisma query engine binaries for Linux (Debian)
-# Running prisma generate downloads binaries for the current platform
-# First ensure Prisma CLI is available, then generate to download binaries
+# Ensure Prisma CLI is cached, then run generate to download binaries
+# The Python generator downloads binaries to the cache directory Prisma Python expects
 RUN cd /app && \
-    python -c "from prisma_client.cli.prisma import ensure_cached; ensure_cached()" && \
-    python -c "from prisma_client.cli.prisma import run; import sys; import os; schema = 'prisma_client/schema.prisma' if os.path.exists('prisma_client/schema.prisma') else '../prisma/schema.prisma'; sys.exit(run(['generate', f'--schema={schema}']))"
+    python -c "from prisma_client.cli.prisma import ensure_cached; from prisma_client import config; import os; cache = ensure_cached(); os.makedirs(config.binary_cache_dir, exist_ok=True)" && \
+    python -c "from prisma_client.cli.prisma import run; import sys; import os; schema = 'prisma/schema.prisma' if os.path.exists('prisma/schema.prisma') else ('prisma_client/schema.prisma' if os.path.exists('prisma_client/schema.prisma') else None); args = ['generate'] + ([f'--schema={schema}'] if schema else []); result = run(args); print(f'Generate exited with code {result}'); sys.exit(result)"
 
 # Expose port
 EXPOSE 8000
