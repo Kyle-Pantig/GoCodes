@@ -31,15 +31,29 @@ def ensure_prisma_binaries():
         # Download binaries
         print("⚠️  Prisma binaries not found. Downloading...")
         # Run from project root (where prisma/schema.prisma is)
-        project_root = Path(__file__).parent.parent
+        # Railway sets working directory to /app (backend folder)
+        # So we need to go up one level to find prisma/schema.prisma
+        current_dir = Path.cwd()
+        project_root = current_dir.parent if current_dir.name == "backend" else current_dir
         schema_path = project_root / "prisma" / "schema.prisma"
         
+        # If schema not in parent, try current directory
         if not schema_path.exists():
-            # If schema not found, try current directory
-            project_root = Path.cwd()
+            schema_path = current_dir / "prisma" / "schema.prisma"
+            if schema_path.exists():
+                project_root = current_dir
+            else:
+                # Last resort: try to find schema anywhere
+                for parent in current_dir.parents:
+                    test_path = parent / "prisma" / "schema.prisma"
+                    if test_path.exists():
+                        project_root = parent
+                        schema_path = test_path
+                        break
         
+        # Run prisma py fetch from project root (no --schema flag needed)
         result = subprocess.run(
-            [sys.executable, "-m", "prisma", "py", "fetch", "--schema", str(schema_path)],
+            [sys.executable, "-m", "prisma", "py", "fetch"],
             capture_output=True,
             text=True,
             cwd=project_root
