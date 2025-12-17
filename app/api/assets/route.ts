@@ -392,7 +392,7 @@ export async function GET(request: NextRequest) {
       // Run all queries in a transaction to use a single connection and improve performance
       const checkedOutWhereClause = {
         ...whereClause,
-        status: { equals: 'Checked out', mode: 'insensitive' },
+        status: { equals: 'Checked out', mode: Prisma.QueryMode.insensitive },
       }
       
       const [totalAssets, totalValueResult, availableAssets, checkedOutAssets, checkedOutValueResult] = await retryDbOperation(() =>
@@ -407,7 +407,7 @@ export async function GET(request: NextRequest) {
           prisma.assets.count({
             where: {
               ...whereClause,
-              status: { equals: 'Available', mode: 'insensitive' },
+              status: { equals: 'Available', mode: Prisma.QueryMode.insensitive },
             },
           }),
           prisma.assets.count({
