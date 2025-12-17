@@ -1,7 +1,9 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCategories } from '@/hooks/use-categories'
+import { useAssets, useAssetsStatuses } from '@/hooks/use-assets'
+import { createClient } from '@/lib/supabase-client'
 import { useState, useEffect, useMemo, useRef, useTransition, Suspense, useCallback, memo } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -182,35 +184,7 @@ const ALL_COLUMNS = [
   { key: 'images', label: 'Images' },
 ]
 
-async function fetchAssets(page: number = 1, pageSize: number = 10, search?: string, category?: string, status?: string): Promise<{ 
-  assets: Asset[], 
-  pagination: { total: number, page: number, pageSize: number, totalPages: number },
-  summary?: {
-    totalAssets: number
-    totalValue: number
-    availableAssets: number
-    checkedOutAssets: number
-  }
-}> {
-  const params = new URLSearchParams({
-    page: page.toString(),
-    pageSize: pageSize.toString(),
-  })
-  if (search) params.append('search', search)
-  if (category && category !== 'all') params.append('category', category)
-  if (status && status !== 'all') params.append('status', status)
-  
-  const response = await fetch(`/api/assets?${params.toString()}`)
-  if (!response.ok) {
-    throw new Error('Failed to fetch assets')
-  }
-  const data = await response.json()
-  return { 
-    assets: data.assets, 
-    pagination: data.pagination,
-    summary: data.summary
-  }
-}
+// Removed fetchAssets function - now using useAssets hook
 
 async function deleteAsset(id: string) {
   const response = await fetch(`/api/assets/${id}`, {
@@ -293,7 +267,7 @@ const createColumns = (
   AssetTagCellComponent: React.ComponentType<{ asset: Asset; isSelectionMode?: boolean; hasSelectedAssets?: boolean }>,
   isSelectionMode?: boolean,
   hasSelectedAssets?: boolean
-): ColumnDef<Asset>[] => [
+): ColumnDef<Asset, unknown>[] => [
   {
     id: 'select',
     enableHiding: false,
@@ -1821,23 +1795,21 @@ function AssetsPageContent() {
   const lastTotalPagesRef = useRef<number>(0)
   const lastTotalCountRef = useRef<number>(0)
   
-  // Fetch assets with server-side pagination and filtering
+  // Fetch assets with server-side pagination and filtering using hook
   // Summary is now included in the same response, eliminating separate API call
-  const { data, isLoading, isFetching, error } = useQuery({
-    queryKey: ['assets', pagination.pageIndex + 1, pagination.pageSize, searchQuery, categoryFilter, statusFilter],
-    queryFn: () => fetchAssets(
-      pagination.pageIndex + 1,
-      pagination.pageSize,
-      searchQuery || undefined,
-      categoryFilter !== 'all' ? categoryFilter : undefined,
-      statusFilter !== 'all' ? statusFilter : undefined
-    ),
-    enabled: !permissionsLoading && canViewAssets, // Only fetch when permissions are loaded and user has permission
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    refetchOnWindowFocus: false, // Don't refetch on window focus to reduce unnecessary requests
-    refetchOnMount: false, // Don't refetch on mount if data exists (staleTime handles freshness)
-    placeholderData: (previousData) => previousData, // Keep previous data while fetching to prevent pagination from disappearing
-  })
+  const { data, isLoading, isFetching, error } = useAssets(
+    !permissionsLoading && canViewAssets, // enabled: Only fetch when permissions are loaded and user has permission
+    searchQuery || undefined, // search
+    categoryFilter !== 'all' ? categoryFilter : undefined, // category
+    statusFilter !== 'all' ? statusFilter : undefined, // status
+    pagination.pageIndex + 1, // page
+    pagination.pageSize, // pageSize
+    false, // withMaintenance
+    false, // includeDeleted
+    undefined, // searchFields
+    false, // statusesOnly
+    false // summaryOnly
+  )
 
   const assets = useMemo(() => data?.assets || [], [data?.assets])
   const totalCount = data?.pagination?.total || lastTotalCountRef.current
@@ -1863,18 +1835,8 @@ function AssetsPageContent() {
 
   // Lazy load statuses - only fetch when status dropdown is opened
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false)
-  const { data: allStatusesData } = useQuery({
-    queryKey: ['assets', 'all-statuses'],
-    queryFn: async () => {
-      // Use optimized endpoint that returns only unique statuses
-      const response = await fetch('/api/assets?statuses=true')
-      if (!response.ok) throw new Error('Failed to fetch statuses')
-      const data = await response.json()
-      return data.statuses as string[]
-    },
-    enabled: canViewAssets && isStatusDropdownOpen, // Only fetch when dropdown is opened
-    staleTime: 10 * 60 * 1000, // Cache for 10 minutes
-  })
+  const { data: statusesData } = useAssetsStatuses(canViewAssets && isStatusDropdownOpen)
+  const allStatusesData = statusesData?.statuses
 
   // Check if any assets are selected (before table is created, use rowSelection directly)
   const hasSelectedAssetsInitial = Object.keys(rowSelection).length > 0
@@ -1888,7 +1850,7 @@ function AssetsPageContent() {
   // Create table instance with server-side pagination
   const table = useReactTable({
     data: filteredData,
-    columns,
+    columns: columns as ColumnDef<typeof filteredData[0], unknown>[],
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getRowId: (row) => row.id, // Use asset ID as stable row identifier
@@ -2074,7 +2036,7 @@ function AssetsPageContent() {
     if (table) {
       const hasSelectedAssetsCurrent = Object.keys(rowSelection).length > 0
       const updatedColumns = createColumns(AssetActions, AssetTagCell, isSelectionMode, hasSelectedAssetsCurrent)
-      table.setOptions(prev => ({ ...prev, columns: updatedColumns }))
+      table.setOptions(prev => ({ ...prev, columns: updatedColumns as typeof prev.columns }))
     }
   }, [table, isSelectionMode, rowSelection])
 
@@ -2180,18 +2142,39 @@ function AssetsPageContent() {
 
     try {
       // For export, fetch all assets matching current filters (without pagination)
-      const exportData = await fetchAssets(
-        1,
-        10000, // Large page size to get all matching assets
-        searchQuery || undefined,
-        categoryFilter !== 'all' ? categoryFilter : undefined,
-        statusFilter !== 'all' ? statusFilter : undefined
-      )
-      let assetsToExport = exportData.assets
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const params = new URLSearchParams({
+        page: '1',
+        pageSize: '10000', // Large page size to get all matching assets
+      })
+      if (searchQuery) params.append('search', searchQuery)
+      if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter)
+      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter)
+      
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const fetchHeaders: HeadersInit = {}
+      if (session?.access_token) {
+        fetchHeaders['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(`${baseUrl}/api/assets?${params.toString()}`, {
+        credentials: 'include',
+        headers: fetchHeaders,
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch assets for export')
+      }
+      
+      const exportData = await response.json()
+      let assetsToExport = exportData.assets || []
       
       // If images column is selected, fetch image URLs for all assets
       if (selectedExportFields.has('images')) {
-        const assetTagIds = assetsToExport.map(a => a.assetTagId)
+        const assetTagIds = assetsToExport.map((a: Asset) => a.assetTagId)
         try {
           const imagesResponse = await fetch(`/api/assets/images/bulk?assetTagIds=${assetTagIds.join(',')}`)
           if (imagesResponse.ok) {
@@ -2203,7 +2186,7 @@ function AssetsPageContent() {
               imageUrlMap.set(item.assetTagId, urls)
             })
             // Add images to each asset
-            assetsToExport = assetsToExport.map(asset => ({
+            assetsToExport = assetsToExport.map((asset: Asset) => ({
               ...asset,
               images: imageUrlMap.get(asset.assetTagId) || '',
             }))
@@ -2223,7 +2206,7 @@ function AssetsPageContent() {
       })
       
       // Create data rows
-      const rows = assetsToExport.map(asset => 
+      const rows = assetsToExport.map((asset: Asset) => 
         fieldsToExport.map(key => {
           const value = getCellValue(asset, key)
           return value

@@ -1,6 +1,7 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAssets, type Asset as AssetFromHook } from '@/hooks/use-assets'
 import React, { useState, useMemo, useCallback, useEffect, useRef, useTransition, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -13,8 +14,6 @@ import {
   ColumnDef,
   SortingState,
   VisibilityState,
-  HeaderGroup,
-  Header,
 } from '@tanstack/react-table'
 import {
   Table,
@@ -60,70 +59,8 @@ import { AuditHistoryManager } from '@/components/audit-history-manager'
 import { CheckoutManager } from '@/components/checkout-manager'
 import { AssetMediaDialog } from '@/components/dialogs/asset-media-dialog'
 
-interface Asset {
-  id: string
-  assetTagId: string
-  description: string
-  status: string | null
-  category: {
-    name: string
-  } | null
-  subCategory: {
-    name: string
-  } | null
-  categoryId: string | null
-  subCategoryId: string | null
-  location: string | null
-  brand: string | null
-  model: string | null
-  cost: number | null
-  purchaseDate: string | null
-  purchasedFrom: string | null
-  serialNo: string | null
-  additionalInformation: string | null
-  xeroAssetNo: string | null
-  owner: string | null
-  pbiNumber: string | null
-  poNumber: string | null
-  paymentVoucherNumber: string | null
-  assetType: string | null
-  deliveryDate: string | null
-  unaccountedInventory: boolean | null
-  remarks: string | null
-  qr: string | null
-  oldAssetTag: string | null
-  depreciableAsset: boolean | null
-  depreciableCost: number | null
-  salvageValue: number | null
-  assetLifeMonths: number | null
-  depreciationMethod: string | null
-  dateAcquired: string | null
-  department: string | null
-  site: string | null
-  issuedTo: string | null
-  checkouts?: {
-    id: string
-    checkoutDate: string | null
-    expectedReturnDate: string | null
-  }[]
-  auditHistory?: {
-    id: string
-    auditDate: string | null
-    auditType: string | null
-    auditor: string | null
-    status: string | null
-    notes: string | null
-  }[]
-  imagesCount?: number
-  createdAt: string
-}
-
-interface PaginationInfo {
-  page: number
-  pageSize: number
-  total: number
-  totalPages: number
-}
+// Asset and PaginationInfo types are now imported from hooks/use-assets
+// Using AssetFromHook alias to avoid conflicts
 
 // Mapping from column keys to API search field names
 const COLUMN_TO_SEARCH_FIELD: Record<string, string[]> = {
@@ -169,32 +106,16 @@ const COLUMN_TO_SEARCH_FIELD: Record<string, string[]> = {
   'images': [], // Not searchable
 }
 
-async function fetchAssets(search?: string, searchFields?: string[], page: number = 1, pageSize: number = 50): Promise<{ assets: Asset[], pagination: PaginationInfo }> {
-  const params = new URLSearchParams({
-    page: page.toString(),
-    pageSize: pageSize.toString(),
-  })
-  if (search) {
-    params.append('search', search)
-    if (searchFields && searchFields.length > 0) {
-      params.append('searchFields', searchFields.join(','))
-    }
-  }
-  
-  const response = await fetch(`/api/assets?${params.toString()}`)
-  if (!response.ok) {
-    throw new Error('Failed to fetch assets')
-  }
-  const data = await response.json()
-  return { assets: data.assets, pagination: data.pagination }
-}
+// Removed fetchAssets function - now using useAssets hook
 
-const formatDate = (dateString: string | null) => {
-  if (!dateString) return '-'
+const formatDate = (dateInput: string | Date | null) => {
+  if (!dateInput) return '-'
   try {
-    return new Date(dateString).toLocaleDateString()
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput)
+    if (isNaN(date.getTime())) return '-'
+    return date.toLocaleDateString()
   } catch {
-    return dateString
+    return '-'
   }
 }
 
@@ -250,7 +171,7 @@ const ALL_COLUMNS = [
 ]
 
 // Create column definitions for TanStack Table
-const createColumns = (): ColumnDef<Asset>[] => [
+const createColumns = (): ColumnDef<AssetFromHook, unknown>[] => [
   {
     accessorKey: 'assetTagId',
     id: 'assetTag',
@@ -757,8 +678,8 @@ const createColumns = (): ColumnDef<Asset>[] => [
     cell: ({ row }) => formatDate(row.original.deliveryDate),
     enableSorting: true,
     sortingFn: (rowA, rowB) => {
-      const a = rowA.original.deliveryDate ? new Date(rowA.original.deliveryDate).getTime() : 0
-      const b = rowB.original.deliveryDate ? new Date(rowB.original.deliveryDate).getTime() : 0
+      const a = rowA.original.deliveryDate ? (rowA.original.deliveryDate instanceof Date ? rowA.original.deliveryDate.getTime() : new Date(rowA.original.deliveryDate).getTime()) : 0
+      const b = rowB.original.deliveryDate ? (rowB.original.deliveryDate instanceof Date ? rowB.original.deliveryDate.getTime() : new Date(rowB.original.deliveryDate).getTime()) : 0
       return a - b
     },
   },
@@ -1089,8 +1010,8 @@ const createColumns = (): ColumnDef<Asset>[] => [
     cell: ({ row }) => formatDate(row.original.dateAcquired),
     enableSorting: true,
     sortingFn: (rowA, rowB) => {
-      const a = rowA.original.dateAcquired ? new Date(rowA.original.dateAcquired).getTime() : 0
-      const b = rowB.original.dateAcquired ? new Date(rowB.original.dateAcquired).getTime() : 0
+      const a = rowA.original.dateAcquired ? (rowA.original.dateAcquired instanceof Date ? rowA.original.dateAcquired.getTime() : new Date(rowA.original.dateAcquired).getTime()) : 0
+      const b = rowB.original.dateAcquired ? (rowB.original.dateAcquired instanceof Date ? rowB.original.dateAcquired.getTime() : new Date(rowB.original.dateAcquired).getTime()) : 0
       return a - b
     },
   },
@@ -1118,8 +1039,10 @@ const createColumns = (): ColumnDef<Asset>[] => [
     cell: ({ row }) => formatDate(row.original.checkouts?.[0]?.checkoutDate || null),
     enableSorting: true,
     sortingFn: (rowA, rowB) => {
-      const a = rowA.original.checkouts?.[0]?.checkoutDate ? new Date(rowA.original.checkouts[0].checkoutDate).getTime() : 0
-      const b = rowB.original.checkouts?.[0]?.checkoutDate ? new Date(rowB.original.checkouts[0].checkoutDate).getTime() : 0
+      const checkoutDateA = rowA.original.checkouts?.[0]?.checkoutDate
+      const checkoutDateB = rowB.original.checkouts?.[0]?.checkoutDate
+      const a = checkoutDateA ? (checkoutDateA instanceof Date ? checkoutDateA.getTime() : new Date(checkoutDateA).getTime()) : 0
+      const b = checkoutDateB ? (checkoutDateB instanceof Date ? checkoutDateB.getTime() : new Date(checkoutDateB).getTime()) : 0
       return a - b
     },
   },
@@ -1147,13 +1070,15 @@ const createColumns = (): ColumnDef<Asset>[] => [
     cell: ({ row }) => formatDate(row.original.checkouts?.[0]?.expectedReturnDate || null),
     enableSorting: true,
     sortingFn: (rowA, rowB) => {
-      const a = rowA.original.checkouts?.[0]?.expectedReturnDate ? new Date(rowA.original.checkouts[0].expectedReturnDate).getTime() : 0
-      const b = rowB.original.checkouts?.[0]?.expectedReturnDate ? new Date(rowB.original.checkouts[0].expectedReturnDate).getTime() : 0
+      const expectedReturnDateA = rowA.original.checkouts?.[0]?.expectedReturnDate
+      const expectedReturnDateB = rowB.original.checkouts?.[0]?.expectedReturnDate
+      const a = expectedReturnDateA ? (expectedReturnDateA instanceof Date ? expectedReturnDateA.getTime() : new Date(expectedReturnDateA).getTime()) : 0
+      const b = expectedReturnDateB ? (expectedReturnDateB instanceof Date ? expectedReturnDateB.getTime() : new Date(expectedReturnDateB).getTime()) : 0
       return a - b
     },
   },
   {
-    accessorFn: (row) => (row as Asset).auditHistory?.[0]?.auditDate || null,
+    accessorFn: (row) => row.auditHistory?.[0]?.auditDate || null,
     id: 'lastAuditDate',
     header: ({ column }) => {
       return (
@@ -1194,7 +1119,7 @@ const createColumns = (): ColumnDef<Asset>[] => [
     },
   },
   {
-    accessorFn: (row) => (row as Asset).auditHistory?.[0]?.auditType || null,
+    accessorFn: (row) => row.auditHistory?.[0]?.auditType || null,
     id: 'lastAuditType',
     header: ({ column }) => {
       return (
@@ -1218,7 +1143,7 @@ const createColumns = (): ColumnDef<Asset>[] => [
     enableSorting: true,
   },
   {
-    accessorFn: (row) => (row as Asset).auditHistory?.[0]?.auditor || null,
+    accessorFn: (row) => row.auditHistory?.[0]?.auditor || null,
     id: 'lastAuditor',
     header: ({ column }) => {
       return (
@@ -1242,7 +1167,7 @@ const createColumns = (): ColumnDef<Asset>[] => [
     enableSorting: true,
   },
   {
-    accessorFn: (row) => (row as Asset).auditHistory?.length || 0,
+    accessorFn: (row) => row.auditHistory?.length || 0,
     id: 'auditCount',
     header: ({ column }) => {
       return (
@@ -1295,7 +1220,7 @@ const createColumns = (): ColumnDef<Asset>[] => [
 ]
 
 // Component for asset images icon with dialog
-function AssetImagesCell({ asset }: { asset: Asset }) {
+function AssetImagesCell({ asset }: { asset: AssetFromHook }) {
   const [imagesDialogOpen, setImagesDialogOpen] = useState(false)
 
   // If no images, show dash
@@ -1323,7 +1248,7 @@ function AssetImagesCell({ asset }: { asset: Asset }) {
 }
 
 // Asset Actions Component
-const AssetActions = React.memo(function AssetActions({ asset }: { asset: Asset }) {
+const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetFromHook }) {
   const queryClient = useQueryClient()
   const router = useRouter()
   const { hasPermission } = usePermissions()
@@ -1723,7 +1648,8 @@ function ListOfAssetsPageContent() {
     if (updates.search !== undefined) {
       if (updates.search === '') {
         params.delete('search')
-        params.delete('searchType')
+        // Preserve searchType when clearing search - don't delete it
+        // The user's selected search type should persist even after clearing
       } else {
         params.set('search', updates.search)
       }
@@ -1764,15 +1690,20 @@ function ListOfAssetsPageContent() {
     }
   }, [visibleColumns, searchType])
 
-  const { data, isLoading, isFetching, error } = useQuery({
-    queryKey: ['assets-list', searchQuery, searchType, searchFields, page, pageSize],
-    queryFn: () => fetchAssets(searchQuery || undefined, searchFields.length > 0 ? searchFields : undefined, page, pageSize),
-    enabled: canViewAssets, // Only fetch if user has permission
-    placeholderData: (previousData) => previousData,
-    staleTime: 30000, // Cache for 30 seconds to reduce unnecessary refetches
-    refetchOnWindowFocus: false, // Don't refetch on window focus to reduce connection pool pressure
-    refetchOnMount: false, // Don't refetch on mount if data exists
-  })
+  // Use the useAssets hook instead of direct fetch
+  // Only send searchFields when there's actually a non-empty search query
+  const hasSearchQuery = searchQuery && searchQuery.trim().length > 0
+  const { data, isLoading, isFetching, error } = useAssets(
+    canViewAssets, // enabled
+    hasSearchQuery ? searchQuery : undefined, // search
+    undefined, // category
+    undefined, // status
+    page, // page
+    pageSize, // pageSize
+    false, // withMaintenance
+    false, // includeDeleted
+    hasSearchQuery && searchFields.length > 0 ? searchFields.join(',') : undefined // searchFields (comma-separated string)
+  )
 
   const handlePageSizeChange = useCallback((newPageSize: string) => {
     updateURL({ pageSize: parseInt(newPageSize), page: 1 })
@@ -1784,7 +1715,7 @@ function ListOfAssetsPageContent() {
 
   const handleRefresh = useCallback(() => {
     setIsManualRefresh(true)
-    queryClient.invalidateQueries({ queryKey: ['assets-list'] })
+    queryClient.invalidateQueries({ queryKey: ['assets'] })
   }, [queryClient])
 
   // Debounce search input - update searchQuery after user stops typing
@@ -2252,9 +2183,9 @@ function ListOfAssetsPageContent() {
                 <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
                 <Table>
                   <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-2.5">
-                    {table.getHeaderGroups().map((headerGroup: HeaderGroup<Asset>) => (
+                    {table.getHeaderGroups().map((headerGroup) => (
                       <TableRow key={headerGroup.id} className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-[1.5px] after:h-px after:bg-border after:z-30">
-                        {headerGroup.headers.map((header: Header<Asset, unknown>) => {
+                        {headerGroup.headers.map((header) => {
                           const isActionsColumn = header.column.id === 'actions'
                           return (
                             <TableHead 

@@ -546,9 +546,9 @@ function EmployeesPageContent() {
     }
     updateMutation.mutate({ 
       id: selectedEmployee.id, 
-      name: data.name,
-      email: data.email,
-      department: data.department,
+        name: data.name,
+        email: data.email,
+        department: data.department,
     })
   })
 
