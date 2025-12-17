@@ -3,6 +3,7 @@ Locations API router
 """
 from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional
+import logging
 from models.locations import (
     Location,
     LocationCreate,
@@ -12,6 +13,8 @@ from models.locations import (
 )
 from auth import verify_auth
 from database import prisma
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/locations", tags=["locations"])
 
@@ -37,21 +40,28 @@ async def get_locations(
                 order={"name": "asc"}
             )
         
-        locations = [
-            Location(
-                id=loc.id,
-                name=loc.name,
-                description=loc.description,
-                createdAt=loc.createdAt,
-                updatedAt=loc.updatedAt
-            )
-            for loc in locations_data
-        ]
+        logger.info(f"Found {len(locations_data)} locations")
+        
+        locations = []
+        for loc in locations_data:
+            try:
+                location = Location(
+                    id=str(loc.id),
+                    name=str(loc.name),
+                    description=loc.description if loc.description else None,
+                    createdAt=loc.createdAt,
+                    updatedAt=loc.updatedAt
+                )
+                locations.append(location)
+            except Exception as e:
+                logger.error(f"Error creating Location model from data: {e}, loc data: {loc}")
+                raise
         
         return LocationsResponse(locations=locations)
     
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to fetch locations")
+    except Exception as e:
+        logger.error(f"Error fetching locations: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch locations: {str(e)}")
 
 @router.post("", response_model=LocationResponse, status_code=201)
 async def create_location(
