@@ -193,29 +193,8 @@ function DocsTabContent({ assetTagId, isActive }: { assetTagId: string; isActive
   const { data: documentsData, isLoading: loadingDocuments } = useQuery({
     queryKey: ['asset-documents', assetTagId],
     queryFn: async () => {
-      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
-        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
-        : ''
-      const url = `${baseUrl}/api/assets/documents/${assetTagId}`
-      
-      // Get auth token
-      const { createClient } = await import('@/lib/supabase-client')
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const headers: HeadersInit = {}
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`
-      }
-      
-      const response = await fetch(url, {
-        credentials: 'include',
-        headers,
-      })
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`Failed to fetch documents: ${response.status} ${response.statusText}`, errorText)
-        return { documents: [] }
-      }
+      const response = await fetch(`/api/assets/documents/${assetTagId}`)
+      if (!response.ok) return { documents: [] }
       const data = await response.json()
       return { documents: data.documents || [] }
     },
