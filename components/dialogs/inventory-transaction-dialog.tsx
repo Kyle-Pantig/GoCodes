@@ -81,11 +81,49 @@ export function InventoryTransactionDialog({
     destinationItemId: '',
   })
 
+  // Get API base URL - use FastAPI if enabled
+  const getApiBaseUrl = () => {
+    const useFastAPI = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true'
+    const fastApiUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000'
+    return useFastAPI ? fastApiUrl : ''
+  }
+
+  // Helper function to get auth token from Supabase session
+  async function getAuthToken(): Promise<string | null> {
+    try {
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if (error) {
+        console.error('Failed to get auth token:', error)
+        return null
+      }
+      if (!session?.access_token) {
+        console.warn('No active session found')
+        return null
+      }
+      return session.access_token
+    } catch (error) {
+      console.error('Failed to get auth token:', error)
+      return null
+    }
+  }
+
   // Fetch inventory items for destination selector (only when TRANSFER is selected)
   const { data: inventoryItemsData } = useQuery<{ items: InventoryItemOption[] }>({
     queryKey: ['inventory-items-for-transfer'],
     queryFn: async () => {
-      const response = await fetch('/api/inventory?pageSize=1000')
+      const baseUrl = getApiBaseUrl()
+      const token = await getAuthToken()
+      const headers: HeadersInit = {}
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(`${baseUrl}/api/inventory?pageSize=1000`, {
+        credentials: 'include',
+        headers,
+      })
       if (!response.ok) throw new Error('Failed to fetch inventory items')
       return response.json()
     },

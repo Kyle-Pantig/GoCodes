@@ -68,14 +68,52 @@ interface InventoryItemsSelectorProps {
   showStockWarnings?: boolean
 }
 
+// Get API base URL - use FastAPI if enabled
+const getApiBaseUrl = () => {
+  const useFastAPI = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true'
+  const fastApiUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000'
+  return useFastAPI ? fastApiUrl : ''
+}
+
+// Helper function to get auth token from Supabase session
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const { createClient } = await import('@/lib/supabase-client')
+    const supabase = createClient()
+    const { data: { session }, error } = await supabase.auth.getSession()
+    if (error) {
+      console.error('Failed to get auth token:', error)
+      return null
+    }
+    if (!session?.access_token) {
+      console.warn('No active session found')
+      return null
+    }
+    return session.access_token
+  } catch (error) {
+    console.error('Failed to get auth token:', error)
+    return null
+  }
+}
+
 async function fetchInventoryItems(search?: string): Promise<InventoryItem[]> {
+  const baseUrl = getApiBaseUrl()
   const params = new URLSearchParams()
   if (search) {
     params.append('search', search)
   }
   params.append('pageSize', '100') // Fetch more items for selection
   
-  const response = await fetch(`/api/inventory?${params.toString()}`)
+  const token = await getAuthToken()
+  const headers: HeadersInit = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  
+  const response = await fetch(`${baseUrl}/api/inventory?${params.toString()}`, {
+    credentials: 'include',
+    headers,
+  })
   if (!response.ok) {
     throw new Error('Failed to fetch inventory items')
   }

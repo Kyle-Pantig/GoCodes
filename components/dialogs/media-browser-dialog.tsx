@@ -68,7 +68,26 @@ export function MediaBrowserDialog({
   const { data: mediaData, isLoading: mediaLoading } = useQuery({
     queryKey: ['assets', 'media', 'browser', mediaPage, pageSize],
     queryFn: async () => {
-      const response = await fetch(`/api/assets/media?page=${mediaPage}&pageSize=${pageSize}`)
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/media?page=${mediaPage}&pageSize=${pageSize}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        credentials: 'include',
+      })
       if (!response.ok) throw new Error('Failed to fetch media')
       return response.json() as Promise<{
         images: MediaImage[]

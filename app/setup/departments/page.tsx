@@ -231,9 +231,26 @@ export default function DepartmentsPage() {
     
     try {
       // Use bulk delete API endpoint
-      const response = await fetch('/api/departments/bulk-delete', {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/departments/bulk-delete`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: 'include',
         body: JSON.stringify({ ids: selectedArray }),
       })
 
@@ -256,6 +273,7 @@ export default function DepartmentsPage() {
       
       toast.success(result.message || `Successfully deleted ${result.deletedCount || selectedArray.length} department(s)`)
       setSelectedDepartments(new Set())
+      setIsSelectionMode(false)
       setIsDeleting(false)
       setDeletingCount(0)
       setIsBulkDeleteDialogOpen(false)

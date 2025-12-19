@@ -1,8 +1,8 @@
 'use client'
 
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   useReactTable,
@@ -68,58 +68,11 @@ export interface RelatedTransaction {
   }
 }
 
-export interface InventoryTransaction {
-  id: string
-  inventoryItemId: string
-  transactionType: 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER'
-  quantity: number
-  unitCost: number | null
-  totalCost: number | null
-  transactionDate: string
-  reference: string | null
-  notes: string | null
-  actionBy: string | null
-  createdAt: string
-  relatedTransaction?: RelatedTransaction | null
-}
+import { useInventoryItem, useInventoryTransactions, useBulkDeleteTransactions, type InventoryTransaction as InventoryTransactionType } from '@/hooks/use-inventory'
 
-async function fetchInventoryItem(itemCode: string) {
-  const response = await fetch(`/api/inventory/${itemCode}`)
-  if (!response.ok) {
-    throw new Error('Failed to fetch inventory item')
-  }
-  const data = await response.json()
-  return data.item
-}
-
-async function fetchTransactions(itemCode: string, page: number = 1, pageSize: number = 20) {
-  const response = await fetch(`/api/inventory/${itemCode}/transactions?page=${page}&pageSize=${pageSize}`)
-  if (!response.ok) {
-    throw new Error('Failed to fetch transactions')
-  }
-  const data = await response.json()
-  // Add hasNextPage and hasPreviousPage to match inventory pagination structure
-  return {
-    ...data,
-    pagination: {
-      ...data.pagination,
-      hasNextPage: data.pagination.page < data.pagination.totalPages,
-      hasPreviousPage: data.pagination.page > 1,
-    },
-  }
-}
-
-async function bulkDeleteTransactions(itemCode: string, transactionIds: string[]) {
-  const response = await fetch(`/api/inventory/${itemCode}/transactions/bulk-delete`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transactionIds }),
-  })
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Failed to delete transactions')
-  }
-  return response.json()
+// Local interface for display purposes (extends the hook type)
+export interface InventoryTransaction extends InventoryTransactionType {
+  totalCost?: number | null
 }
 
 export default function InventoryTransactionHistoryPage() {
@@ -140,21 +93,26 @@ export default function InventoryTransactionHistoryPage() {
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deletingProgress, setDeletingProgress] = useState({ current: 0, total: 0 })
+  const [isSelectionMode, setIsSelectionMode] = useState(false)
+  // On desktop, select column is always visible. On mobile, it's hidden by default and shown when selection mode is active
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({})
+  
+  // Use ref to track transactions to avoid dependency issues in callbacks
+  const transactionsRef = useRef<InventoryTransaction[]>([])
 
   // Fetch inventory item
-  const { data: item, isLoading: isLoadingItem } = useQuery({
-    queryKey: ['inventory-item', itemCode],
-    queryFn: () => fetchInventoryItem(itemCode),
-    enabled: !!itemCode,
-  })
+  const { data: item, isLoading: isLoadingItem } = useInventoryItem(itemCode, !!itemCode)
 
   // Fetch transactions
-  const { data: transactionHistory, isLoading: isLoadingHistory, isFetching: isFetchingHistory } = useQuery({
-    queryKey: ['inventory-transactions', itemCode, page, pageSize],
-    queryFn: () => fetchTransactions(itemCode, page, pageSize),
-    enabled: !!itemCode && !!item,
-    placeholderData: (previousData) => previousData,
-  })
+  const { data: transactionHistory, isLoading: isLoadingHistory, isFetching: isFetchingHistory } = useInventoryTransactions(
+    itemCode,
+    {
+      page,
+      pageSize,
+      type: transactionTypeFilter !== 'all' ? transactionTypeFilter : undefined,
+    },
+    !!itemCode && !!item
+  )
 
 
   const handlePageChange = useCallback((newPage: number) => {
@@ -189,6 +147,20 @@ export default function InventoryTransactionHistoryPage() {
   const pagination = transactionHistory?.pagination
   const isLoading = isLoadingHistory
   const isFetching = isFetchingHistory
+
+  // Update ref when transactions change
+  useEffect(() => {
+    transactionsRef.current = transactions
+  }, [transactions])
+
+  // Initialize column visibility based on mobile state
+  useEffect(() => {
+    // On desktop, select column is always visible. On mobile, it's hidden by default
+    setColumnVisibility({ select: !isMobile })
+  }, [isMobile])
+
+  // Check if any transactions are selected (computed from rowSelection directly)
+  const hasSelectedTransactions = Object.keys(rowSelection).length > 0
 
   // Create columns
   const columns = useMemo<ColumnDef<InventoryTransaction>[]>(() => [
@@ -234,12 +206,12 @@ export default function InventoryTransactionHistoryPage() {
       cell: ({ row }) => (
         <>
           {getTypeBadge(row.original.transactionType)}
-          {row.original.transactionType === 'TRANSFER' && row.original.relatedTransaction && (
+          {row.original.transactionType === 'TRANSFER' && row.original.relatedTransaction?.inventoryItem && (
             <div className="mt-1 text-xs text-muted-foreground">
               → {row.original.relatedTransaction.inventoryItem.itemCode} - {row.original.relatedTransaction.inventoryItem.name}
             </div>
           )}
-          {row.original.transactionType === 'IN' && row.original.relatedTransaction && (
+          {row.original.transactionType === 'IN' && row.original.relatedTransaction?.inventoryItem && (
             <div className="mt-1 text-xs text-muted-foreground">
               ← Transfer from {row.original.relatedTransaction.inventoryItem.itemCode}
             </div>
@@ -304,29 +276,38 @@ export default function InventoryTransactionHistoryPage() {
       enableHiding: false,
       enableSorting: false,
       header: 'Actions',
-      cell: ({ row }) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={() => {
-                setRowSelection({ [row.index]: true })
-                setIsBulkDeleteDialogOpen(true)
-              }}
-              className="text-destructive"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ),
+      cell: ({ row }) => {
+        const isDisabled = isSelectionMode || hasSelectedTransactions
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8"
+                disabled={isDisabled}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => {
+                  setRowSelection({ [row.original.id]: true })
+                  setIsBulkDeleteDialogOpen(true)
+                }}
+                className="text-destructive"
+                disabled={isDisabled}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      },
     },
-  ], [])
+  ], [isSelectionMode, hasSelectedTransactions])
 
   // Create table instance
   const table = useReactTable({
@@ -336,8 +317,10 @@ export default function InventoryTransactionHistoryPage() {
     getSortedRowModel: getSortedRowModel(),
     enableRowSelection: true,
     onRowSelectionChange: setRowSelection,
+    onColumnVisibilityChange: setColumnVisibility,
     state: {
       rowSelection,
+      columnVisibility,
     },
     getRowId: (row) => row.id,
   })
@@ -351,6 +334,55 @@ export default function InventoryTransactionHistoryPage() {
     })
     return selected
   })()
+
+  const handleToggleSelectionMode = useCallback(() => {
+    setIsSelectionMode(prev => {
+      if (!prev) {
+        // Entering selection mode - show select column
+        setColumnVisibility(prev => ({ ...prev, select: true }))
+      } else {
+        // Exiting selection mode - clear selection and hide select column
+        setRowSelection({})
+        setColumnVisibility(prev => ({ ...prev, select: false }))
+      }
+      return !prev
+    })
+  }, [])
+
+  const handleToggleSelectAll = useCallback(() => {
+    const currentTransactions = transactionsRef.current
+    const selectedCount = selectedTransactions.size
+    const allSelected = selectedCount === currentTransactions.length && currentTransactions.length > 0
+    
+    if (allSelected) {
+      setRowSelection({})
+    } else {
+      const newSelection: Record<string, boolean> = {}
+      currentTransactions.forEach(transaction => {
+        newSelection[transaction.id] = true
+      })
+      setRowSelection(newSelection)
+    }
+  }, [selectedTransactions.size])
+
+  // Automatically enable selection mode when user manually selects a transaction
+  // Automatically disable selection mode when all transactions are unselected on desktop
+  useEffect(() => {
+    const selectedCount = Object.keys(rowSelection).length
+    if (selectedCount > 0 && !isSelectionMode) {
+      // User manually selected a transaction - automatically enable selection mode
+      setIsSelectionMode(true)
+      // Show select column only on mobile
+      if (isMobile) {
+        setColumnVisibility(prev => ({ ...prev, select: true }))
+      }
+    } else if (selectedCount === 0 && isSelectionMode && !isMobile) {
+      // User unselected all transactions on desktop - automatically disable selection mode
+      // On mobile, we keep selection mode active until user clicks cancel button
+      setIsSelectionMode(false)
+      // On desktop, select column stays visible, so no need to hide it
+    }
+  }, [rowSelection, isSelectionMode, isMobile])
 
   const handleRefresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
@@ -368,52 +400,92 @@ export default function InventoryTransactionHistoryPage() {
     setIsBulkDeleteDialogOpen(true)
   }, [selectedTransactions.size, transactions, setRowSelection])
 
-  const confirmBulkDelete = async () => {
+  const bulkDeleteMutation = useBulkDeleteTransactions()
+
+  const confirmBulkDelete = useCallback(async () => {
     setIsDeleting(true)
     const selectedArray = Array.from(selectedTransactions)
     setDeletingProgress({ current: 0, total: selectedArray.length })
 
     try {
-      const result = await bulkDeleteTransactions(itemCode, selectedArray)
+      const result = await bulkDeleteMutation.mutateAsync({ itemId: itemCode, transactionIds: selectedArray })
       setDeletingProgress({ current: selectedArray.length, total: selectedArray.length })
       toast.success(`Successfully deleted ${result.deletedCount} transaction(s)`)
       setRowSelection({})
       setIsBulkDeleteDialogOpen(false)
       setIsDeleting(false)
-      queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
-      queryClient.invalidateQueries({ queryKey: ['inventory-item'] })
     } catch (error) {
       console.error('Bulk delete error:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to delete transactions')
       setIsDeleting(false)
     }
-  }
+  }, [bulkDeleteMutation, itemCode, selectedTransactions, setRowSelection])
 
   // Set mobile dock content
   useEffect(() => {
     if (isMobile) {
-      setDockContent(
-        <>
-          <Button
-            variant="outline"
-            size="icon"
-            className="rounded-full h-10 w-10 btn-glass-elevated"
-            onClick={handleRefresh}
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-          <div className="flex-1" /> {/* Spacer to push delete button to the right */}
-          <Button
-            variant="outline"
-            size="icon"
-            className="rounded-full h-10 w-10 btn-glass-elevated"
-            disabled={transactions.length === 0}
-            onClick={handleBulkDeleteClick}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </>
-      )
+      if (isSelectionMode) {
+        // Selection mode: Select All / Deselect All (left) + Cancel (middle) + Delete icon (right, only when items selected)
+        const transactionsCount = transactionsRef.current.length
+        const selectedCount = Object.keys(rowSelection).length
+        const allSelected = selectedCount === transactionsCount && transactionsCount > 0
+        const hasSelectedItems = selectedCount > 0
+        
+        setDockContent(
+          <>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={handleToggleSelectAll}
+                className="rounded-full btn-glass-elevated"
+              >
+                {allSelected ? 'Deselect All' : 'Select All'}
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={handleToggleSelectionMode}
+                className="rounded-full btn-glass-elevated"
+              >
+                Cancel
+              </Button>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleBulkDeleteClick}
+              disabled={!hasSelectedItems}
+              className="h-10 w-10 rounded-full btn-glass-elevated"
+              title="Delete Selected"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </>
+        )
+      } else {
+        // Normal mode: Select (left) + Refresh (right)
+        setDockContent(
+          <>
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={handleToggleSelectionMode}
+              className="rounded-full btn-glass-elevated"
+            >
+              Select
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="rounded-full h-10 w-10 btn-glass-elevated"
+              onClick={handleRefresh}
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </>
+        )
+      }
     } else {
       setDockContent(null)
     }
@@ -421,7 +493,8 @@ export default function InventoryTransactionHistoryPage() {
     return () => {
       setDockContent(null)
     }
-  }, [isMobile, setDockContent, handleRefresh, handleBulkDeleteClick, transactions.length])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile, setDockContent, isSelectionMode, rowSelection])
 
   // Set mobile pagination content
   useEffect(() => {

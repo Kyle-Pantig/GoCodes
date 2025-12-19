@@ -1264,6 +1264,7 @@ const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetF
     deleteAssetMutation.mutate(asset.id, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['assets-list'] })
+        queryClient.invalidateQueries({ queryKey: ['deletedAssets'] })
         setIsDeleteOpen(false)
         toast.success('Asset deleted successfully. It will be permanently deleted after 30 days.')
       },

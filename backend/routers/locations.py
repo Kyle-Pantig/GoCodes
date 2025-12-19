@@ -13,10 +13,27 @@ from models.locations import (
 )
 from auth import verify_auth
 from database import prisma
+from typing import List
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/locations", tags=["locations"])
+
+async def check_permission(user_id: str, permission: str) -> bool:
+    """Check if user has a specific permission"""
+    try:
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        if not asset_user or not asset_user.isActive:
+            return False
+        return getattr(asset_user, permission, False)
+    except Exception:
+        return False
+
+class BulkDeleteRequest(BaseModel):
+    ids: List[str]
 
 @router.get("", response_model=LocationsResponse)
 async def get_locations(
@@ -167,6 +184,73 @@ async def update_location(
     except Exception as e:
         logger.error(f"Error updating location: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update location")
+
+@router.delete("/bulk-delete")
+async def bulk_delete_locations(
+    request: BulkDeleteRequest,
+    auth: dict = Depends(verify_auth)
+):
+    """Bulk delete locations"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        if not request.ids or len(request.ids) == 0:
+            raise HTTPException(status_code=400, detail="Invalid request. Expected an array of location IDs.")
+        
+        # Check which locations have associated assets
+        locations = await prisma.assetslocation.find_many(
+            where={"id": {"in": request.ids}}
+        )
+        
+        locations_with_assets: List[str] = []
+        locations_to_delete: List[str] = []
+        
+        # Check each location for associated assets
+        for location in locations:
+            assets_count = await prisma.assets.count(
+                where={
+                    "location": location.name,
+                    "isDeleted": False
+                },
+                take=1
+            )
+            
+            if assets_count > 0:
+                locations_with_assets.append(location.name)
+            else:
+                locations_to_delete.append(location.id)
+        
+        # If any locations have associated assets, return error
+        if locations_with_assets:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot delete location(s) with associated assets: {', '.join(locations_with_assets)}. Please reassign or delete assets first.",
+            )
+        
+        # Delete all locations that don't have associated assets
+        result = await prisma.assetslocation.delete_many(
+            where={"id": {"in": locations_to_delete}}
+        )
+        
+        return {
+            "success": True,
+            "deletedCount": result,
+            "message": f"{result} location(s) deleted successfully"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_str = str(e).lower()
+        if 'p1001' in error_str or 'p2024' in error_str or 'connection' in error_str:
+            raise HTTPException(
+                status_code=503,
+                detail="Database connection limit reached. Please try again in a moment."
+            )
+        logger.error(f"Error bulk deleting locations: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete locations")
 
 @router.delete("/{location_id}")
 async def delete_location(

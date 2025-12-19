@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react'
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { useQueryClient, useMutation } from '@tanstack/react-query'
+import { useRestoreInventoryItem, useDeleteInventoryItem, useInventoryItems, useBulkRestoreInventoryItems } from '@/hooks/use-inventory'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -59,13 +60,25 @@ interface DeletedInventoryItem {
   deletedAt: string
 }
 
-async function fetchDeletedInventoryItems(search?: string, searchType: string = 'unified') {
-  // Fetch all deleted inventory items without pagination
-  const response = await fetch(`/api/inventory?includeDeleted=true&page=1&pageSize=10000`)
-  if (!response.ok) throw new Error('Failed to fetch deleted inventory items')
-  const data = await response.json()
+// Helper function to filter and search deleted items
+function filterDeletedItems(
+  items: Array<{ isDeleted?: boolean; itemCode?: string; name?: string; description?: string | null; category?: string | null; location?: string | null; supplier?: string | null; deletedAt?: string | null; id?: string; unit?: string | null; currentStock?: number }>,
+  search?: string,
+  searchType: string = 'unified'
+): DeletedInventoryItem[] {
   // Filter to only show soft-deleted items
-  let allDeletedItems = data.items?.filter((item: { isDeleted?: boolean }) => item.isDeleted) || []
+  let allDeletedItems = items.filter((item) => item.isDeleted === true).map((item) => ({
+    id: item.id || '',
+    itemCode: item.itemCode || '',
+    name: item.name || '',
+    description: item.description || null,
+    category: item.category || null,
+    unit: item.unit || null,
+    currentStock: item.currentStock || 0,
+    location: item.location || null,
+    supplier: item.supplier || null,
+    deletedAt: item.deletedAt || new Date().toISOString(),
+  })) as DeletedInventoryItem[]
   
   // Apply search filter if provided
   if (search && search.trim()) {
@@ -95,14 +108,7 @@ async function fetchDeletedInventoryItems(search?: string, searchType: string = 
     })
   }
   
-  const total = allDeletedItems.length
-  
-  return {
-    items: allDeletedItems,
-    pagination: {
-      total,
-    },
-  }
+  return allDeletedItems
 }
 
 function InventoryTrashPageContent() {
@@ -112,7 +118,6 @@ function InventoryTrashPageContent() {
   const { setDockContent } = useMobileDock()
   
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
-  const canViewInventory = hasPermission('canViewAssets')
   const canManageTrash = hasPermission('canManageTrash')
   const queryClient = useQueryClient()
   
@@ -129,6 +134,9 @@ function InventoryTrashPageContent() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<DeletedInventoryItem | null>(null)
   const [rowSelection, setRowSelection] = useState({})
+  
+  // Check if any items are selected (computed from rowSelection directly)
+  const hasSelectedItems = Object.keys(rowSelection).length > 0
   const [isBulkRestoreDialogOpen, setIsBulkRestoreDialogOpen] = useState(false)
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
   const [isBulkRestoring, setIsBulkRestoring] = useState(false)
@@ -191,13 +199,24 @@ function InventoryTrashPageContent() {
   }, [searchInput, searchParams, searchType, updateURL])
 
 
-  // Fetch deleted inventory items
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['deletedInventoryItems', searchQuery, searchType],
-    queryFn: () => fetchDeletedInventoryItems(searchQuery || undefined, searchType),
-    enabled: (canViewInventory || canManageTrash) && !permissionsLoading,
-    placeholderData: (previousData) => previousData,
+  // Fetch deleted inventory items using the hook (supports FastAPI)
+  const { data: inventoryData, isLoading, isFetching } = useInventoryItems({
+    includeDeleted: true,
+    page: 1,
+    pageSize: 10000, // Fetch all deleted items
   })
+
+  // Filter and search deleted items client-side
+  const data = useMemo(() => {
+    if (!inventoryData) return undefined
+    const filteredItems = filterDeletedItems(inventoryData.items, searchQuery || undefined, searchType)
+    return {
+      items: filteredItems,
+      pagination: {
+        total: filteredItems.length,
+      },
+    }
+  }, [inventoryData, searchQuery, searchType])
 
   // Reset manual refresh flag after successful fetch
   useEffect(() => {
@@ -208,51 +227,41 @@ function InventoryTrashPageContent() {
 
 
   // Restore mutation
-  const restoreMutation = useMutation({
-    mutationFn: async (itemId: string) => {
-      const response = await fetch(`/api/inventory/${itemId}/restore`, {
-        method: 'PATCH',
-      })
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to restore inventory item')
-      }
-      return response.json()
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['deletedInventoryItems'] })
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+  const restoreMutation = useRestoreInventoryItem()
+
+  // Wrap with toast notifications
+  useEffect(() => {
+    if (restoreMutation.isSuccess) {
       toast.success('Inventory item restored successfully')
       setIsRestoreDialogOpen(false)
       setSelectedItem(null)
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to restore inventory item')
-    },
-  })
+      restoreMutation.reset()
+    }
+    if (restoreMutation.isError) {
+      toast.error(restoreMutation.error?.message || 'Failed to restore inventory item')
+      restoreMutation.reset()
+    }
+  }, [restoreMutation.isSuccess, restoreMutation.isError, restoreMutation.error, restoreMutation, setSelectedItem])
 
   // Permanent delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: async (itemId: string) => {
-      const response = await fetch(`/api/inventory/${itemId}?permanent=true`, {
-        method: 'DELETE',
-      })
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to permanently delete inventory item')
-      }
-      return response.json()
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['deletedInventoryItems'] })
+  const deleteMutation = useDeleteInventoryItem()
+
+  // Wrap with toast notifications
+  useEffect(() => {
+    if (deleteMutation.isSuccess) {
       toast.success('Inventory item permanently deleted')
       setIsDeleteDialogOpen(false)
       setSelectedItem(null)
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to permanently delete inventory item')
-    },
-  })
+      deleteMutation.reset()
+    }
+    if (deleteMutation.isError) {
+      toast.error(deleteMutation.error?.message || 'Failed to permanently delete inventory item')
+      deleteMutation.reset()
+    }
+  }, [deleteMutation.isSuccess, deleteMutation.isError, deleteMutation.error, deleteMutation, setSelectedItem])
+
+  // Bulk restore mutation
+  const bulkRestoreMutation = useBulkRestoreInventoryItems()
 
   // Empty trash mutation
   const emptyTrashMutation = useMutation({
@@ -303,7 +312,7 @@ function InventoryTrashPageContent() {
 
   const confirmDelete = () => {
     if (selectedItem) {
-      deleteMutation.mutate(selectedItem.id)
+      deleteMutation.mutate({ id: selectedItem.id, permanent: true })
     }
   }
 
@@ -557,39 +566,45 @@ function InventoryTrashPageContent() {
       enableHiding: false,
       enableSorting: false,
       header: () => <div className="text-center">Actions</div>,
-      cell: ({ row }) => (
-        <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button 
-                variant="ghost" 
-                className="h-8 w-8 p-0 rounded-full"
-              >
-                <span className="sr-only">Open menu</span>
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => handleRestore(row.original)}
-                className="cursor-pointer"
-              >
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Restore
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleDelete(row.original)}
-                className="cursor-pointer text-destructive"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete Permanently
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const isDisabled = hasSelectedItems
+        return (
+          <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  className="h-8 w-8 p-0 rounded-full"
+                  disabled={isDisabled}
+                >
+                  <span className="sr-only">Open menu</span>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => handleRestore(row.original)}
+                  className="cursor-pointer"
+                  disabled={isDisabled}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Restore
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleDelete(row.original)}
+                  className="cursor-pointer text-destructive"
+                  disabled={isDisabled}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Permanently
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )
+      },
     },
-  ], [handleRestore, handleDelete])
+  ], [handleRestore, handleDelete, hasSelectedItems])
 
   // Track initial mount for animations - only animate stagger on first load
   useEffect(() => {
@@ -634,30 +649,16 @@ function InventoryTrashPageContent() {
     if (selectedItems.size === 0) return
     setIsBulkRestoring(true)
     const selectedArray = Array.from(selectedItems)
-    setBulkProgress({ current: 0, total: selectedArray.length })
 
     try {
-      for (let i = 0; i < selectedArray.length; i++) {
-        const itemId = selectedArray[i]
-        const response = await fetch(`/api/inventory/${itemId}/restore`, {
-          method: 'PATCH',
-        })
-        if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.error || `Failed to restore inventory item ${itemId}`)
-        }
-        setBulkProgress({ current: i + 1, total: selectedArray.length })
-      }
-
+      await bulkRestoreMutation.mutateAsync(selectedArray)
       toast.success(`Successfully restored ${selectedArray.length} item(s)`)
       setRowSelection({})
       setIsBulkRestoreDialogOpen(false)
-      setIsBulkRestoring(false)
-      queryClient.invalidateQueries({ queryKey: ['deletedInventoryItems'] })
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
     } catch (error) {
       console.error('Bulk restore error:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to restore items')
+    } finally {
       setIsBulkRestoring(false)
     }
   }

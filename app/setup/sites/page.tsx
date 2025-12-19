@@ -235,15 +235,39 @@ export default function SitesPage() {
     
     try {
       // Use bulk delete API endpoint
-      const response = await fetch('/api/sites/bulk-delete', {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/sites/bulk-delete`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: 'include',
         body: JSON.stringify({ ids: selectedArray }),
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to delete sites')
+        const errorText = await response.text()
+        let errorMessage = 'Failed to delete sites'
+        try {
+          const errorData = JSON.parse(errorText)
+          errorMessage = errorData.detail || errorData.error || errorMessage
+        } catch {
+          errorMessage = errorText || errorMessage
+        }
+        throw new Error(errorMessage)
       }
 
       const result = await response.json()
@@ -260,6 +284,7 @@ export default function SitesPage() {
       
       toast.success(result.message || `Successfully deleted ${result.deletedCount || selectedArray.length} site(s)`)
       setSelectedSites(new Set())
+      setIsSelectionMode(false)
       setIsDeleting(false)
       setDeletingCount(0)
       setIsBulkDeleteDialogOpen(false)

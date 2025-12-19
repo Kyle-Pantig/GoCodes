@@ -422,7 +422,26 @@ export default function ExportPage() {
       if (selectedExportFields.has('images')) {
         const assetTagIds = assetsToExport.map(a => a.assetTagId)
         try {
-          const imagesResponse = await fetch(`/api/assets/images/bulk?assetTagIds=${assetTagIds.join(',')}`)
+          const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+            ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+            : ''
+          const url = `${baseUrl}/api/assets/images/bulk?assetTagIds=${assetTagIds.join(',')}`
+          
+          // Get auth token
+          const { createClient } = await import('@/lib/supabase-client')
+          const supabase = createClient()
+          const { data: { session } } = await supabase.auth.getSession()
+          const headers: HeadersInit = {
+            'Content-Type': 'application/json',
+          }
+          if (baseUrl && session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+          
+          const imagesResponse = await fetch(url, {
+            headers,
+            credentials: 'include',
+          })
           if (imagesResponse.ok) {
             const imagesData = await imagesResponse.json()
             // Create a map of assetTagId to comma-separated image URLs

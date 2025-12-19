@@ -103,7 +103,11 @@ interface MaintenanceRecord {
   }>
 }
 
-async function fetchMaintenances(search?: string, page: number = 1, pageSize: number = 50): Promise<{ maintenances: MaintenanceRecord[], pagination: PaginationInfo }> {
+async function fetchMaintenances(search?: string, page: number = 1, pageSize: number = 50, searchFields?: string): Promise<{ maintenances: MaintenanceRecord[], pagination: PaginationInfo }> {
+  const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+    ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+    : ''
+  
   const params = new URLSearchParams({
     page: page.toString(),
     pageSize: pageSize.toString(),
@@ -111,11 +115,36 @@ async function fetchMaintenances(search?: string, page: number = 1, pageSize: nu
   if (search) {
     params.append('search', search)
   }
-  
-  const response = await fetch(`/api/assets/maintenance?${params.toString()}`)
-  if (!response.ok) {
-    throw new Error('Failed to fetch maintenances')
+  if (searchFields) {
+    params.append('searchFields', searchFields)
   }
+  
+  // Get auth token
+  const { createClient } = await import('@/lib/supabase-client')
+  const supabase = createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  const headers: HeadersInit = {}
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`
+  }
+  
+  const response = await fetch(`${baseUrl}/api/assets/maintenance?${params.toString()}`, {
+    credentials: 'include',
+    headers,
+  })
+  
+  if (!response.ok) {
+    const errorText = await response.text()
+    let errorMessage = 'Failed to fetch maintenances'
+    try {
+      const errorData = JSON.parse(errorText)
+      errorMessage = errorData.detail || errorData.error || errorMessage
+    } catch {
+      errorMessage = errorText || errorMessage
+    }
+    throw new Error(errorMessage)
+  }
+  
   const data = await response.json()
   return { maintenances: data.maintenances, pagination: data.pagination }
 }
@@ -152,6 +181,16 @@ const ALL_COLUMNS = [
   { key: 'inventoryItems', label: 'Inventory Items' },
   { key: 'actions', label: 'Actions' },
 ]
+
+// Mapping from column keys to API search field names
+const COLUMN_TO_SEARCH_FIELD: Record<string, string[]> = {
+  'assetTag': ['asset.assetTagId'],
+  'description': ['asset.description'],
+  'title': ['title'],
+  'status': ['status'],
+  'maintenanceBy': ['maintenanceBy'],
+  'cost': ['cost'],
+}
 
 // Create column definitions for TanStack Table
 // Create columns for maintenance records
@@ -628,12 +667,23 @@ function ListOfMaintenancesPageContent() {
   // Separate states for search input (immediate UI) and search query (debounced API calls)
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '')
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '')
+  const [searchType, setSearchType] = useState<string>(
+    searchParams.get('searchType') || 'unified'
+  )
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSearchQueryRef = useRef<string>(searchParams.get('search') || '')
   const previousSearchInputRef = useRef<string>(searchParams.get('search') || '')
+  
+  // Convert column visibility to visible columns array for compatibility
+  const visibleColumns = useMemo(() => {
+    return Object.entries(columnVisibility)
+      .filter(([, visible]) => visible)
+      .map(([key]) => key)
+      .filter(key => key !== 'actions') // Exclude Actions from count
+  }, [columnVisibility])
 
   // Update URL parameters
-  const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string }) => {
+  const updateURL = useCallback((updates: { page?: number; pageSize?: number; search?: string; searchType?: string }) => {
     const params = new URLSearchParams(searchParams.toString())
     
     if (updates.page !== undefined) {
@@ -657,10 +707,21 @@ function ListOfMaintenancesPageContent() {
     if (updates.search !== undefined) {
       if (updates.search === '') {
         params.delete('search')
+        // Preserve searchType when clearing search - don't delete it
       } else {
         params.set('search', updates.search)
       }
       // Reset to page 1 when search changes
+      params.delete('page')
+    }
+
+    if (updates.searchType !== undefined) {
+      if (updates.searchType === 'unified') {
+        params.delete('searchType')
+      } else {
+        params.set('searchType', updates.searchType)
+      }
+      // Reset to page 1 when searchType changes
       params.delete('page')
     }
     
@@ -669,9 +730,34 @@ function ListOfMaintenancesPageContent() {
     })
   }, [searchParams, router, startTransition])
 
+  // Get search fields based on visible columns and searchType
+  const searchFields = useMemo(() => {
+    if (searchType === 'unified') {
+      // Unified search: search in all visible columns
+      const fields: string[] = []
+      visibleColumns.forEach(colKey => {
+        const fieldMappings = COLUMN_TO_SEARCH_FIELD[colKey] || []
+        fields.push(...fieldMappings)
+      })
+      // Remove duplicates
+      return Array.from(new Set(fields))
+    } else {
+      // Specific column search: only search in the selected column
+      const fieldMappings = COLUMN_TO_SEARCH_FIELD[searchType] || []
+      return fieldMappings
+    }
+  }, [visibleColumns, searchType])
+
+  // Only send searchFields when there's actually a non-empty search query
+  const hasSearchQuery = searchQuery && searchQuery.trim().length > 0
   const { data, isLoading, error, isFetching } = useQuery({
-    queryKey: ['maintenances-list', searchQuery, page, pageSize],
-    queryFn: () => fetchMaintenances(searchQuery || undefined, page, pageSize),
+    queryKey: ['maintenances-list', searchQuery, searchType, page, pageSize],
+    queryFn: () => fetchMaintenances(
+      hasSearchQuery ? searchQuery : undefined, 
+      page, 
+      pageSize,
+      hasSearchQuery && searchFields.length > 0 ? searchFields.join(',') : undefined
+    ),
     enabled: canManageMaintenance, // Only fetch if user has permission
     placeholderData: (previousData) => previousData,
   })
@@ -790,6 +876,23 @@ function ListOfMaintenancesPageContent() {
     setIsManualRefresh(true)
     queryClient.invalidateQueries({ queryKey: ['maintenances-list'] })
   }, [queryClient])
+
+  // Sync searchInput and searchType with URL params only on initial mount or external navigation
+  useEffect(() => {
+    const urlSearchType = searchParams.get('searchType') || 'unified'
+    const urlSearch = searchParams.get('search') || ''
+    
+    if (urlSearchType !== searchType) {
+      setSearchType(urlSearchType)
+    }
+    
+    if (urlSearch !== searchInput && urlSearch !== previousSearchInputRef.current) {
+      setSearchInput(urlSearch)
+      setSearchQuery(urlSearch)
+      previousSearchInputRef.current = urlSearch
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]) // Only depend on searchParams, not on state
 
   // Debounce search input - update searchQuery after user stops typing
   useEffect(() => {
@@ -1098,6 +1201,34 @@ function ListOfMaintenancesPageContent() {
         <CardHeader>
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             <div className="flex items-center w-full lg:flex-1 lg:max-w-md border rounded-md overflow-hidden">
+              <Select
+                value={searchType}
+                onValueChange={(value: string) => {
+                  setSearchType(value)
+                  updateURL({ searchType: value, page: 1 })
+                }}
+              >
+                <SelectTrigger className={cn("w-[140px] h-8 rounded-none border-0 border-r focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none", isMobile && "w-[100px]")} size='sm'>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unified">Unified Search</SelectItem>
+                  {visibleColumns
+                    .filter(colKey => {
+                      // Only show columns that have searchable fields
+                      const fieldMappings = COLUMN_TO_SEARCH_FIELD[colKey] || []
+                      return fieldMappings.length > 0
+                    })
+                    .map(colKey => {
+                      const column = ALL_COLUMNS.find(c => c.key === colKey)
+                      return (
+                        <SelectItem key={colKey} value={colKey}>
+                          {column?.label || colKey}
+                        </SelectItem>
+                      )
+                    })}
+                </SelectContent>
+              </Select>
               <div className="relative flex-1">
                 {searchInput ? (
                   <button
@@ -1114,7 +1245,15 @@ function ListOfMaintenancesPageContent() {
                   <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
                 )}
                 <Input
-                  placeholder="Search maintenances by title, asset tag, description..."
+                  placeholder={
+                    searchType === 'unified'
+                      ? visibleColumns.length > 0
+                        ? `Search by ${visibleColumns.slice(0, 3).map(col => ALL_COLUMNS.find(c => c.key === col)?.label).filter(Boolean).join(', ').toLowerCase()}${visibleColumns.length > 3 ? '...' : ''}...`
+                        : 'Search maintenances...'
+                      : ALL_COLUMNS.find(c => c.key === searchType)?.label
+                        ? `Search by ${ALL_COLUMNS.find(c => c.key === searchType)?.label}`
+                        : 'Search...'
+                  }
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   className="pl-8 h-8 rounded-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"

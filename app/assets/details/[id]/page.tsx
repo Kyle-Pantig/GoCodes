@@ -113,7 +113,26 @@ function PhotosTabContent({ assetTagId, isActive }: { assetTagId: string; isActi
   const { data: imagesData, isLoading: loadingImages } = useQuery({
     queryKey: ['asset-images', assetTagId],
     queryFn: async () => {
-      const response = await fetch(`/api/assets/images/${assetTagId}`)
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/images/${assetTagId}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        credentials: 'include',
+      })
       if (!response.ok) return { images: [] }
       const data = await response.json()
       return { images: data.images || [] }
@@ -193,7 +212,26 @@ function DocsTabContent({ assetTagId, isActive }: { assetTagId: string; isActive
   const { data: documentsData, isLoading: loadingDocuments } = useQuery({
     queryKey: ['asset-documents', assetTagId],
     queryFn: async () => {
-      const response = await fetch(`/api/assets/documents/${assetTagId}`)
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/documents/${assetTagId}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        credentials: 'include',
+      })
       if (!response.ok) return { documents: [] }
       const data = await response.json()
       return { documents: data.documents || [] }
@@ -532,7 +570,25 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     queryKey: ['asset-thumbnail', asset?.assetTagId],
     queryFn: async () => {
       if (!asset?.assetTagId) return { images: [] }
-      const response = await fetch(`/api/assets/images/${asset.assetTagId}`, {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/images/${asset.assetTagId}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        credentials: 'include',
         cache: 'no-store',
       })
       if (!response.ok) return { images: [] }

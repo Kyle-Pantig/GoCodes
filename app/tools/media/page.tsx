@@ -113,6 +113,8 @@ function MediaPageContent() {
   const [documentToDelete, setDocumentToDelete] = useState<MediaDocument | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState({ current: 0, total: 0 })
   const [imageDetails, setImageDetails] = useState<MediaImage | null>(null)
   const [documentDetails, setDocumentDetails] = useState<MediaDocument | null>(null)
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false)
@@ -305,7 +307,26 @@ function MediaPageContent() {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['assets', 'media', currentPage, gridColumns],
     queryFn: async () => {
-      const response = await fetch(`/api/assets/media?page=${currentPage}&pageSize=${pageSize}`)
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/media?page=${currentPage}&pageSize=${pageSize}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        credentials: 'include',
+      })
       if (!response.ok) {
         throw new Error('Failed to fetch media')
       }
@@ -332,7 +353,26 @@ function MediaPageContent() {
   const { data: documentsData, isLoading: isLoadingDocuments, isError: isDocumentsError, refetch: refetchDocuments } = useQuery({
     queryKey: ['assets', 'documents', currentPage, gridColumns],
     queryFn: async () => {
-      const response = await fetch(`/api/assets/documents?page=${currentPage}&pageSize=${pageSize}`)
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/documents?page=${currentPage}&pageSize=${pageSize}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        credentials: 'include',
+      })
       if (!response.ok) {
         throw new Error('Failed to fetch documents')
       }
@@ -369,6 +409,25 @@ function MediaPageContent() {
   }
 
   const uploadImage = async (file: File, onProgress?: (progress: number) => void) => {
+    const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+      ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+      : ''
+    const url = `${baseUrl}/api/assets/media/upload`
+    
+    // Get auth token for FastAPI (get it before Promise constructor)
+    let authToken: string | null = null
+    if (baseUrl) {
+      try {
+        const { createClient } = await import('@/lib/supabase-client')
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        authToken = session?.access_token || null
+      } catch (e) {
+        // If we can't get token, continue without it
+        console.warn('Could not get auth token for upload:', e)
+      }
+    }
+    
     return new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       const formData = new FormData()
@@ -398,7 +457,12 @@ function MediaPageContent() {
         reject(new Error('Upload failed'))
       })
 
-      xhr.open('POST', '/api/assets/media/upload')
+      xhr.open('POST', url)
+      
+      if (authToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
+      }
+      
       xhr.send(formData)
     })
   }
@@ -479,7 +543,25 @@ function MediaPageContent() {
   }
 
   const uploadDocument = async (file: File, onProgress?: (progress: number) => void) => {
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>(async (resolve, reject) => {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/documents/upload`
+      
+      // Get auth token for FastAPI
+      let authToken: string | null = null
+      if (baseUrl) {
+        try {
+          const { createClient } = await import('@/lib/supabase-client')
+          const supabase = createClient()
+          const { data: { session } } = await supabase.auth.getSession()
+          authToken = session?.access_token || null
+        } catch (error) {
+          console.error('Error getting auth token:', error)
+        }
+      }
+
       const xhr = new XMLHttpRequest()
       const formData = new FormData()
       formData.append('file', file)
@@ -508,7 +590,14 @@ function MediaPageContent() {
         reject(new Error('Upload failed'))
       })
 
-      xhr.open('POST', '/api/assets/documents/upload')
+      xhr.open('POST', url)
+      
+      // Add auth header if using FastAPI
+      if (baseUrl && authToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
+      }
+      
+      xhr.withCredentials = true
       xhr.send(formData)
     })
   }
@@ -649,8 +738,26 @@ function MediaPageContent() {
   // Delete image mutation - deletes ALL links for this image and the file from storage
   const deleteImageMutation = useMutation({
     mutationFn: async (image: MediaImage) => {
-      const response = await fetch(`/api/assets/media/delete?imageUrl=${encodeURIComponent(image.imageUrl)}`, {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/media/delete?imageUrl=${encodeURIComponent(image.imageUrl)}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
         method: 'DELETE',
+        headers,
+        credentials: 'include',
       })
 
       if (!response.ok) {
@@ -662,6 +769,8 @@ function MediaPageContent() {
     },
     onSuccess: async (data) => {
       const deletedLinks = data.deletedLinks || 0
+      const deletedImageUrl = imageToDelete?.imageUrl
+      
       if (deletedLinks > 0) {
         toast.success(`Image deleted successfully. Removed ${deletedLinks} link(s) from asset(s).`)
       } else {
@@ -669,8 +778,39 @@ function MediaPageContent() {
       }
       setIsDeleteDialogOpen(false)
       setImageToDelete(null)
-      // Invalidate media query to refresh the list and update linked status
-      await queryClient.invalidateQueries({ queryKey: ['assets', 'media'] })
+      
+      // Optimistically remove the deleted image from cache immediately
+      if (deletedImageUrl) {
+        queryClient.setQueryData(['assets', 'media', currentPage, gridColumns], (oldData: {
+          images: MediaImage[]
+          pagination: {
+            total: number
+            page: number
+            pageSize: number
+            totalPages: number
+          }
+          storage?: {
+            used: number
+            limit: number
+          }
+        } | undefined) => {
+          if (!oldData) return oldData
+          return {
+            ...oldData,
+            images: oldData.images?.filter((img: MediaImage) => img.imageUrl !== deletedImageUrl) || [],
+            pagination: {
+              ...oldData.pagination,
+              total: Math.max(0, (oldData.pagination?.total || 0) - 1)
+            }
+          }
+        })
+      }
+      
+      // Invalidate all media queries to refresh the list and update linked status
+      await queryClient.invalidateQueries({ 
+        queryKey: ['assets', 'media'],
+        refetchType: 'active' // Refetch active queries
+      })
       // Refetch media to show updated list immediately
       await refetch()
       // Also invalidate assets query to update image counts
@@ -733,58 +873,93 @@ function MediaPageContent() {
     })
   }, [])
 
-  // Bulk delete mutation
-  const bulkDeleteMutation = useMutation({
-    mutationFn: async (imageUrls: string[]) => {
-      const response = await fetch('/api/assets/media/bulk-delete', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ imageUrls }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to delete images')
-      }
-
-      return response.json()
-    },
-    onSuccess: async (data) => {
-      const deletedCount = data.deletedCount || 0
-      const deletedLinks = data.deletedLinks || 0
-      if (deletedLinks > 0) {
-        toast.success(`Deleted ${deletedCount} image(s) and removed ${deletedLinks} link(s)`)
-      } else {
-        toast.success(`Deleted ${deletedCount} image(s)`)
-      }
-      setIsBulkDeleteDialogOpen(false)
-      setSelectedImages(new Set())
-      // Invalidate media query to refresh the list
-      await queryClient.invalidateQueries({ queryKey: ['assets', 'media'] })
-      await refetch()
-      // Also invalidate assets query to update image counts
-      await queryClient.invalidateQueries({ queryKey: ['assets'] })
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to delete images')
-      setIsBulkDeleteDialogOpen(false)
-    },
-  })
-
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (activeTab === 'media') {
-    const selectedImageUrls = images
-      .filter(img => selectedImages.has(img.id))
-      .map(img => img.imageUrl)
-    
-    if (selectedImageUrls.length === 0) {
-      toast.error('No images selected')
-      return
-    }
+      const selectedImageUrls = images
+        .filter(img => selectedImages.has(img.id))
+        .map(img => img.imageUrl)
+      
+      if (selectedImageUrls.length === 0) {
+        toast.error('No images selected')
+        return
+      }
 
-    bulkDeleteMutation.mutate(selectedImageUrls)
+      setIsBulkDeleting(true)
+      setBulkDeleteProgress({ current: 0, total: selectedImageUrls.length })
+
+      // Simulate progress during API call
+      const progressInterval = setInterval(() => {
+        setBulkDeleteProgress(prev => {
+          if (prev.current < prev.total * 0.9) {
+            // Gradually increase to 90% while waiting for response
+            return { ...prev, current: Math.min(prev.current + Math.max(1, Math.floor(prev.total / 20)), Math.floor(prev.total * 0.9)) }
+          }
+          return prev
+        })
+      }, 100)
+
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+          ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+          : ''
+        const url = `${baseUrl}/api/assets/media/bulk-delete`
+        
+        // Get auth token
+        const { createClient } = await import('@/lib/supabase-client')
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+        }
+        if (baseUrl && session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+        
+        const response = await fetch(url, {
+          method: 'DELETE',
+          headers,
+          credentials: 'include',
+          body: JSON.stringify({ imageUrls: selectedImageUrls }),
+        })
+
+        clearInterval(progressInterval)
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || 'Failed to delete images')
+        }
+
+        const data = await response.json()
+        setBulkDeleteProgress({ current: selectedImageUrls.length, total: selectedImageUrls.length })
+
+        const deletedCount = data.deletedCount || 0
+        const deletedLinks = data.deletedLinks || 0
+        if (deletedLinks > 0) {
+          toast.success(`Deleted ${deletedCount} image(s) and removed ${deletedLinks} link(s)`)
+        } else {
+          toast.success(`Deleted ${deletedCount} image(s)`)
+        }
+        
+        setIsBulkDeleteDialogOpen(false)
+        setIsBulkDeleting(false)
+        setSelectedImages(new Set())
+        setIsSelectionMode(false)
+        
+        // Invalidate all media queries to refresh the list
+        await queryClient.invalidateQueries({ 
+          queryKey: ['assets', 'media'],
+          refetchType: 'all'
+        })
+        await refetch()
+        // Also invalidate assets query to update image counts
+        await queryClient.invalidateQueries({ queryKey: ['assets'] })
+      } catch (error) {
+        clearInterval(progressInterval)
+        console.error('Bulk delete error:', error)
+        toast.error(error instanceof Error ? error.message : 'Failed to delete images')
+        setIsBulkDeleteDialogOpen(false)
+        setIsBulkDeleting(false)
+      }
     } else {
       const selectedDocumentUrls = documents
         .filter(doc => selectedDocuments.has(doc.id))
@@ -795,15 +970,103 @@ function MediaPageContent() {
         return
       }
 
-      bulkDeleteDocumentMutation.mutate(selectedDocumentUrls)
+      setIsBulkDeleting(true)
+      setBulkDeleteProgress({ current: 0, total: selectedDocumentUrls.length })
+
+      // Simulate progress during API call
+      const progressInterval = setInterval(() => {
+        setBulkDeleteProgress(prev => {
+          if (prev.current < prev.total * 0.9) {
+            // Gradually increase to 90% while waiting for response
+            return { ...prev, current: Math.min(prev.current + Math.max(1, Math.floor(prev.total / 20)), Math.floor(prev.total * 0.9)) }
+          }
+          return prev
+        })
+      }, 100)
+
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+          ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+          : ''
+        const url = `${baseUrl}/api/assets/documents/bulk-delete`
+        
+        // Get auth token
+        const { createClient } = await import('@/lib/supabase-client')
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+        }
+        if (baseUrl && session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+        
+        const response = await fetch(url, {
+          method: 'DELETE',
+          headers,
+          credentials: 'include',
+          body: JSON.stringify({ documentUrls: selectedDocumentUrls }),
+        })
+
+        clearInterval(progressInterval)
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || 'Failed to delete documents')
+        }
+
+        const data = await response.json()
+        setBulkDeleteProgress({ current: selectedDocumentUrls.length, total: selectedDocumentUrls.length })
+
+        const deletedCount = data.deletedCount || 0
+        const deletedLinks = data.deletedLinks || 0
+        if (deletedLinks > 0) {
+          toast.success(`Deleted ${deletedCount} document(s) and removed ${deletedLinks} link(s)`)
+        } else {
+          toast.success(`Deleted ${deletedCount} document(s)`)
+        }
+        
+        setIsBulkDeleteDialogOpen(false)
+        setIsBulkDeleting(false)
+        setSelectedDocuments(new Set())
+        setIsSelectionMode(false)
+        
+        await queryClient.invalidateQueries({ queryKey: ['assets', 'documents'] })
+        await refetchDocuments()
+        await queryClient.invalidateQueries({ queryKey: ['assets'] })
+      } catch (error) {
+        clearInterval(progressInterval)
+        console.error('Bulk delete error:', error)
+        toast.error(error instanceof Error ? error.message : 'Failed to delete documents')
+        setIsBulkDeleteDialogOpen(false)
+        setIsBulkDeleting(false)
+      }
     }
   }
 
   // Delete document mutation
   const deleteDocumentMutation = useMutation({
     mutationFn: async (document: MediaDocument) => {
-      const response = await fetch(`/api/assets/documents/delete?documentUrl=${encodeURIComponent(document.documentUrl)}`, {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/documents/delete?documentUrl=${encodeURIComponent(document.documentUrl)}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
         method: 'DELETE',
+        headers,
+        credentials: 'include',
       })
 
       if (!response.ok) {
@@ -830,44 +1093,6 @@ function MediaPageContent() {
       toast.error(error.message || 'Failed to delete document')
       setIsDeleteDialogOpen(false)
       setDocumentToDelete(null)
-    },
-  })
-
-  // Bulk delete document mutation
-  const bulkDeleteDocumentMutation = useMutation({
-    mutationFn: async (documentUrls: string[]) => {
-      const response = await fetch('/api/assets/documents/bulk-delete', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ documentUrls }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to delete documents')
-      }
-
-      return response.json()
-    },
-    onSuccess: async (data) => {
-      const deletedCount = data.deletedCount || 0
-      const deletedLinks = data.deletedLinks || 0
-      if (deletedLinks > 0) {
-        toast.success(`Deleted ${deletedCount} document(s) and removed ${deletedLinks} link(s)`)
-      } else {
-        toast.success(`Deleted ${deletedCount} document(s)`)
-      }
-      setIsBulkDeleteDialogOpen(false)
-      setSelectedDocuments(new Set())
-      await queryClient.invalidateQueries({ queryKey: ['assets', 'documents'] })
-      await refetchDocuments()
-      await queryClient.invalidateQueries({ queryKey: ['assets'] })
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to delete documents')
-      setIsBulkDeleteDialogOpen(false)
     },
   })
 
@@ -1274,7 +1499,7 @@ function MediaPageContent() {
                   variant={isSelectionMode ? "default" : "outline"}
                   size="sm"
                   onClick={handleToggleSelectionMode}
-                  className="btn-glass"
+                  className={cn(!isSelectionMode && "btn-glass")}
                 >
                   {isSelectionMode ? "Cancel" : "Select"}
                 </Button>
@@ -2130,7 +2355,16 @@ function MediaPageContent() {
                   )
                 })()}
                 {/* 3-dot menu - show Details for all users, Delete for all but with permission check */}
-                {!isSelectionMode && (
+                {!isSelectionMode && (() => {
+                  // Check if document is Excel, PDF, or Word
+                  const isOfficeDoc = document.mimeType === 'application/pdf' ||
+                    document.mimeType === 'application/vnd.ms-excel' ||
+                    document.mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+                    document.mimeType === 'application/msword' ||
+                    document.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                    /\.(pdf|xls|xlsx|doc|docx)$/i.test(document.fileName || '')
+                  
+                  return (
                   <div className={cn("absolute top-2 right-2 transition-opacity z-10", isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
                     {isMounted && (
                     <DropdownMenu>
@@ -2138,10 +2372,13 @@ function MediaPageContent() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 rounded-full"
+                          className={cn("h-8 w-8 rounded-full", isOfficeDoc && "hover:bg-gray-300!")}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <MoreVertical className="h-4 w-4 text-white" />
+                          <MoreVertical className={cn(
+                            "h-4 w-4 transition-colors",
+                            isOfficeDoc ? "text-white group-hover:text-black" : "text-white"
+                          )} />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
@@ -2166,7 +2403,8 @@ function MediaPageContent() {
                     </DropdownMenu>
                     )}
                   </div>
-                )}
+                  )
+                })()}
                 </motion.div>
               )
             })}
@@ -2271,7 +2509,9 @@ function MediaPageContent() {
         onConfirm={handleBulkDelete}
         itemCount={activeTab === 'media' ? selectedImages.size : selectedDocuments.size}
         itemName={activeTab === 'media' ? 'image' : 'document'}
-        isDeleting={activeTab === 'media' ? bulkDeleteMutation.isPending : bulkDeleteDocumentMutation.isPending}
+        isDeleting={isBulkDeleting}
+        progress={isBulkDeleting ? { current: bulkDeleteProgress.current, total: bulkDeleteProgress.total } : undefined}
+        progressTitle={isBulkDeleting ? `Deleting ${activeTab === 'media' ? 'images' : 'documents'}... ${bulkDeleteProgress.current}/${bulkDeleteProgress.total}` : undefined}
       />
 
       {/* Image Preview Dialog */}

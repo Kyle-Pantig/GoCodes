@@ -13,10 +13,27 @@ from models.sites import (
 )
 from auth import verify_auth
 from database import prisma
+from typing import List
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sites", tags=["sites"])
+
+async def check_permission(user_id: str, permission: str) -> bool:
+    """Check if user has a specific permission"""
+    try:
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        if not asset_user or not asset_user.isActive:
+            return False
+        return getattr(asset_user, permission, False)
+    except Exception:
+        return False
+
+class BulkDeleteRequest(BaseModel):
+    ids: List[str]
 
 @router.get("", response_model=SitesResponse)
 async def get_sites(
@@ -163,6 +180,73 @@ async def update_site(
     except Exception as e:
         logger.error(f"Error updating site: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update site")
+
+@router.delete("/bulk-delete")
+async def bulk_delete_sites(
+    request: BulkDeleteRequest,
+    auth: dict = Depends(verify_auth)
+):
+    """Bulk delete sites"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        if not request.ids or len(request.ids) == 0:
+            raise HTTPException(status_code=400, detail="Invalid request. Expected an array of site IDs.")
+        
+        # Check which sites have associated assets
+        sites = await prisma.assetssite.find_many(
+            where={"id": {"in": request.ids}}
+        )
+        
+        sites_with_assets: List[str] = []
+        sites_to_delete: List[str] = []
+        
+        # Check each site for associated assets
+        for site in sites:
+            assets_count = await prisma.assets.count(
+                where={
+                    "site": site.name,
+                    "isDeleted": False
+                },
+                take=1
+            )
+            
+            if assets_count > 0:
+                sites_with_assets.append(site.name)
+            else:
+                sites_to_delete.append(site.id)
+        
+        # If any sites have associated assets, return error
+        if sites_with_assets:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot delete site(s) with associated assets: {', '.join(sites_with_assets)}. Please reassign or delete assets first.",
+            )
+        
+        # Delete all sites that don't have associated assets
+        result = await prisma.assetssite.delete_many(
+            where={"id": {"in": sites_to_delete}}
+        )
+        
+        return {
+            "success": True,
+            "deletedCount": result,
+            "message": f"{result} site(s) deleted successfully"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_str = str(e).lower()
+        if 'p1001' in error_str or 'p2024' in error_str or 'connection' in error_str:
+            raise HTTPException(
+                status_code=503,
+                detail="Database connection limit reached. Please try again in a moment."
+            )
+        logger.error(f"Error bulk deleting sites: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete sites")
 
 @router.delete("/{site_id}")
 async def delete_site(

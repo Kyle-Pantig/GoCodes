@@ -147,7 +147,25 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
     queryKey: ['asset-thumbnail', asset?.assetTagId],
     queryFn: async () => {
       if (!asset?.assetTagId) return { images: [] }
-      const response = await fetch(`/api/assets/images/${asset.assetTagId}`, {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/images/${asset.assetTagId}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        credentials: 'include',
         cache: 'no-store',
       })
       if (!response.ok) return { images: [] }
@@ -171,7 +189,26 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
     queryKey: ['assets', 'images', asset?.assetTagId],
     queryFn: async () => {
       if (!asset?.assetTagId) return { images: [] }
-      const response = await fetch(`/api/assets/images/${asset.assetTagId}`)
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/images/${asset.assetTagId}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        credentials: 'include',
+      })
       if (response.ok) {
         const data = await response.json()
         return { images: data.images || [] }
@@ -193,7 +230,27 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
     queryKey: ['assets', 'documents', asset?.assetTagId],
     queryFn: async () => {
       if (!asset?.assetTagId) return { documents: [] }
-      const response = await fetch(`/api/assets/documents/${asset.assetTagId}`)
+      
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/documents/${asset.assetTagId}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        credentials: 'include',
+      })
       if (response.ok) {
         const data = await response.json()
         return { documents: data.documents || [] }
@@ -613,6 +670,20 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   }
 
   const uploadImage = async (file: File, assetTagId: string, onProgress?: (progress: number) => void): Promise<void> => {
+    const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+      ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+      : ''
+    const url = `${baseUrl}/api/assets/upload-image`
+    
+    // Get auth token for FastAPI
+    let authToken: string | null = null
+    if (baseUrl) {
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      authToken = session?.access_token || null
+    }
+    
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       const formData = new FormData()
@@ -643,23 +714,42 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
         reject(new Error('Failed to upload image'))
       })
 
-      xhr.open('POST', '/api/assets/upload-image')
+      if (authToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
+      }
+      
+      xhr.open('POST', url)
       xhr.send(formData)
     })
   }
 
   // Link an existing image URL to an asset
   const linkExistingImage = async (imageUrl: string, assetTagId: string): Promise<void> => {
-    const response = await fetch('/api/assets/upload-image', {
+    const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+      ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+      : ''
+    const url = `${baseUrl}/api/assets/upload-image`
+    
+    // Get auth token
+    const { createClient } = await import('@/lib/supabase-client')
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    }
+    if (baseUrl && session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`
+    }
+    
+    const response = await fetch(url, {
       method: 'POST',
+      headers,
+      credentials: 'include',
       body: JSON.stringify({
         imageUrl,
         assetTagId,
         linkExisting: true,
       }),
-      headers: {
-        'Content-Type': 'application/json',
-      },
     })
 
     if (!response.ok) {
@@ -669,6 +759,20 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   }
 
   const uploadDocument = async (file: File, assetTagId: string, onProgress?: (progress: number) => void): Promise<void> => {
+    const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+      ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+      : ''
+    const url = `${baseUrl}/api/assets/upload-document`
+    
+    // Get auth token for FastAPI
+    let authToken: string | null = null
+    if (baseUrl) {
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      authToken = session?.access_token || null
+    }
+    
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       const formData = new FormData()
@@ -703,23 +807,42 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
         reject(new Error('Upload aborted'))
       })
 
-      xhr.open('POST', '/api/assets/upload-document')
+      if (authToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
+      }
+      
+      xhr.open('POST', url)
       xhr.send(formData)
     })
   }
 
   // Link an existing document URL to an asset
   const linkExistingDocument = async (documentUrl: string, assetTagId: string): Promise<void> => {
-    const response = await fetch('/api/assets/upload-document', {
+    const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+      ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+      : ''
+    const url = `${baseUrl}/api/assets/upload-document`
+    
+    // Get auth token
+    const { createClient } = await import('@/lib/supabase-client')
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    }
+    if (baseUrl && session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`
+    }
+    
+    const response = await fetch(url, {
       method: 'POST',
+      headers,
+      credentials: 'include',
       body: JSON.stringify({
         documentUrl,
         assetTagId,
         linkExisting: true,
       }),
-      headers: {
-        'Content-Type': 'application/json',
-      },
     })
 
     if (!response.ok) {
@@ -739,8 +862,26 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
 
     setIsDeletingImage(true)
     try {
-      const response = await fetch(`/api/assets/images/delete/${imageToDelete}`, {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/images/delete/${imageToDelete}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
         method: 'DELETE',
+        headers,
+        credentials: 'include',
       })
       if (response.ok) {
         queryClient.invalidateQueries({ queryKey: ['assets', 'images', asset?.assetTagId] })
@@ -785,8 +926,26 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
 
     setIsDeletingDocument(true)
     try {
-      const response = await fetch(`/api/assets/documents/delete/${documentToDelete}`, {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/documents/delete/${documentToDelete}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
         method: 'DELETE',
+        headers,
+        credentials: 'include',
       })
       if (response.ok) {
         queryClient.invalidateQueries({ queryKey: ['assets', 'documents', asset?.assetTagId] })

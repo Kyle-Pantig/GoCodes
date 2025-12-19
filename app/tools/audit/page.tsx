@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { QrCode, CheckCircle2, X, FileText, History, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -87,6 +88,8 @@ const getStatusBadge = (status: string | null) => {
 
 export default function AuditPage() {
   const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canAudit = hasPermission('canAudit')
   const canViewAssets = hasPermission('canViewAssets')
@@ -106,6 +109,7 @@ export default function AuditPage() {
   const suggestionRef = useRef<HTMLDivElement>(null)
   const lastScannedCodeRef = useRef<string | null>(null)
   const isInitialMount = useRef(true)
+  const hasProcessedUrlParams = useRef(false)
 
   useEffect(() => {
     isInitialMount.current = false
@@ -230,7 +234,26 @@ export default function AuditPage() {
     queryKey: ['asset-suggestions', assetIdInput, scannedAssets.length, showSuggestions],
     queryFn: async () => {
       const searchTerm = assetIdInput.trim() || ''
-      const response = await fetch(`/api/assets?search=${encodeURIComponent(searchTerm)}&pageSize=10000`)
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets?search=${encodeURIComponent(searchTerm)}&pageSize=10000`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        credentials: 'include',
+      })
       if (!response.ok) {
         throw new Error('Failed to fetch assets')
       }
@@ -269,9 +292,28 @@ export default function AuditPage() {
   }, [])
 
   // Find asset by assetTagId
-  const findAssetById = async (assetTagId: string): Promise<Asset | null> => {
+  const findAssetById = useCallback(async (assetTagId: string): Promise<Asset | null> => {
     try {
-      const response = await fetch(`/api/assets?search=${encodeURIComponent(assetTagId)}&pageSize=100`)
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets?search=${encodeURIComponent(assetTagId)}&pageSize=100`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        credentials: 'include',
+      })
       if (!response.ok) {
         throw new Error('Failed to fetch assets')
       }
@@ -288,7 +330,113 @@ export default function AuditPage() {
       console.error('Error looking up asset:', error)
       return null
     }
-  }
+  }, [])
+
+  // Find asset by UUID (internal ID)
+  const findAssetByUuid = useCallback(async (assetId: string): Promise<Asset | null> => {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/${assetId}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        credentials: 'include',
+      })
+      if (!response.ok) {
+        throw new Error('Failed to fetch asset')
+      }
+      const data = await response.json()
+      return data.asset as Asset
+    } catch (error) {
+      console.error('Error looking up asset by UUID:', error)
+      return null
+    }
+  }, [])
+
+  // Handle URL query parameters for assetId
+  useEffect(() => {
+    // Skip if we've already processed URL params (prevents re-population)
+    if (hasProcessedUrlParams.current) {
+      return
+    }
+
+    const urlAssetId = searchParams.get('assetId')
+
+    if (urlAssetId && canAudit && !selectedAsset) {
+      // Mark as processed to prevent re-population
+      hasProcessedUrlParams.current = true
+      
+      // Check if it's a UUID (contains dashes) or assetTagId
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(urlAssetId)
+      
+      // Clear URL parameters helper
+      const clearUrlParams = () => {
+        const params = new URLSearchParams(searchParams.toString())
+        params.delete('assetId')
+        const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
+        router.replace(newUrl)
+      }
+      
+      // Fetch and add the asset from URL
+      const selectAssetFromUrl = async () => {
+        try {
+          const asset = isUuid 
+            ? await findAssetByUuid(urlAssetId)
+            : await findAssetById(urlAssetId)
+          
+          if (asset) {
+            // Check if already scanned
+            const alreadyScanned = scannedAssets.find(
+              (a) => a.id.toLowerCase() === asset.id.toLowerCase()
+            )
+            
+            if (alreadyScanned) {
+              setSelectedAsset(alreadyScanned)
+              toast.info(`Asset "${asset.assetTagId}" already in audit list`)
+            } else {
+              // Add to scanned assets
+              const scannedAsset: ScannedAsset = {
+                ...asset,
+                scannedAt: new Date(),
+              }
+              
+              setScannedAssets((prev) => [...prev, scannedAsset])
+              setSelectedAsset(scannedAsset)
+              toast.success(`Asset "${asset.assetTagId}" added to audit list`)
+            }
+            
+            // Clear URL parameter
+            clearUrlParams()
+          } else {
+            toast.error(`Asset with ID "${urlAssetId}" not found`)
+            clearUrlParams()
+          }
+        } catch (error) {
+          console.error('Error fetching asset from URL:', error)
+          toast.error('Failed to load asset from URL')
+          const params = new URLSearchParams(searchParams.toString())
+          params.delete('assetId')
+          const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
+          router.replace(newUrl)
+        }
+      }
+      
+      selectAssetFromUrl()
+    }
+  }, [searchParams, canAudit, selectedAsset, scannedAssets, router, findAssetByUuid, findAssetById])
 
   // Handle QR code scan
   const handleQRScan = async (scannedCode: string) => {
@@ -456,9 +604,26 @@ export default function AuditPage() {
   // Create audit record mutation
   const createAuditMutation = useMutation({
     mutationFn: async ({ assetId, data }: { assetId: string; data: AuditFormData }) => {
-      const response = await fetch(`/api/assets/${assetId}/audit`, {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/${assetId}/audit`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: 'include',
         body: JSON.stringify({
           auditType: data.auditType,
           auditDate: data.auditDate,
@@ -505,8 +670,26 @@ export default function AuditPage() {
   // Delete audit record mutation
   const deleteAuditMutation = useMutation({
     mutationFn: async (auditId: string) => {
-      const response = await fetch(`/api/assets/audit/${auditId}`, {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/audit/${auditId}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (baseUrl && session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
         method: 'DELETE',
+        headers,
+        credentials: 'include',
       })
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
@@ -711,7 +894,7 @@ export default function AuditPage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive rounded-full"
                             onClick={() => {
                               setAuditToDelete({
                                 id: audit.id,
@@ -854,6 +1037,7 @@ export default function AuditPage() {
                       setScannedAssets([])
                       setSelectedAsset(null)
                     }}
+                    className='btn-glass'
                   >
                     Clear All
                   </Button>
@@ -976,7 +1160,7 @@ export default function AuditPage() {
                                   setSelectedAsset(asset)
                                   setIsAuditDialogOpen(true)
                                 }}
-                                className="shrink-0"
+                                className="shrink-0 btn-glass"
                               >
                                 <FileText className="h-3.5 w-3.5 mr-1" />
                                 Audit

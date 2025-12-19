@@ -21,6 +21,7 @@ async def list_maintenances(
     assetId: Optional[str] = Query(None, description="Filter by asset ID"),
     status: Optional[str] = Query(None, description="Filter by status"),
     search: Optional[str] = Query(None, description="Search in title, details, maintenanceBy"),
+    searchFields: Optional[str] = Query(None, description="Comma-separated list of fields to search in"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(50, ge=1, le=500),
     auth: dict = Depends(verify_auth)
@@ -36,11 +37,42 @@ async def list_maintenances(
         if status:
             where["status"] = status
         if search:
-            where["OR"] = [
-                {"title": {"contains": search, "mode": "insensitive"}},
-                {"details": {"contains": search, "mode": "insensitive"}},
-                {"maintenanceBy": {"contains": search, "mode": "insensitive"}}
-            ]
+            # Support searchFields parameter for field-specific search
+            if searchFields:
+                # Parse comma-separated search fields
+                search_fields = [f.strip() for f in searchFields.split(",") if f.strip()]
+                search_conditions = []
+                
+                for field in search_fields:
+                    if field == "title":
+                        search_conditions.append({"title": {"contains": search, "mode": "insensitive"}})
+                    elif field == "details":
+                        search_conditions.append({"details": {"contains": search, "mode": "insensitive"}})
+                    elif field == "maintenanceBy":
+                        search_conditions.append({"maintenanceBy": {"contains": search, "mode": "insensitive"}})
+                    elif field == "asset.assetTagId" or field == "assetTagId":
+                        search_conditions.append({"asset": {"assetTagId": {"contains": search, "mode": "insensitive"}}})
+                    elif field == "asset.description" or field == "description":
+                        search_conditions.append({"asset": {"description": {"contains": search, "mode": "insensitive"}}})
+                    elif field == "status":
+                        search_conditions.append({"status": {"contains": search, "mode": "insensitive"}})
+                    elif field == "cost":
+                        # Try to parse as number for cost search
+                        try:
+                            cost_value = float(search)
+                            search_conditions.append({"cost": cost_value})
+                        except ValueError:
+                            pass
+                
+                if search_conditions:
+                    where["OR"] = search_conditions
+            else:
+                # Default: search in title, details, maintenanceBy
+                where["OR"] = [
+                    {"title": {"contains": search, "mode": "insensitive"}},
+                    {"details": {"contains": search, "mode": "insensitive"}},
+                    {"maintenanceBy": {"contains": search, "mode": "insensitive"}}
+                ]
         
         # Get total count
         total = await prisma.assetsmaintenance.count(where=where)

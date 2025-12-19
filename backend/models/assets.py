@@ -181,6 +181,14 @@ class BulkDeleteResponse(BaseModel):
     deletedCount: int
     message: str
 
+class BulkRestoreRequest(BaseModel):
+    ids: List[str]
+
+class BulkRestoreResponse(BaseModel):
+    success: bool
+    restoredCount: int
+    message: str
+
 class PaginationInfo(BaseModel):
     page: int
     pageSize: int

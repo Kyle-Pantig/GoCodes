@@ -13,6 +13,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/shadcn-io/spinner"
+import { createClient } from "@/lib/supabase-client"
+
+// Get API base URL - use FastAPI if enabled
+const getApiBaseUrl = () => {
+  const useFastAPI = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true'
+  const fastApiUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000'
+  return useFastAPI ? fastApiUrl : ''
+}
+
+// Helper function to get auth token from Supabase session
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    return session?.access_token || null
+  } catch (error) {
+    console.error('Error getting auth token:', error)
+    return null
+  }
+}
 
 interface MediaDocument {
   id: string
@@ -63,7 +83,22 @@ export function DocumentBrowserDialog({
   const { data: documentsData, isLoading: documentsLoading } = useQuery({
     queryKey: ['assets', 'documents', 'browser', documentsPage, pageSize],
     queryFn: async () => {
-      const response = await fetch(`/api/assets/documents?page=${documentsPage}&pageSize=${pageSize}`)
+      const apiBaseUrl = getApiBaseUrl()
+      const authToken = await getAuthToken()
+      
+      const url = apiBaseUrl 
+        ? `${apiBaseUrl}/api/assets/documents?page=${documentsPage}&pageSize=${pageSize}`
+        : `/api/assets/documents?page=${documentsPage}&pageSize=${pageSize}`
+      
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      
+      if (apiBaseUrl && authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`
+      }
+      
+      const response = await fetch(url, { headers, credentials: 'include' })
       if (!response.ok) throw new Error('Failed to fetch documents')
       return response.json() as Promise<{
         documents: MediaDocument[]

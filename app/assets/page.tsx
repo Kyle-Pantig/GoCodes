@@ -1410,6 +1410,7 @@ const AssetActions = memo(function AssetActions({ asset, isSelectionMode, hasSel
     deleteAssetMutation.mutate(asset.id, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['assets'] })
+        queryClient.invalidateQueries({ queryKey: ['deletedAssets'] })
         setIsDeleteOpen(false)
         toast.success('Asset deleted successfully. It will be permanently deleted after 30 days.')
       },
@@ -1710,7 +1711,7 @@ function AssetsPageContent() {
     pageSize: parseInt(searchParams.get('pageSize') || '10', 10),
   })
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
-    select: true,
+    select: true, // Will be updated based on isMobile in useEffect
     assetTag: true,
     description: true,
     category: true,
@@ -1977,15 +1978,20 @@ function AssetsPageContent() {
   const handleToggleSelectionMode = useCallback(() => {
     setIsSelectionMode(prev => {
       if (!prev) {
-        // Entering selection mode - show select column
+        // Entering selection mode - show select column (only on mobile)
+        if (isMobile) {
         setColumnVisibility(prev => ({ ...prev, select: true }))
+        }
       } else {
-        // Exiting selection mode - clear selection
+        // Exiting selection mode - clear selection and hide select column (only on mobile)
         setRowSelection({})
+        if (isMobile) {
+          setColumnVisibility(prev => ({ ...prev, select: false }))
+        }
       }
       return !prev
     })
-  }, [])
+  }, [isMobile])
 
   // Handle select/deselect all - uses ref to avoid dependency issues
   const handleToggleSelectAll = useCallback(() => {
@@ -2008,6 +2014,12 @@ function AssetsPageContent() {
     setSelectedExportFields(new Set(visibleColumns))
   }, [visibleColumns])
 
+  // Initialize column visibility based on mobile state
+  // On desktop, select column is always visible. On mobile, it's hidden by default
+  useEffect(() => {
+    setColumnVisibility(prev => ({ ...prev, select: !isMobile }))
+  }, [isMobile])
+
   // Automatically enable selection mode when user manually selects an asset
   // Automatically disable selection mode when all assets are unselected on desktop
   useEffect(() => {
@@ -2015,12 +2027,14 @@ function AssetsPageContent() {
     if (selectedCount > 0 && !isSelectionMode) {
       // User manually selected an asset - automatically enable selection mode
       setIsSelectionMode(true)
-      // Ensure select column is visible
+      // Show select column only on mobile (on desktop it's always visible)
+      if (isMobile) {
       setColumnVisibility(prev => ({ ...prev, select: true }))
+      }
     } else if (selectedCount === 0 && isSelectionMode && !isMobile) {
       // User unselected all assets on desktop - automatically disable selection mode
       // On mobile, we keep selection mode active until user clicks cancel button
-      // Note: We keep the select column visible so users can still select items
+      // On desktop, select column stays visible, so no need to hide it
       setIsSelectionMode(false)
     }
   }, [rowSelection, isSelectionMode, isMobile])
@@ -2170,7 +2184,26 @@ function AssetsPageContent() {
       if (selectedExportFields.has('images')) {
         const assetTagIds = assetsToExport.map((a: Asset) => a.assetTagId)
         try {
-          const imagesResponse = await fetch(`/api/assets/images/bulk?assetTagIds=${assetTagIds.join(',')}`)
+          const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+            ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+            : ''
+          const url = `${baseUrl}/api/assets/images/bulk?assetTagIds=${assetTagIds.join(',')}`
+          
+          // Get auth token
+          const { createClient } = await import('@/lib/supabase-client')
+          const supabase = createClient()
+          const { data: { session } } = await supabase.auth.getSession()
+          const headers: HeadersInit = {
+            'Content-Type': 'application/json',
+          }
+          if (baseUrl && session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+          
+          const imagesResponse = await fetch(url, {
+            headers,
+            credentials: 'include',
+          })
           if (imagesResponse.ok) {
             const imagesData = await imagesResponse.json()
             // Create a map of assetTagId to comma-separated image URLs
@@ -2487,9 +2520,21 @@ function AssetsPageContent() {
     const selectedArray = Array.from(selectedAssets)
     setDeletingProgress({ current: 0, total: selectedArray.length })
 
+    // Simulate progress during API call
+    const progressInterval = setInterval(() => {
+      setDeletingProgress(prev => {
+        if (prev.current < prev.total * 0.9) {
+          // Gradually increase to 90% while waiting for response
+          return { ...prev, current: Math.min(prev.current + Math.max(1, Math.floor(prev.total / 20)), Math.floor(prev.total * 0.9)) }
+        }
+        return prev
+      })
+    }, 100)
+
     try {
       // Use FastAPI bulk delete hook
       const result = await bulkDeleteMutation.mutateAsync(selectedArray)
+      clearInterval(progressInterval)
       setDeletingProgress({ current: selectedArray.length, total: selectedArray.length })
 
       toast.success(`Successfully deleted ${result.deletedCount} asset(s). They will be permanently deleted after 30 days.`)
@@ -2499,7 +2544,9 @@ function AssetsPageContent() {
 
       // Refresh assets
       queryClient.invalidateQueries({ queryKey: ['assets'] })
+      queryClient.invalidateQueries({ queryKey: ['deletedAssets'] })
     } catch (error) {
+      clearInterval(progressInterval)
       console.error('Bulk delete error:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to delete assets')
       setIsDeleting(false)

@@ -6,12 +6,18 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { CheckCircle2, Trash2 } from 'lucide-react'
+import { CheckCircle2, Trash2, Edit2, MoreVertical } from 'lucide-react'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { AuditDialog } from '@/components/dialogs/audit-dialog'
 import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 import type { AuditFormData } from '@/lib/validations/audit'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface AuditHistoryManagerProps {
   assetId: string
@@ -22,8 +28,17 @@ interface AuditHistoryManagerProps {
 export function AuditHistoryManager({ assetId, readOnly = false }: AuditHistoryManagerProps) {
   const queryClient = useQueryClient()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [auditToDelete, setAuditToDelete] = useState<{ id: string; auditType: string } | null>(null)
+  const [auditToEdit, setAuditToEdit] = useState<{
+    id: string
+    auditType?: string
+    auditDate?: string
+    status?: string
+    auditor?: string
+    notes?: string
+  } | null>(null)
 
   // Fetch audit history
   const { data: auditData, isLoading, refetch } = useQuery({
@@ -114,6 +129,59 @@ export function AuditHistoryManager({ assetId, readOnly = false }: AuditHistoryM
     },
   })
   
+  // Update mutation
+  const updateMutation = useMutation({
+    mutationFn: async (data: { id: string; auditType?: string; auditDate?: string; status?: string; auditor?: string; notes?: string }) => {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/audit/${data.id}`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = { 'Content-Type': 'application/json' }
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id, ...updateData } = data
+      const response = await fetch(url, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify(updateData),
+      })
+      if (!response.ok) {
+        const errorText = await response.text()
+        let errorMessage = 'Failed to update audit'
+        try {
+          const error = JSON.parse(errorText)
+          errorMessage = error.detail || error.error || errorMessage
+        } catch {
+          errorMessage = errorText || errorMessage
+        }
+        throw new Error(errorMessage)
+      }
+      return response.json()
+    },
+    onSuccess: async () => {
+      setIsEditDialogOpen(false)
+      setAuditToEdit(null)
+      // Invalidate and refetch to ensure the list is updated
+      await queryClient.invalidateQueries({ queryKey: ['auditHistory', assetId] })
+      // Also invalidate assets query since it includes audit history
+      await queryClient.invalidateQueries({ queryKey: ['assets'] })
+      await refetch()
+      toast.success('Audit record updated')
+    },
+    onError: () => {
+      toast.error('Failed to update audit record')
+    },
+  })
+
   // Add mutation
   const addMutation = useMutation({
     mutationFn: async (data: AuditFormData) => {
@@ -174,6 +242,16 @@ export function AuditHistoryManager({ assetId, readOnly = false }: AuditHistoryM
     await addMutation.mutateAsync(data)
   }
 
+  const handleEditSubmit = async (data: AuditFormData) => {
+    if (auditToEdit) {
+      // Only update status when editing
+      await updateMutation.mutateAsync({
+        id: auditToEdit.id,
+        status: data.status,
+      })
+    }
+  }
+
   return (
     <>
       <div className="space-y-4">
@@ -221,9 +299,9 @@ export function AuditHistoryManager({ assetId, readOnly = false }: AuditHistoryM
               }) : '-'
               
               return (
-                <Card key={audit.id} className="hover:bg-accent/50 transition-colors border-border/50 py-2">
+                <Card key={audit.id} className="hover:bg-accent/50 transition-colors bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border ">
                   <CardContent className="py-2.5 px-4">
-                    <div className="flex justify-between items-start gap-3">
+                    <div className="flex justify-between items-center gap-3">
                       <div className="space-y-1.5 flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge variant="outline" className="font-medium text-xs">
@@ -271,19 +349,43 @@ export function AuditHistoryManager({ assetId, readOnly = false }: AuditHistoryM
                       </div>
                       
                       {!readOnly && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setAuditToDelete({ id: audit.id, auditType: audit.auditType })
-                            setDeleteDialogOpen(true)
-                          }}
-                          disabled={deleteMutation.isPending}
-                          className="shrink-0 text-muted-foreground hover:text-destructive h-7 w-7"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              disabled={updateMutation.isPending || deleteMutation.isPending}
+                              className="shrink-0 text-muted-foreground hover:text-foreground h-7 w-7 flex items-center justify-center"
+                              title="More actions"
+                            >
+                              <MoreVertical className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setAuditToEdit(audit)
+                                setIsEditDialogOpen(true)
+                              }}
+                              disabled={updateMutation.isPending || audit.status === 'Failed'}
+                            >
+                              <Edit2 className="mr-2 h-4 w-4" />
+                              Update Status
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setAuditToDelete({ id: audit.id, auditType: audit.auditType })
+                                setDeleteDialogOpen(true)
+                              }}
+                              disabled={deleteMutation.isPending}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       )}
                     </div>
                   </CardContent>
@@ -301,6 +403,30 @@ export function AuditHistoryManager({ assetId, readOnly = false }: AuditHistoryM
         onOpenChange={setIsDialogOpen}
         onSubmit={handleSubmit}
         isLoading={addMutation.isPending}
+        mode="create"
+      />
+
+      {/* Edit Audit Dialog */}
+      <AuditDialog
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open)
+          if (!open) {
+            setAuditToEdit(null)
+          }
+        }}
+        onSubmit={handleEditSubmit}
+        isLoading={updateMutation.isPending}
+        mode="edit"
+        initialData={auditToEdit ? {
+          auditType: auditToEdit.auditType || '',
+          auditDate: auditToEdit.auditDate ? new Date(auditToEdit.auditDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          status: (auditToEdit.status && auditToEdit.status !== '' 
+            ? auditToEdit.status 
+            : 'Completed') as 'Completed' | 'Pending' | 'In Progress' | 'Failed',
+          auditor: auditToEdit.auditor || '',
+          notes: auditToEdit.notes || '',
+        } : undefined}
       />
 
       {/* Delete Confirmation Dialog */}

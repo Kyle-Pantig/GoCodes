@@ -1,6 +1,7 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
+import { useInventoryItems, useCreateInventoryItem, useUpdateInventoryItem, useDeleteInventoryItem } from '@/hooks/use-inventory'
 import { useState, useMemo, useCallback, useTransition, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -108,14 +109,6 @@ interface InventoryItem {
   }
 }
 
-interface PaginationInfo {
-  page: number
-  pageSize: number
-  total: number
-  totalPages: number
-  hasNextPage: boolean
-  hasPreviousPage: boolean
-}
 
 interface CategorySummary {
   category: string
@@ -140,84 +133,8 @@ interface SummaryData {
   lowStockItems: InventoryItem[]
 }
 
-async function fetchInventoryItems(params: {
-  search?: string
-  category?: string
-  lowStock?: boolean
-  page?: number
-  pageSize?: number
-}): Promise<{ items: InventoryItem[]; pagination: PaginationInfo }> {
-  const queryParams = new URLSearchParams()
-  if (params.search) queryParams.set('search', params.search)
-  if (params.category) queryParams.set('category', params.category)
-  if (params.lowStock) queryParams.set('lowStock', 'true')
-  if (params.page) queryParams.set('page', params.page.toString())
-  if (params.pageSize) queryParams.set('pageSize', params.pageSize.toString())
 
-  const response = await fetch(`/api/inventory?${queryParams.toString()}`)
-  if (!response.ok) {
-    throw new Error('Failed to fetch inventory items')
-  }
-  const data = await response.json()
-  return { items: data.items, pagination: data.pagination }
-}
-
-async function createInventoryItem(data: Partial<InventoryItem>) {
-  const response = await fetch('/api/inventory', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Failed to create inventory item')
-  }
-  return response.json()
-}
-
-async function updateInventoryItem(id: string, data: Partial<InventoryItem>) {
-  const response = await fetch(`/api/inventory/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Failed to update inventory item')
-  }
-  return response.json()
-}
-
-async function deleteInventoryItem(id: string) {
-  const response = await fetch(`/api/inventory/${id}`, {
-    method: 'DELETE',
-  })
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Failed to delete inventory item')
-  }
-  return response.json()
-}
-
-async function createTransaction(itemId: string, data: {
-  transactionType: 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER'
-  quantity: number
-  unitCost?: number | null
-  reference?: string | null
-  notes?: string | null
-  destinationItemId?: string | null
-}) {
-  const response = await fetch(`/api/inventory/${itemId}/transactions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Failed to create transaction')
-  }
-  return response.json()
-}
+import { useCreateInventoryTransaction } from '@/hooks/use-inventory'
 
 // Column definitions for visibility control
 const ALL_COLUMNS = [
@@ -883,19 +800,12 @@ function InventoryPageContent() {
     })
   }, [searchParams, router, startTransition])
 
-  const { data, isLoading, isFetching, error } = useQuery({
-    queryKey: ['inventory', searchQuery, categoryFilter, lowStockFilter, page, pageSize],
-    queryFn: () =>
-      fetchInventoryItems({
-        search: searchQuery || undefined,
-        category: categoryFilter && categoryFilter !== 'all' ? categoryFilter : undefined,
-        lowStock: lowStockFilter,
-        page,
-        pageSize,
-      }),
-    placeholderData: (previousData) => previousData,
-    staleTime: 0,
-    gcTime: 5 * 60 * 1000,
+  const { data, isLoading, isFetching, error } = useInventoryItems({
+    search: searchQuery || undefined,
+    category: categoryFilter && categoryFilter !== 'all' ? categoryFilter : undefined,
+    lowStock: lowStockFilter,
+    page,
+    pageSize,
   })
 
   // Reset manual refresh flag when fetch completes
@@ -935,70 +845,66 @@ function InventoryPageContent() {
     }
   }, [])
 
-  const createMutation = useMutation({
-    mutationFn: createInventoryItem,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+  const createMutation = useCreateInventoryItem()
+  const updateMutation = useUpdateInventoryItem()
+  const deleteMutation = useDeleteInventoryItem()
+
+  // Wrap mutations with toast notifications
+  useEffect(() => {
+    if (createMutation.isSuccess) {
       toast.success('Inventory item created successfully')
       setIsAddDialogOpen(false)
       setSelectedItem(null)
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to create inventory item')
-    },
-  })
+      createMutation.reset()
+    }
+    if (createMutation.isError) {
+      toast.error(createMutation.error?.message || 'Failed to create inventory item')
+      createMutation.reset()
+    }
+  }, [createMutation.isSuccess, createMutation.isError, createMutation.error, createMutation])
 
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<InventoryItem> }) =>
-      updateInventoryItem(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+  useEffect(() => {
+    if (updateMutation.isSuccess) {
       toast.success('Inventory item updated successfully')
       setIsEditDialogOpen(false)
       setSelectedItem(null)
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to update inventory item')
-    },
-  })
+      updateMutation.reset()
+    }
+    if (updateMutation.isError) {
+      toast.error(updateMutation.error?.message || 'Failed to update inventory item')
+      updateMutation.reset()
+    }
+  }, [updateMutation.isSuccess, updateMutation.isError, updateMutation.error, updateMutation])
 
-  const deleteMutation = useMutation({
-    mutationFn: deleteInventoryItem,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+  useEffect(() => {
+    if (deleteMutation.isSuccess) {
       toast.success('Inventory item deleted successfully')
       setIsDeleteDialogOpen(false)
       setSelectedItem(null)
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to delete inventory item')
-    },
-  })
+      deleteMutation.reset()
+    }
+    if (deleteMutation.isError) {
+      toast.error(deleteMutation.error?.message || 'Failed to delete inventory item')
+      deleteMutation.reset()
+    }
+  }, [deleteMutation.isSuccess, deleteMutation.isError, deleteMutation.error, deleteMutation])
 
 
   // Create transaction mutation
-  const createTransactionMutation = useMutation({
-    mutationFn: ({ itemId, data }: { 
-      itemId: string
-      data: {
-        transactionType: 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER'
-        quantity: number
-        unitCost?: number | null
-        reference?: string | null
-        notes?: string | null
-        destinationItemId?: string | null
-      }
-    }) => createTransaction(itemId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
-      queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
+  const createTransactionMutation = useCreateInventoryTransaction()
+
+  // Wrap with toast notifications
+  useEffect(() => {
+    if (createTransactionMutation.isSuccess) {
       toast.success('Transaction created successfully')
       setIsTransactionDialogOpen(false)
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to create transaction')
-    },
-  })
+      createTransactionMutation.reset()
+    }
+    if (createTransactionMutation.isError) {
+      toast.error(createTransactionMutation.error?.message || 'Failed to create transaction')
+      createTransactionMutation.reset()
+    }
+  }, [createTransactionMutation.isSuccess, createTransactionMutation.isError, createTransactionMutation.error, createTransactionMutation])
 
   const handleAdd = useCallback(() => {
     if (!canManageInventory) {
@@ -1547,6 +1453,72 @@ function InventoryPageContent() {
 
   // Import inventory items from Excel
   const handleImport = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    // Helper functions for import
+    const getApiBaseUrl = () => {
+      const useFastAPI = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true'
+      const fastApiUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000'
+      return useFastAPI ? fastApiUrl : ''
+    }
+
+    const getAuthToken = async (): Promise<string | null> => {
+      try {
+        const { createClient } = await import('@/lib/supabase-client')
+        const supabase = createClient()
+        const { data: { session }, error } = await supabase.auth.getSession()
+        if (error) {
+          console.error('Failed to get auth token:', error)
+          return null
+        }
+        if (!session?.access_token) {
+          console.warn('No active session found')
+          return null
+        }
+        return session.access_token
+      } catch (error) {
+        console.error('Failed to get auth token:', error)
+        return null
+      }
+    }
+
+    const createItem = async (itemData: {
+      itemCode: string
+      name: string
+      description?: string | null
+      category?: string | null
+      unit?: string | null
+      currentStock?: number
+      minStockLevel?: number | null
+      maxStockLevel?: number | null
+      unitCost?: number | null
+      location?: string | null
+      supplier?: string | null
+      brand?: string | null
+      model?: string | null
+      sku?: string | null
+      barcode?: string | null
+      remarks?: string | null
+    }) => {
+      const baseUrl = getApiBaseUrl()
+      const token = await getAuthToken()
+      const headers: HeadersInit = { 
+        "Content-Type": "application/json",
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      
+      const response = await fetch(`${baseUrl}/api/inventory`, {
+        method: "POST",
+        headers,
+        credentials: 'include',
+        body: JSON.stringify(itemData),
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || error.error || "Failed to create inventory item")
+      }
+      return response.json()
+    }
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -1644,9 +1616,23 @@ function InventoryPageContent() {
           }
 
           // Create item with final item code
-          await createInventoryItem({
-            ...item,
+          await createItem({
             itemCode: finalItemCode,
+            name: item.name,
+            description: item.description,
+            category: item.category,
+            unit: item.unit,
+            currentStock: item.currentStock,
+            minStockLevel: item.minStockLevel,
+            maxStockLevel: item.maxStockLevel,
+            unitCost: item.unitCost,
+            location: item.location,
+            supplier: item.supplier,
+            brand: item.brand,
+            model: item.model,
+            sku: item.sku,
+            barcode: item.barcode,
+            remarks: item.remarks,
           })
           successCount++
         } catch (error) {
@@ -2313,9 +2299,18 @@ function InventoryPageContent() {
         }}
         onSave={(data) => {
           if (isEditDialogOpen && selectedItem) {
-            updateMutation.mutate({ id: selectedItem.id, data })
+            updateMutation.mutate({ 
+              id: selectedItem.id, 
+              itemCode: data.itemCode || selectedItem.itemCode,
+              name: data.name || selectedItem.name,
+              ...data 
+            })
           } else {
-            createMutation.mutate(data)
+            if (!data.itemCode || !data.name) {
+              toast.error('Item code and name are required')
+              return
+            }
+            createMutation.mutate(data as { itemCode: string; name: string; [key: string]: unknown })
           }
         }}
         item={selectedItem as InventoryItemType | null}
@@ -2329,7 +2324,7 @@ function InventoryPageContent() {
         onOpenChange={setIsDeleteDialogOpen}
         onConfirm={() => {
           if (selectedItem) {
-            deleteMutation.mutate(selectedItem.id)
+            deleteMutation.mutate({ id: selectedItem.id, permanent: false })
           }
         }}
         itemName={selectedItem?.itemCode || ''}

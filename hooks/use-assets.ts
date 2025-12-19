@@ -625,6 +625,7 @@ export const useDeleteAsset = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["assets"] })
       queryClient.invalidateQueries({ queryKey: ["assets-summary"] })
+      queryClient.invalidateQueries({ queryKey: ["deletedAssets"] })
     },
   })
 }
@@ -794,6 +795,7 @@ export const useBulkDeleteAssets = () => {
       queryClient.invalidateQueries({ queryKey: ["assets"] })
       queryClient.invalidateQueries({ queryKey: ["assets-summary"] })
       queryClient.invalidateQueries({ queryKey: ["assets-list"] })
+      queryClient.invalidateQueries({ queryKey: ["deletedAssets"] })
     },
   })
 }

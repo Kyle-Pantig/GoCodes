@@ -183,8 +183,24 @@ export default function AddAssetPage() {
     formData.append('file', file)
     formData.append('assetTagId', assetTagId)
 
-    const response = await fetch('/api/assets/upload-image', {
+    const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+      ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+      : ''
+    const url = `${baseUrl}/api/assets/upload-image`
+    
+    // Get auth token
+    const { createClient } = await import('@/lib/supabase-client')
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers: HeadersInit = {}
+    if (baseUrl && session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`
+    }
+
+    const response = await fetch(url, {
       method: 'POST',
+      headers,
+      credentials: 'include',
       body: formData,
     })
 
@@ -196,16 +212,31 @@ export default function AddAssetPage() {
 
   // Link an existing image URL to a new asset
   const linkExistingImage = async (imageUrl: string, assetTagId: string): Promise<void> => {
-    const response = await fetch('/api/assets/upload-image', {
+    const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+      ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+      : ''
+    const url = `${baseUrl}/api/assets/upload-image`
+    
+    // Get auth token
+    const { createClient } = await import('@/lib/supabase-client')
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    }
+    if (baseUrl && session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`
+    }
+    
+    const response = await fetch(url, {
       method: 'POST',
+      headers,
+      credentials: 'include',
       body: JSON.stringify({
         imageUrl,
         assetTagId,
         linkExisting: true,
       }),
-      headers: {
-        'Content-Type': 'application/json',
-      },
     })
 
     if (!response.ok) {
@@ -219,8 +250,24 @@ export default function AddAssetPage() {
     formData.append('file', file)
     formData.append('assetTagId', assetTagId)
 
-    const response = await fetch('/api/assets/upload-document', {
+    const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+      ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+      : ''
+    const url = `${baseUrl}/api/assets/upload-document`
+    
+    // Get auth token
+    const { createClient } = await import('@/lib/supabase-client')
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers: HeadersInit = {}
+    if (baseUrl && session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`
+    }
+
+    const response = await fetch(url, {
       method: 'POST',
+      headers,
+      credentials: 'include',
       body: formData,
     })
 
@@ -232,16 +279,31 @@ export default function AddAssetPage() {
 
   // Link an existing document URL to a new asset
   const linkExistingDocument = async (documentUrl: string, assetTagId: string): Promise<void> => {
-    const response = await fetch('/api/assets/upload-document', {
+    const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+      ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+      : ''
+    const url = `${baseUrl}/api/assets/upload-document`
+    
+    // Get auth token
+    const { createClient } = await import('@/lib/supabase-client')
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    }
+    if (baseUrl && session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`
+    }
+    
+    const response = await fetch(url, {
       method: 'POST',
+      headers,
+      credentials: 'include',
       body: JSON.stringify({
         documentUrl,
         assetTagId,
         linkExisting: true,
       }),
-      headers: {
-        'Content-Type': 'application/json',
-      },
     })
 
     if (!response.ok) {

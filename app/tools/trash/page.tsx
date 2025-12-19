@@ -110,8 +110,35 @@ const getStatusBadge = (status: string | null) => {
 
 async function fetchDeletedAssets(search?: string, searchType: string = 'unified') {
   // Fetch all deleted assets without pagination
-  const response = await fetch(`/api/assets?includeDeleted=true&page=1&pageSize=10000`)
-  if (!response.ok) throw new Error('Failed to fetch deleted assets')
+  const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+    ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+    : ''
+  const url = `${baseUrl}/api/assets?includeDeleted=true&page=1&pageSize=10000`
+  
+  // Get auth token
+  const { createClient } = await import('@/lib/supabase-client')
+  const supabase = createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  const headers: HeadersInit = {}
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`
+  }
+  
+  const response = await fetch(url, {
+    credentials: 'include',
+    headers,
+  })
+  if (!response.ok) {
+    const errorText = await response.text()
+    let errorMessage = 'Failed to fetch deleted assets'
+    try {
+      const errorData = JSON.parse(errorText)
+      errorMessage = errorData.detail || errorData.error || errorMessage
+    } catch {
+      errorMessage = errorText || errorMessage
+    }
+    throw new Error(errorMessage)
+  }
   const data = await response.json()
   // Filter to only show soft-deleted assets
   let allDeletedAssets = data.assets?.filter((asset: { isDeleted?: boolean }) => asset.isDeleted) || []
@@ -181,6 +208,9 @@ function TrashPageContent() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedAsset, setSelectedAsset] = useState<DeletedAsset | null>(null)
   const [rowSelection, setRowSelection] = useState({})
+  
+  // Check if any items are selected (computed from rowSelection directly)
+  const hasSelectedItems = Object.keys(rowSelection).length > 0
   const [isBulkRestoreDialogOpen, setIsBulkRestoreDialogOpen] = useState(false)
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
   const [isBulkRestoring, setIsBulkRestoring] = useState(false)
@@ -301,12 +331,35 @@ function TrashPageContent() {
   // Permanent delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (assetId: string) => {
-      const response = await fetch(`/api/assets/${assetId}?permanent=true`, {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/${assetId}?permanent=true`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {}
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
         method: 'DELETE',
+        credentials: 'include',
+        headers,
       })
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to permanently delete asset')
+        const errorText = await response.text()
+        let errorMessage = 'Failed to permanently delete asset'
+        try {
+          const errorData = JSON.parse(errorText)
+          errorMessage = errorData.detail || errorData.error || errorMessage
+        } catch {
+          errorMessage = errorText || errorMessage
+        }
+        throw new Error(errorMessage)
       }
       return response.json()
     },
@@ -655,13 +708,16 @@ function TrashPageContent() {
       enableHiding: false,
       enableSorting: false,
       header: () => <div className="text-center">Actions</div>,
-      cell: ({ row }) => (
+      cell: ({ row }) => {
+        const isDisabled = hasSelectedItems
+        return (
         <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button 
                 variant="ghost" 
                 className="h-8 w-8 p-0 rounded-full"
+                  disabled={isDisabled}
               >
                 <span className="sr-only">Open menu</span>
                 <MoreHorizontal className="h-4 w-4" />
@@ -671,6 +727,7 @@ function TrashPageContent() {
               <DropdownMenuItem
                 onClick={() => handleRestore(row.original)}
                 className="cursor-pointer"
+                  disabled={isDisabled}
               >
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Restore
@@ -678,6 +735,7 @@ function TrashPageContent() {
               <DropdownMenuItem
                 onClick={() => handleDelete(row.original)}
                 className="cursor-pointer text-destructive"
+                  disabled={isDisabled}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Permanently
@@ -685,9 +743,10 @@ function TrashPageContent() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      ),
+        )
     },
-  ], [handleRestore, handleDelete])
+    },
+  ], [handleRestore, handleDelete, hasSelectedItems])
 
   // Track initial mount for animations - only animate stagger on first load
   useEffect(() => {
@@ -734,42 +793,59 @@ function TrashPageContent() {
     const selectedArray = Array.from(selectedAssets)
     setBulkProgress({ current: 0, total: selectedArray.length })
 
-    try {
-      for (let i = 0; i < selectedArray.length; i++) {
-        const assetId = selectedArray[i]
-        const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
-          ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
-          : ''
-        const url = `${baseUrl}/api/assets/${assetId}/restore`
-        
-        // Get auth token
-        const { createClient } = await import('@/lib/supabase-client')
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        const headers: HeadersInit = {}
-        if (session?.access_token) {
-          headers['Authorization'] = `Bearer ${session.access_token}`
+    // Simulate progress during API call
+    const progressInterval = setInterval(() => {
+      setBulkProgress(prev => {
+        if (prev.current < prev.total * 0.9) {
+          // Gradually increase to 90% while waiting for response
+          return { ...prev, current: Math.min(prev.current + Math.max(1, Math.floor(prev.total / 20)), Math.floor(prev.total * 0.9)) }
         }
-        
-        const response = await fetch(url, {
-          method: 'PATCH',
-          credentials: 'include',
-          headers,
-        })
-        if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.error || `Failed to restore asset ${assetId}`)
-        }
-        setBulkProgress({ current: i + 1, total: selectedArray.length })
-      }
+        return prev
+      })
+    }, 100)
 
-      toast.success(`Successfully restored ${selectedArray.length} asset(s)`)
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/bulk-restore`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify({ ids: selectedArray }),
+      })
+      
+      clearInterval(progressInterval)
+      
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || error.message || 'Failed to restore assets')
+      }
+      
+      const result = await response.json()
+      setBulkProgress({ current: selectedArray.length, total: selectedArray.length })
+
+      toast.success(result.message || `Successfully restored ${result.restoredCount || selectedArray.length} asset(s)`)
       setRowSelection({})
       setIsBulkRestoreDialogOpen(false)
       setIsBulkRestoring(false)
       queryClient.invalidateQueries({ queryKey: ['deletedAssets'] })
       queryClient.invalidateQueries({ queryKey: ['assets'] })
     } catch (error) {
+      clearInterval(progressInterval)
       console.error('Bulk restore error:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to restore assets')
       setIsBulkRestoring(false)
@@ -783,25 +859,65 @@ function TrashPageContent() {
     const selectedArray = Array.from(selectedAssets)
     setBulkProgress({ current: 0, total: selectedArray.length })
 
-    try {
-      for (let i = 0; i < selectedArray.length; i++) {
-        const assetId = selectedArray[i]
-        const response = await fetch(`/api/assets/${assetId}?permanent=true`, {
-          method: 'DELETE',
-        })
-        if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.error || `Failed to permanently delete asset ${assetId}`)
+    // Simulate progress during API call
+    const progressInterval = setInterval(() => {
+      setBulkProgress(prev => {
+        if (prev.current < prev.total * 0.9) {
+          // Gradually increase to 90% while waiting for response
+          return { ...prev, current: Math.min(prev.current + Math.max(1, Math.floor(prev.total / 20)), Math.floor(prev.total * 0.9)) }
         }
-        setBulkProgress({ current: i + 1, total: selectedArray.length })
-      }
+        return prev
+      })
+    }, 100)
 
-      toast.success(`Successfully permanently deleted ${selectedArray.length} asset(s)`)
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/bulk-delete`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = { 'Content-Type': 'application/json' }
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify({ 
+          ids: selectedArray,
+          permanent: true 
+        }),
+      })
+      
+      clearInterval(progressInterval)
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        let errorMessage = 'Failed to permanently delete assets'
+        try {
+          const errorData = JSON.parse(errorText)
+          errorMessage = errorData.detail || errorData.error || errorMessage
+        } catch {
+          errorMessage = errorText || errorMessage
+        }
+        throw new Error(errorMessage)
+      }
+      
+      const data = await response.json()
+      setBulkProgress({ current: selectedArray.length, total: selectedArray.length })
+      toast.success(data.message || `Successfully permanently deleted ${selectedArray.length} asset(s)`)
       setRowSelection({})
       setIsBulkDeleteDialogOpen(false)
       setIsBulkDeleting(false)
       queryClient.invalidateQueries({ queryKey: ['deletedAssets'] })
     } catch (error) {
+      clearInterval(progressInterval)
       console.error('Bulk delete error:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to permanently delete assets')
       setIsBulkDeleting(false)

@@ -13,10 +13,27 @@ from models.departments import (
 )
 from auth import verify_auth
 from database import prisma
+from typing import List
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/departments", tags=["departments"])
+
+async def check_permission(user_id: str, permission: str) -> bool:
+    """Check if user has a specific permission"""
+    try:
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        if not asset_user or not asset_user.isActive:
+            return False
+        return getattr(asset_user, permission, False)
+    except Exception:
+        return False
+
+class BulkDeleteRequest(BaseModel):
+    ids: List[str]
 
 @router.get("", response_model=DepartmentsResponse)
 async def get_departments(
@@ -167,6 +184,73 @@ async def update_department(
     except Exception as e:
         logger.error(f"Error updating department: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update department")
+
+@router.delete("/bulk-delete")
+async def bulk_delete_departments(
+    request: BulkDeleteRequest,
+    auth: dict = Depends(verify_auth)
+):
+    """Bulk delete departments"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        if not request.ids or len(request.ids) == 0:
+            raise HTTPException(status_code=400, detail="Invalid request. Expected an array of department IDs.")
+        
+        # Check which departments have associated assets
+        departments = await prisma.assetsdepartment.find_many(
+            where={"id": {"in": request.ids}}
+        )
+        
+        departments_with_assets: List[str] = []
+        departments_to_delete: List[str] = []
+        
+        # Check each department for associated assets
+        for department in departments:
+            assets_count = await prisma.assets.count(
+                where={
+                    "department": department.name,
+                    "isDeleted": False
+                },
+                take=1
+            )
+            
+            if assets_count > 0:
+                departments_with_assets.append(department.name)
+            else:
+                departments_to_delete.append(department.id)
+        
+        # If any departments have associated assets, return error
+        if departments_with_assets:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot delete department(s) with associated assets: {', '.join(departments_with_assets)}. Please reassign or delete assets first.",
+            )
+        
+        # Delete all departments that don't have associated assets
+        result = await prisma.assetsdepartment.delete_many(
+            where={"id": {"in": departments_to_delete}}
+        )
+        
+        return {
+            "success": True,
+            "deletedCount": result,
+            "message": f"{result} department(s) deleted successfully"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_str = str(e).lower()
+        if 'p1001' in error_str or 'p2024' in error_str or 'connection' in error_str:
+            raise HTTPException(
+                status_code=503,
+                detail="Database connection limit reached. Please try again in a moment."
+            )
+        logger.error(f"Error bulk deleting departments: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete departments")
 
 @router.delete("/{department_id}")
 async def delete_department(

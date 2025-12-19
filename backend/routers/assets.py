@@ -1,12 +1,14 @@
 """
 Assets API router
 """
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, UploadFile, File, Form, Request
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 from decimal import Decimal
 import logging
 import asyncio
+import os
+from supabase import create_client, Client
 
 from models.assets import (
     Asset,
@@ -19,6 +21,8 @@ from models.assets import (
     DeleteResponse,
     BulkDeleteRequest,
     BulkDeleteResponse,
+    BulkRestoreRequest,
+    BulkRestoreResponse,
     PaginationInfo,
     SummaryInfo,
     CategoryInfo,
@@ -28,7 +32,7 @@ from models.assets import (
     LeaseInfo,
     AuditHistoryInfo
 )
-from auth import verify_auth
+from auth import verify_auth, SUPABASE_URL, SUPABASE_ANON_KEY
 from database import prisma
 
 logger = logging.getLogger(__name__)
@@ -213,7 +217,7 @@ async def get_assets(
     withMaintenance: bool = Query(False),
     includeDeleted: bool = Query(False),
     page: int = Query(1, ge=1),
-    pageSize: int = Query(50, ge=1, le=1000),
+    pageSize: int = Query(50, ge=1, le=10000),
     searchFields: Optional[str] = Query(None),
     statuses: bool = Query(False, description="Return only unique statuses"),
     summary: bool = Query(False, description="Return only summary statistics"),
@@ -290,58 +294,71 @@ async def get_assets(
                 )
             )
         
+        # Optimize includes for deleted assets - they don't need heavy relations
+        # For deleted assets, we only need basic info (category, subCategory)
+        # For active assets, include all relations
+        include_dict: Dict[str, Any] = {
+            "category": True,
+            "subCategory": True,
+        }
+        
+        # Only include heavy relations for non-deleted assets or when specifically requested
+        if not includeDeleted or withMaintenance:
+            include_dict.update({
+                "checkouts": {
+                    "include": {
+                        "employeeUser": True
+                    }
+                },
+                "leases": {
+                    "where": {
+                        "OR": [
+                            {"leaseEndDate": None},
+                            {"leaseEndDate": {"gte": datetime.now()}}
+                        ]
+                    },
+                    "include": {
+                        "returns": True
+                    }
+                },
+                "auditHistory": True,
+            })
+            if withMaintenance:
+                include_dict["maintenances"] = {
+                    "include": {
+                        "inventoryItems": {
+                            "include": {
+                                "inventoryItem": True
+                            }
+                        }
+                    }
+                }
+        
         # Get total count and assets in parallel
         total_count, assets_data = await asyncio.gather(
             prisma.assets.count(where=where_clause),
             prisma.assets.find_many(
                 where=where_clause,
-                include={
-                    "category": True,
-                    "subCategory": True,
-                    "checkouts": {
-                        "include": {
-                            "employeeUser": True
-                        }
-                    },
-                    "leases": {
-                        "where": {
-                            "OR": [
-                                {"leaseEndDate": None},
-                                {"leaseEndDate": {"gte": datetime.now()}}
-                            ]
-                        },
-                        "include": {
-                            "returns": True
-                        }
-                    },
-                    "auditHistory": True,
-                    **({"maintenances": {
-                        "include": {
-                            "inventoryItems": {
-                                "include": {
-                                    "inventoryItem": True
-                                }
-                            }
-                        }
-                    }} if withMaintenance else {})
-                },
+                include=include_dict,
                 order=[{"createdAt": "desc"}, {"id": "desc"}],
                 skip=skip,
                 take=pageSize
             )
         )
         
-        # Get image counts for all assets
+        # Get image counts for all assets - optimized batch query
         assets_with_image_count = []
+        image_counts = {}
         if assets_data:
             asset_tag_ids = [asset.assetTagId for asset in assets_data]
-            # Note: groupBy might not be available in prisma-client-py, so we'll count manually
-            image_counts = {}
-            for asset_tag_id in asset_tag_ids:
-                count = await prisma.assetsimage.count(
-                    where={"assetTagId": asset_tag_id}
+            # Batch fetch all image counts at once instead of individual queries
+            if asset_tag_ids:
+                all_images = await prisma.assetsimage.find_many(
+                    where={"assetTagId": {"in": asset_tag_ids}}
                 )
-                image_counts[asset_tag_id] = count
+                # Count images per asset tag ID
+                for asset_tag_id in asset_tag_ids:
+                    image_counts[asset_tag_id] = sum(1 for img in all_images if img.assetTagId == asset_tag_id)
         
         # Convert to Asset models
         assets = []
@@ -363,7 +380,7 @@ async def get_assets(
                     )
                 
                 checkouts_list = []
-                if asset_data.checkouts:
+                if hasattr(asset_data, 'checkouts') and asset_data.checkouts:
                     # Sort by checkoutDate descending and take only the first one
                     sorted_checkouts = sorted(
                         asset_data.checkouts,
@@ -386,7 +403,7 @@ async def get_assets(
                         ))
                 
                 leases_list = []
-                if asset_data.leases:
+                if hasattr(asset_data, 'leases') and asset_data.leases:
                     # Sort by leaseStartDate descending and take only the first one
                     sorted_leases = sorted(
                         asset_data.leases,
@@ -407,7 +424,7 @@ async def get_assets(
                         ))
                 
                 audit_history_list = []
-                if asset_data.auditHistory:
+                if hasattr(asset_data, 'auditHistory') and asset_data.auditHistory:
                     # Sort by auditDate descending and take only the first 5
                     sorted_audits = sorted(
                         asset_data.auditHistory,
@@ -1127,6 +1144,2185 @@ async def import_assets(
         )
 
 
+# Helper functions for documents
+def get_supabase_admin_client() -> Client:
+    """Get Supabase admin client for storage operations"""
+    supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not supabase_service_key:
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase service role key not configured"
+        )
+    return create_client(SUPABASE_URL, supabase_service_key)
+
+
+async def check_permission(user_id: str, permission: str) -> bool:
+    """Check if user has a specific permission"""
+    try:
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        if not asset_user or not asset_user.isActive:
+            return False
+        return getattr(asset_user, permission, False)
+    except Exception:
+        return False
+
+
+# Document routes - must be registered before /{asset_id} route
+@router.get("/documents")
+async def get_documents(
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(50, ge=1, le=1000),
+    auth: dict = Depends(verify_auth)
+):
+    """Get all documents with pagination"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Allow viewing documents without canManageMedia permission
+        # Users can view but actions (upload/delete) are controlled by client-side checks
+        
+        supabase_admin = get_supabase_admin_client()
+        
+        # Helper function to recursively list all files in a folder
+        async def list_all_files(bucket: str, folder: str = "") -> List[Dict[str, Any]]:
+            all_files: List[Dict[str, Any]] = []
+            
+            try:
+                response = supabase_admin.storage.from_(bucket).list(folder, {
+                    "limit": 1000
+                })
+                
+                if not response:
+                    return all_files
+                
+                for item in response:
+                    item_path = f"{folder}/{item['name']}" if folder else item['name']
+                    
+                    # Check if it's a folder by checking if id is missing
+                    is_folder = item.get('id') is None
+                    
+                    if is_folder:
+                        # It's a folder, recursively list files inside
+                        sub_files = await list_all_files(bucket, item_path)
+                        all_files.extend(sub_files)
+                    else:
+                        # Include all files
+                        all_files.append({
+                            "name": item['name'],
+                            "id": item.get('id') or item_path,
+                            "created_at": item.get('created_at') or datetime.now().isoformat(),
+                            "path": item_path,
+                            "metadata": item.get('metadata', {})
+                        })
+            except Exception as e:
+                logger.warning(f"Error listing files from {bucket}/{folder}: {e}")
+            
+            return all_files
+        
+        # Fetch fresh file list
+        # List files from assets_documents folder in assets bucket
+        assets_files = await list_all_files('assets', 'assets_documents')
+        
+        # List files from assets_documents folder in file-history bucket
+        file_history_files = await list_all_files('file-history', 'assets/assets_documents')
+        
+        # Combine files from both buckets
+        combined_files: List[Dict[str, Any]] = []
+        
+        # Add files from assets bucket (only from assets_documents folder)
+        for file in assets_files:
+            if file['path'].startswith('assets_documents/') and not file['path'].startswith('assets_images/'):
+                combined_files.append({
+                    **file,
+                    "bucket": 'assets',
+                })
+        
+        # Add files from file-history bucket (only from assets/assets_documents folder)
+        for file in file_history_files:
+            if file['path'].startswith('assets/assets_documents/') and not file['path'].startswith('assets/assets_images/'):
+                combined_files.append({
+                    **file,
+                    "bucket": 'file-history',
+                })
+        
+        # Sort by created_at descending
+        combined_files.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        
+        # Paginate
+        total_count = len(combined_files)
+        skip = (page - 1) * pageSize
+        paginated_files = combined_files[skip:skip + pageSize]
+        
+        # Prepare all file data and extract URLs/assetTagIds
+        file_data = []
+        for file in paginated_files:
+            try:
+                url_data = supabase_admin.storage.from_(file['bucket']).get_public_url(file['path'])
+                public_url = url_data if isinstance(url_data, str) else url_data.get('publicUrl', '') if isinstance(url_data, dict) else ''
+                
+                # Extract full filename and assetTagId
+                path_parts = file['path'].split('/')
+                actual_file_name = path_parts[-1]
+                
+                # Extract assetTagId - filename format is: assetTagId-timestamp.ext
+                file_name_without_ext = actual_file_name.rsplit('.', 1)[0] if '.' in actual_file_name else actual_file_name
+                import re
+                timestamp_match = re.search(r'-(20\d{2}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)$', file_name_without_ext)
+                asset_tag_id = file_name_without_ext[:timestamp_match.start()] if timestamp_match else file_name_without_ext.split('-')[0] if '-' in file_name_without_ext else file_name_without_ext
+                
+                # If the extracted assetTagId is "documents", it's a standalone document upload
+                if asset_tag_id == 'documents':
+                    asset_tag_id = ''
+                
+                file_data.append({
+                    "file": file,
+                    "publicUrl": public_url,
+                    "assetTagId": asset_tag_id,
+                    "actualFileName": actual_file_name,
+                    "storageSize": file.get('metadata', {}).get('size') if isinstance(file.get('metadata'), dict) else None,
+                    "storageMimeType": file.get('metadata', {}).get('mimetype') if isinstance(file.get('metadata'), dict) else None,
+                })
+            except Exception as e:
+                logger.warning(f"Error processing file {file.get('path', 'unknown')}: {e}")
+                continue
+        
+        # Batch query: Get all linked documents in a single query
+        all_public_urls = [fd['publicUrl'] for fd in file_data if fd['publicUrl']]
+        
+        # Normalize URLs by removing query parameters and fragments
+        def normalize_url(url: str) -> str:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            except:
+                return url.split('?')[0].split('#')[0]
+        
+        normalized_public_urls = [normalize_url(url) for url in all_public_urls]
+        
+        # Build OR conditions for URL matching
+        url_conditions = []
+        if all_public_urls:
+            url_conditions.append({"documentUrl": {"in": all_public_urls}})
+        if normalized_public_urls:
+            url_conditions.append({"documentUrl": {"in": normalized_public_urls}})
+        
+        # Add filename-based matches
+        for fd in file_data:
+            if fd['actualFileName']:
+                url_conditions.append({"documentUrl": {"contains": fd['actualFileName']}})
+        
+        # Query linked documents
+        # Note: Prisma Python doesn't support 'select', so we fetch all fields
+        all_linked_documents = []
+        if url_conditions:
+            try:
+                all_linked_documents_raw = await prisma.assetsdocument.find_many(
+                    where={"OR": url_conditions}
+                )
+                # Extract only the fields we need
+                all_linked_documents = [
+                    {
+                        "assetTagId": doc.assetTagId,
+                        "documentUrl": doc.documentUrl,
+                        "documentType": doc.documentType,
+                        "documentSize": doc.documentSize,
+                        "fileName": doc.fileName,
+                        "mimeType": doc.mimeType,
+                    }
+                    for doc in all_linked_documents_raw
+                ]
+            except Exception as e:
+                logger.warning(f"Error querying linked documents: {e}")
+        
+        # Create maps for quick lookup
+        document_url_to_asset_tag_ids: Dict[str, set] = {}
+        asset_tag_id_to_document_urls: Dict[str, set] = {}
+        document_url_to_metadata: Dict[str, Dict[str, Any]] = {}
+        
+        for doc in all_linked_documents:
+            if not doc.get('assetTagId') or not doc.get('documentUrl'):
+                continue
+            
+            doc_url = doc['documentUrl']
+            
+            # Store metadata
+            document_url_to_metadata[doc_url] = {
+                "documentType": doc.get('documentType'),
+                "documentSize": doc.get('documentSize'),
+                "fileName": doc.get('fileName'),
+                "mimeType": doc.get('mimeType'),
+            }
+            
+            # Map by documentUrl
+            if doc_url not in document_url_to_asset_tag_ids:
+                document_url_to_asset_tag_ids[doc_url] = set()
+            document_url_to_asset_tag_ids[doc_url].add(doc['assetTagId'])
+            
+            # Map by assetTagId
+            if doc['assetTagId'] not in asset_tag_id_to_document_urls:
+                asset_tag_id_to_document_urls[doc['assetTagId']] = set()
+            asset_tag_id_to_document_urls[doc['assetTagId']].add(doc_url)
+        
+        # Also check for filename matches
+        for fd in file_data:
+            asset_tag_id = fd['assetTagId']
+            actual_file_name = fd['actualFileName']
+            if not asset_tag_id:
+                continue
+            
+            matching_urls = [
+                url for url in asset_tag_id_to_document_urls.get(asset_tag_id, [])
+                if actual_file_name.lower() in url.lower()
+            ]
+            
+            for url in matching_urls:
+                if url not in document_url_to_asset_tag_ids:
+                    document_url_to_asset_tag_ids[url] = set()
+                document_url_to_asset_tag_ids[url].add(asset_tag_id)
+        
+        # Get all unique asset tag IDs that are linked
+        all_linked_asset_tag_ids = set()
+        for fd in file_data:
+            tag_ids = document_url_to_asset_tag_ids.get(fd['publicUrl'], set())
+            all_linked_asset_tag_ids.update(tag_ids)
+        
+        # Batch query: Get all asset deletion status
+        linked_assets_info_map: Dict[str, bool] = {}
+        if all_linked_asset_tag_ids:
+            try:
+                assets = await prisma.assets.find_many(
+                    where={"assetTagId": {"in": list(all_linked_asset_tag_ids)}},
+                    select={"assetTagId": True, "isDeleted": True}
+                )
+                for asset in assets:
+                    linked_assets_info_map[asset['assetTagId']] = asset.get('isDeleted', False)
+            except Exception as e:
+                logger.warning(f"Error querying assets: {e}")
+        
+        # Calculate total storage used from ALL files (not just paginated)
+        documents_files = [f for f in combined_files if f['path'].startswith('assets_documents/') or f['path'].startswith('assets/assets_documents/')]
+        all_file_data = []
+        for file in documents_files:
+            try:
+                url_data = supabase_admin.storage.from_(file['bucket']).get_public_url(file['path'])
+                public_url = url_data if isinstance(url_data, str) else url_data.get('publicUrl', '') if isinstance(url_data, dict) else ''
+                all_file_data.append({
+                    "publicUrl": public_url,
+                    "storageSize": file.get('metadata', {}).get('size') if isinstance(file.get('metadata'), dict) else None,
+                })
+            except Exception:
+                continue
+        
+        # Get metadata for all files from database
+        all_file_public_urls = [fd['publicUrl'] for fd in all_file_data if fd['publicUrl']]
+        all_db_documents = []
+        if all_file_public_urls:
+            try:
+                # Note: Prisma Python doesn't support 'select', so we fetch all fields
+                all_db_documents_raw = await prisma.assetsdocument.find_many(
+                    where={"documentUrl": {"in": all_file_public_urls}}
+                )
+                # Extract only the fields we need
+                all_db_documents = [
+                    {
+                        "documentUrl": doc.documentUrl,
+                        "documentType": doc.documentType,
+                        "documentSize": doc.documentSize,
+                        "fileName": doc.fileName,
+                        "mimeType": doc.mimeType,
+                    }
+                    for doc in all_db_documents_raw
+                ]
+            except Exception as e:
+                logger.warning(f"Error querying all documents for storage calculation: {e}")
+        
+        all_document_url_to_metadata: Dict[str, Dict[str, Any]] = {}
+        for doc in all_db_documents:
+            if doc.get('documentUrl'):
+                all_document_url_to_metadata[doc['documentUrl']] = {
+                    "documentType": doc.get('documentType'),
+                    "documentSize": doc.get('documentSize'),
+                    "fileName": doc.get('fileName'),
+                    "mimeType": doc.get('mimeType'),
+                }
+        
+        # Calculate total storage used
+        total_storage_used = sum(
+            (fd.get('storageSize') or all_document_url_to_metadata.get(fd['publicUrl'], {}).get('documentSize') or 0)
+            for fd in all_file_data
+        )
+        
+        # Build the response (only for paginated documents)
+        documents = []
+        for fd in file_data:
+            # Find matching database documentUrl
+            normalized_public_url = normalize_url(fd['publicUrl'])
+            matching_db_document_url = None
+            
+            for db_document_url in document_url_to_asset_tag_ids.keys():
+                normalized_db_url = normalize_url(db_document_url)
+                if db_document_url == fd['publicUrl'] or normalized_db_url == normalized_public_url:
+                    matching_db_document_url = db_document_url
+                    break
+            
+            # Also check by filename if no exact match found
+            if not matching_db_document_url and fd['actualFileName']:
+                for db_document_url in document_url_to_asset_tag_ids.keys():
+                    if fd['actualFileName'].lower() in db_document_url.lower():
+                        matching_db_document_url = db_document_url
+                        break
+            
+            # Use database documentUrl if found, otherwise use storage publicUrl
+            final_document_url = matching_db_document_url or fd['publicUrl']
+            
+            # Get linked asset tag IDs
+            linked_asset_tag_ids = list(
+                document_url_to_asset_tag_ids.get(final_document_url, set()) or
+                document_url_to_asset_tag_ids.get(fd['publicUrl'], set()) or
+                []
+            )
+            linked_assets_info = [
+                {"assetTagId": tag_id, "isDeleted": linked_assets_info_map.get(tag_id, False)}
+                for tag_id in linked_asset_tag_ids
+            ]
+            has_deleted_asset = any(info['isDeleted'] for info in linked_assets_info)
+            
+            # Get metadata
+            db_metadata = document_url_to_metadata.get(final_document_url) or document_url_to_metadata.get(fd['publicUrl']) or {}
+            
+            # Prefer storage metadata over database metadata
+            document_type = db_metadata.get('documentType')
+            document_size = fd.get('storageSize') or db_metadata.get('documentSize')
+            file_name = db_metadata.get('fileName') or fd['actualFileName']
+            mime_type = fd.get('storageMimeType') or db_metadata.get('mimeType')
+            
+            documents.append({
+                "id": fd['file'].get('id') or fd['file']['path'],
+                "documentUrl": final_document_url,
+                "assetTagId": fd['assetTagId'],
+                "fileName": file_name,
+                "createdAt": fd['file'].get('created_at') or datetime.now().isoformat(),
+                "isLinked": len(linked_asset_tag_ids) > 0,
+                "linkedAssetTagId": linked_asset_tag_ids[0] if linked_asset_tag_ids else None,
+                "linkedAssetTagIds": linked_asset_tag_ids,
+                "linkedAssetsInfo": linked_assets_info,
+                "assetIsDeleted": has_deleted_asset,
+                "documentType": document_type,
+                "documentSize": document_size,
+                "mimeType": mime_type,
+            })
+        
+        return {
+            "documents": documents,
+            "pagination": {
+                "total": total_count,
+                "page": page,
+                "pageSize": pageSize,
+                "totalPages": (total_count + pageSize - 1) // pageSize if pageSize > 0 else 0,
+            },
+            "storage": {
+                "used": total_storage_used,
+                "limit": 5 * 1024 * 1024,  # 5MB limit (temporary)
+            },
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching documents: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch documents")
+
+
+@router.post("/documents/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    documentType: Optional[str] = Form(None),
+    auth: dict = Depends(verify_auth)
+):
+    """Upload a document to storage"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check media permission
+        has_permission = await check_permission(user_id, "canManageMedia")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canManageMedia required")
+        
+        # Validate file
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No file provided")
+        
+        # Validate file type
+        allowed_types = [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'text/plain',
+            'text/csv',
+            'application/rtf',
+            'image/jpeg',
+            'image/jpg',
+            'image/png',
+            'image/gif',
+            'image/webp',
+        ]
+        allowed_extensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv', '.rtf', '.jpg', '.jpeg', '.png', '.gif', '.webp']
+        
+        file_extension = '.' + file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+        
+        if file.content_type not in allowed_types and file_extension not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Only PDF, DOC, DOCX, XLS, XLSX, TXT, CSV, RTF, JPEG, PNG, GIF, and WebP files are allowed."
+            )
+        
+        # Validate file size (max 5MB per file)
+        max_file_size = 5 * 1024 * 1024  # 5MB
+        file_content = await file.read()
+        file_size = len(file_content)
+        
+        if file_size > max_file_size:
+            raise HTTPException(
+                status_code=400,
+                detail="File size too large. Maximum size is 5MB."
+            )
+        
+        # Check storage limit (5MB total - temporary)
+        storage_limit = 5 * 1024 * 1024  # 5MB limit
+        
+        supabase_admin = get_supabase_admin_client()
+        
+        try:
+            # List all files to calculate total size
+            async def list_all_files(bucket: str, folder: str = "") -> List[Dict[str, Any]]:
+                all_files: List[Dict[str, Any]] = []
+                try:
+                    response = supabase_admin.storage.from_(bucket).list(folder, {"limit": 1000})
+                    if not response:
+                        return all_files
+                    for item in response:
+                        item_path = f"{folder}/{item['name']}" if folder else item['name']
+                        is_folder = item.get('id') is None
+                        if is_folder:
+                            sub_files = await list_all_files(bucket, item_path)
+                            all_files.extend(sub_files)
+                        else:
+                            all_files.append({
+                                "metadata": item.get('metadata', {}),
+                                "path": item_path
+                            })
+                except Exception:
+                    pass
+                return all_files
+            
+            assets_files = await list_all_files('assets', '')
+            file_history_files = await list_all_files('file-history', 'assets')
+            
+            # Calculate storage from files
+            current_storage_used = 0
+            for f in assets_files + file_history_files:
+                if isinstance(f.get('metadata'), dict) and f['metadata'].get('size'):
+                    current_storage_used += f['metadata']['size']
+            
+            # Also check database for documents that might have size info
+            try:
+                db_documents = await prisma.assetsdocument.find_many(
+                    select={"documentUrl": True, "documentSize": True}
+                )
+                storage_sizes = {f.get('metadata', {}).get('size') for f in assets_files + file_history_files if isinstance(f.get('metadata'), dict)}
+                for doc in db_documents:
+                    if doc.get('documentSize') and doc['documentSize'] not in storage_sizes:
+                        current_storage_used += doc['documentSize']
+            except Exception:
+                pass
+            
+            if current_storage_used + file_size > storage_limit:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Storage limit exceeded. Current usage: {current_storage_used / (1024 * 1024):.2f}MB / {storage_limit / (1024 * 1024):.2f}MB"
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Could not check storage limit: {e}")
+        
+        # Generate unique file path
+        timestamp = datetime.now().isoformat().replace(':', '-').replace('.', '-')
+        sanitized_extension = file_extension[1:] if file_extension.startswith('.') else file_extension
+        file_name = f"documents-{timestamp}.{sanitized_extension}"
+        file_path = f"assets_documents/{file_name}"
+        
+        # Upload to Supabase storage
+        public_url = None
+        final_file_path = file_path
+        
+        try:
+            # Try assets bucket first
+            response = supabase_admin.storage.from_('assets').upload(
+                file_path,
+                file_content,
+                file_options={"content-type": file.content_type or "application/octet-stream"}
+            )
+            
+            if response:
+                url_data = supabase_admin.storage.from_('assets').get_public_url(file_path)
+                public_url = url_data if isinstance(url_data, str) else (url_data.get('publicUrl', '') if isinstance(url_data, dict) else '')
+        except Exception as upload_error:
+            # If assets bucket doesn't exist, try file-history bucket
+            error_msg = str(upload_error).lower()
+            if 'bucket not found' in error_msg or 'not found' in error_msg:
+                try:
+                    response = supabase_admin.storage.from_('file-history').upload(
+                        file_path,
+                        file_content,
+                        file_options={"content-type": file.content_type or "application/octet-stream"}
+                    )
+                    if response:
+                        url_data = supabase_admin.storage.from_('file-history').get_public_url(file_path)
+                        public_url = url_data if isinstance(url_data, str) else (url_data.get('publicUrl', '') if isinstance(url_data, dict) else '')
+                except Exception as fallback_error:
+                    logger.error(f"Storage upload error: {fallback_error}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to upload document to storage: {fallback_error}"
+                    )
+            else:
+                logger.error(f"Storage upload error: {upload_error}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to upload document to storage: {upload_error}"
+                )
+        
+        if not public_url:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to get public URL for uploaded document"
+            )
+        
+        # Create database record for the document
+        asset_tag_id = 'STANDALONE'
+        
+        try:
+            document_record = await prisma.assetsdocument.create(
+                data={
+                    "assetTagId": asset_tag_id,
+                    "documentUrl": public_url,
+                    "documentType": documentType,
+                    "documentSize": file_size,
+                    "fileName": file.filename,
+                    "mimeType": file.content_type,
+                }
+            )
+            
+            return {
+                "id": str(document_record.id),
+                "filePath": final_file_path,
+                "fileName": file_name,
+                "fileSize": file_size,
+                "mimeType": file.content_type,
+                "publicUrl": public_url,
+                "documentType": documentType,
+                "assetTagId": asset_tag_id,
+            }
+        except Exception as db_error:
+            logger.error(f"Error creating document record in database: {db_error}")
+            # Even if database insert fails, the file is already uploaded to storage
+            return {
+                "error": "Document uploaded to storage but failed to save to database",
+                "details": str(db_error),
+                "filePath": final_file_path,
+                "fileName": file_name,
+                "fileSize": file_size,
+                "mimeType": file.content_type,
+                "publicUrl": public_url,
+                "documentType": documentType,
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading document: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to upload document")
+
+
+@router.get("/documents/{asset_tag_id}")
+async def get_asset_documents(
+    asset_tag_id: str,
+    auth: dict = Depends(verify_auth)
+):
+    """Get all documents for a specific asset by assetTagId"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check view permission
+        has_permission = await check_permission(user_id, "canViewAssets")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canViewAssets required")
+        
+        if not asset_tag_id:
+            raise HTTPException(status_code=400, detail="Asset Tag ID is required")
+        
+        # Fetch documents for the asset
+        try:
+            documents = await prisma.assetsdocument.find_many(
+                where={
+                    "assetTagId": asset_tag_id,
+                },
+                order={"createdAt": "desc"}
+            )
+        except Exception as db_error:
+            error_str = str(db_error).lower()
+            if 'p1001' in error_str or 'p2024' in error_str or 'connection' in error_str:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Database connection limit reached. Please try again in a moment."
+                )
+            raise
+        
+        return {"documents": documents}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching asset documents: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch asset documents")
+
+
+@router.delete("/documents/delete")
+async def delete_document_by_url(
+    documentUrl: str = Query(..., description="Document URL to delete"),
+    auth: dict = Depends(verify_auth)
+):
+    """Delete document by URL - removes all links and optionally deletes from storage"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check media permission
+        has_permission = await check_permission(user_id, "canManageMedia")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canManageMedia required")
+        
+        if not documentUrl:
+            raise HTTPException(status_code=400, detail="Document URL is required")
+        
+        # Find all AssetsDocument records linked to this document URL
+        try:
+            linked_documents = await prisma.assetsdocument.find_many(
+                where={
+                    "documentUrl": documentUrl,
+                }
+            )
+        except Exception as db_error:
+            logger.error(f"Error finding linked documents: {db_error}")
+            raise HTTPException(status_code=500, detail="Failed to find linked documents")
+        
+        # Delete all database links for this document (if any exist)
+        deleted_count = 0
+        if linked_documents:
+            try:
+                result = await prisma.assetsdocument.delete_many(
+                    where={
+                        "documentUrl": documentUrl,
+                    }
+                )
+                deleted_count = result
+            except Exception as db_error:
+                logger.error(f"Error deleting document links: {db_error}")
+                raise HTTPException(status_code=500, detail="Failed to delete document links")
+        
+        # Delete the file from storage
+        try:
+            supabase_admin = get_supabase_admin_client()
+            import re
+            from urllib.parse import unquote
+            
+            # Decode URL-encoded characters
+            decoded_url = unquote(documentUrl)
+            
+            # Extract bucket and path from URL
+            url_match = re.search(r'/storage/v1/object/public/([^/]+)/(.+)', decoded_url)
+            if url_match:
+                bucket = url_match.group(1)
+                path = url_match.group(2)
+                
+                # Remove query parameters from path (e.g., ?t=timestamp)
+                path = path.split('?')[0]
+                
+                # Remove URL-encoding from path
+                path = unquote(path)
+                
+                logger.info(f"Attempting to delete document from storage: bucket={bucket}, path={path}")
+                
+                # Delete from storage
+                delete_response = supabase_admin.storage.from_(bucket).remove([path])
+                
+                # Check for errors in response
+                if delete_response:
+                    if isinstance(delete_response, dict) and delete_response.get('error'):
+                        logger.error(f"Failed to delete document from storage: {documentUrl}, Error: {delete_response['error']}")
+                    else:
+                        logger.info(f"Successfully deleted document from storage: {path}")
+                else:
+                    logger.warning(f"No response from storage deletion for: {path}")
+            else:
+                logger.warning(f"Could not parse storage URL: {documentUrl}")
+        except Exception as storage_error:
+            logger.error(f"Storage deletion error for {documentUrl}: {storage_error}", exc_info=True)
+            # Continue even if storage deletion fails
+        
+        return {
+            "success": True,
+            "message": f"Deleted {deleted_count} link(s)" if deleted_count > 0 else "Deleted successfully",
+            "deletedLinks": deleted_count,
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting document: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete document")
+
+
+@router.delete("/documents/delete/{document_id}")
+async def delete_document_by_id(
+    document_id: str,
+    auth: dict = Depends(verify_auth)
+):
+    """Delete document by ID - removes from database only (keeps file in storage)"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check edit permission
+        has_permission = await check_permission(user_id, "canEditAssets")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canEditAssets required")
+        
+        if not document_id:
+            raise HTTPException(status_code=400, detail="Document ID is required")
+        
+        # Check if document exists first
+        try:
+            existing_document = await prisma.assetsdocument.find_unique(
+                where={
+                    "id": document_id,
+                }
+            )
+        except Exception as db_error:
+            logger.error(f"Error finding document: {db_error}")
+            raise HTTPException(status_code=500, detail="Failed to find document")
+        
+        if not existing_document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Delete document from database only (keep file in bucket)
+        try:
+            await prisma.assetsdocument.delete(
+                where={
+                    "id": document_id,
+                }
+            )
+        except Exception as db_error:
+            error_str = str(db_error).lower()
+            if 'p2025' in error_str or 'record not found' in error_str:
+                raise HTTPException(status_code=404, detail="Document not found")
+            logger.error(f"Error deleting document: {db_error}")
+            raise HTTPException(status_code=500, detail="Failed to delete document")
+        
+        return {
+            "success": True,
+            "message": "Document deleted from database"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting document: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete document")
+
+
+@router.delete("/documents/bulk-delete")
+async def bulk_delete_documents(
+    request: Dict[str, Any],
+    auth: dict = Depends(verify_auth)
+):
+    """Bulk delete documents by URLs"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check media permission
+        has_permission = await check_permission(user_id, "canManageMedia")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canManageMedia required")
+        
+        document_urls = request.get("documentUrls")
+        
+        if not document_urls or not isinstance(document_urls, list) or len(document_urls) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Document URLs array is required"
+            )
+        
+        total_deleted_links = 0
+        supabase_admin = get_supabase_admin_client()
+        
+        # Process each document URL
+        for document_url in document_urls:
+            # Find all AssetsDocument records linked to this document URL
+            try:
+                linked_documents = await prisma.assetsdocument.find_many(
+                    where={
+                        "documentUrl": document_url,
+                    }
+                )
+            except Exception as db_error:
+                logger.warning(f"Error finding linked documents for {document_url}: {db_error}")
+                continue
+            
+            # Delete all database links for this document (if any exist)
+            if linked_documents:
+                try:
+                    await prisma.assetsdocument.delete_many(
+                        where={
+                            "documentUrl": document_url,
+                        }
+                    )
+                    total_deleted_links += len(linked_documents)
+                except Exception as db_error:
+                    logger.warning(f"Error deleting document links for {document_url}: {db_error}")
+                    continue
+            
+            # Delete the file from storage
+            try:
+                import re
+                from urllib.parse import unquote
+                
+                # Decode URL-encoded characters
+                decoded_url = unquote(document_url)
+                
+                # Extract bucket and path from URL
+                url_match = re.search(r'/storage/v1/object/public/([^/]+)/(.+)', decoded_url)
+                if url_match:
+                    bucket = url_match.group(1)
+                    path = url_match.group(2)
+                    
+                    # Remove query parameters from path (e.g., ?t=timestamp)
+                    path = path.split('?')[0]
+                    
+                    # Remove URL-encoding from path
+                    path = unquote(path)
+                    
+                    # Delete from storage
+                    delete_response = supabase_admin.storage.from_(bucket).remove([path])
+                    
+                    # Check for errors in response
+                    if delete_response:
+                        if isinstance(delete_response, dict) and delete_response.get('error'):
+                            logger.error(f"Failed to delete document from storage: {document_url}, Error: {delete_response['error']}")
+                        else:
+                            logger.info(f"Successfully deleted document from storage: {path}")
+                    else:
+                        logger.warning(f"No response from storage deletion for: {path}")
+                else:
+                    logger.warning(f"Could not parse storage URL: {document_url}")
+            except Exception as storage_error:
+                logger.error(f"Storage deletion error for {document_url}: {storage_error}", exc_info=True)
+                # Continue with other files even if one fails
+        
+        return {
+            "success": True,
+            "message": f"Deleted {len(document_urls)} document(s){f' and removed {total_deleted_links} link(s)' if total_deleted_links > 0 else ''}",
+            "deletedCount": len(document_urls),
+            "deletedLinks": total_deleted_links,
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error bulk deleting documents: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to bulk delete documents")
+
+
+@router.get("/images/{asset_tag_id}")
+async def get_asset_images(
+    asset_tag_id: str,
+    auth: dict = Depends(verify_auth)
+):
+    """Get all images for a specific asset tag ID"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+        has_permission = await check_permission(user_id, "canViewAssets")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canViewAssets required")
+
+        if not asset_tag_id:
+            raise HTTPException(status_code=400, detail="Asset Tag ID is required")
+
+        images = await prisma.assetsimage.find_many(
+            where={"assetTagId": asset_tag_id},
+            order={"createdAt": "desc"}
+        )
+
+        return {"images": images}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching asset images: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch asset images")
+
+
+@router.get("/images/bulk")
+async def get_bulk_asset_images(
+    assetTagIds: str = Query(..., description="Comma-separated list of asset tag IDs"),
+    auth: dict = Depends(verify_auth)
+):
+    """Get images for multiple asset tag IDs"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+        has_permission = await check_permission(user_id, "canViewAssets")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canViewAssets required")
+
+        if not assetTagIds:
+            raise HTTPException(status_code=400, detail="assetTagIds parameter is required")
+
+        # Parse comma-separated asset tag IDs
+        asset_tag_ids = [id.strip() for id in assetTagIds.split(',') if id.strip()]
+
+        if len(asset_tag_ids) == 0:
+            return []
+
+        # Fetch images for all assets
+        images = await prisma.assetsimage.find_many(
+            where={"assetTagId": {"in": asset_tag_ids}},
+            order={"createdAt": "desc"},
+            select={"assetTagId": True, "imageUrl": True}
+        )
+
+        # Group images by assetTagId
+        images_by_asset_tag = {}
+        for img in images:
+            if img["assetTagId"] not in images_by_asset_tag:
+                images_by_asset_tag[img["assetTagId"]] = []
+            images_by_asset_tag[img["assetTagId"]].append(img["imageUrl"])
+
+        # Return array of { assetTagId, images: [{ imageUrl }] }
+        result = [
+            {
+                "assetTagId": asset_tag_id,
+                "images": [{"imageUrl": image_url} for image_url in images_by_asset_tag.get(asset_tag_id, [])]
+            }
+            for asset_tag_id in asset_tag_ids
+        ]
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching bulk asset images: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch asset images")
+
+
+@router.delete("/images/delete/{image_id}")
+async def delete_image_by_id(
+    image_id: str,
+    auth: dict = Depends(verify_auth)
+):
+    """Delete an image record from the database by its ID (keeps file in storage)"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+        has_permission = await check_permission(user_id, "canEditAssets")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canEditAssets required")
+
+        if not image_id:
+            raise HTTPException(status_code=400, detail="Image ID is required")
+
+        existing_image = await prisma.assetsimage.find_unique(
+            where={"id": image_id}
+        )
+
+        if not existing_image:
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        await prisma.assetsimage.delete(
+            where={"id": image_id}
+        )
+
+        return {"success": True, "message": "Image deleted from database"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting image by ID: {type(e).__name__}: {str(e)}", exc_info=True)
+        if "P2025" in str(e):  # Prisma error for record not found
+            raise HTTPException(status_code=404, detail="Image not found")
+        raise HTTPException(status_code=500, detail="Failed to delete image")
+
+
+@router.get("/media")
+async def get_media(
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(50, ge=1, le=1000),
+    auth: dict = Depends(verify_auth)
+):
+    """Get all media (images) with pagination from storage buckets"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Allow viewing media without canManageMedia permission
+        # Users can view but actions (upload/delete) are controlled by client-side checks
+        
+        supabase_admin = get_supabase_admin_client()
+        
+        # Helper function to recursively list all files in a folder
+        async def list_all_files(bucket: str, folder: str = "") -> List[Dict[str, Any]]:
+            all_files: List[Dict[str, Any]] = []
+            
+            try:
+                response = supabase_admin.storage.from_(bucket).list(folder, {
+                    "limit": 1000
+                })
+                
+                if not response:
+                    return all_files
+                
+                for item in response:
+                    item_path = f"{folder}/{item['name']}" if folder else item['name']
+                    
+                    # Check if it's a folder by checking if id is missing
+                    is_folder = item.get('id') is None
+                    
+                    if is_folder:
+                        # It's a folder, recursively list files inside
+                        sub_files = await list_all_files(bucket, item_path)
+                        all_files.extend(sub_files)
+                    else:
+                        # Include all files
+                        all_files.append({
+                            "name": item['name'],
+                            "id": item.get('id') or item_path,
+                            "created_at": item.get('created_at') or datetime.now().isoformat(),
+                            "path": item_path,
+                            "metadata": item.get('metadata', {})
+                        })
+            except Exception as e:
+                logger.warning(f"Error listing files from {bucket}/{folder}: {e}")
+            
+            return all_files
+        
+        # Fetch fresh file list
+        # List files from assets_images folder in assets bucket
+        assets_files = await list_all_files('assets', 'assets_images')
+        
+        # List files from assets_images folder in file-history bucket
+        file_history_files = await list_all_files('file-history', 'assets/assets_images')
+        
+        # Combine files from both buckets
+        combined_files: List[Dict[str, Any]] = []
+        
+        # Add files from assets bucket (only from assets_images folder)
+        # Filter by path to ensure we only get images, not documents from assets_documents
+        for file in assets_files:
+            # Ensure file is in assets_images folder and NOT in assets_documents folder
+            if file['path'].startswith('assets_images/') and not file['path'].startswith('assets_documents/'):
+                combined_files.append({
+                    **file,
+                    "bucket": 'assets',
+                })
+        
+        # Add files from file-history bucket (only from assets/assets_images folder)
+        # Filter by path to ensure we only get images, not documents from assets/assets_documents
+        for file in file_history_files:
+            # Ensure file is in assets/assets_images folder and NOT in assets/assets_documents folder
+            if file['path'].startswith('assets/assets_images/') and not file['path'].startswith('assets/assets_documents/'):
+                combined_files.append({
+                    **file,
+                    "bucket": 'file-history',
+                })
+        
+        # Sort by created_at descending
+        combined_files.sort(key=lambda x: datetime.fromisoformat(x['created_at'].replace('Z', '+00:00')) if x.get('created_at') else datetime.min, reverse=True)
+        
+        # Paginate
+        total_count = len(combined_files)
+        skip = (page - 1) * pageSize
+        paginated_files = combined_files[skip:skip + pageSize]
+        
+        # Prepare file data and extract URLs/assetTagIds
+        file_data = []
+        for file in paginated_files:
+            url_data = supabase_admin.storage.from_(file['bucket']).get_public_url(file['path'])
+            public_url = url_data.get('publicUrl', '') if isinstance(url_data, dict) else str(url_data)
+            
+            # Extract full filename and assetTagId
+            path_parts = file['path'].split('/')
+            actual_file_name = path_parts[-1]
+            
+            # Extract assetTagId - filename format is: assetTagId-timestamp.ext
+            file_name_without_ext = actual_file_name.rsplit('.', 1)[0] if '.' in actual_file_name else actual_file_name
+            # Try to match pattern: assetTagId-YYYY-MM-DDTHH-MM-SS-sssZ
+            import re
+            timestamp_match = re.search(r'-(20\d{2}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)$', file_name_without_ext)
+            asset_tag_id = file_name_without_ext[:timestamp_match.start()] if timestamp_match else file_name_without_ext.split('-')[0] if '-' in file_name_without_ext else file_name_without_ext
+            
+            # If the extracted assetTagId is "media", it's a standalone media upload, not linked to an asset
+            if asset_tag_id == 'media':
+                asset_tag_id = ''
+            
+            file_data.append({
+                "file": file,
+                "publicUrl": public_url,
+                "assetTagId": asset_tag_id,
+                "actualFileName": actual_file_name,
+                "storageSize": file.get('metadata', {}).get('size'),
+                "storageMimeType": file.get('metadata', {}).get('mimetype'),
+            })
+        
+        # Batch query: Get all linked images in a single query
+        all_public_urls = [fd['publicUrl'] for fd in file_data if fd['publicUrl']]
+        
+        # Normalize URLs by removing query parameters and fragments for better matching
+        def normalize_url(url: str) -> str:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            except:
+                return url.split('?')[0].split('#')[0]
+        
+        normalized_public_urls = [normalize_url(url) for url in all_public_urls]
+        
+        # Build OR conditions for URL matching
+        url_conditions = []
+        if all_public_urls:
+            url_conditions.append({"imageUrl": {"in": all_public_urls}})
+        if normalized_public_urls:
+            url_conditions.append({"imageUrl": {"in": normalized_public_urls}})
+        
+        # Add filename-based matches
+        for fd in file_data:
+            if fd['actualFileName']:
+                url_conditions.append({"imageUrl": {"contains": fd['actualFileName']}})
+        
+        # Query linked images - Note: Prisma Python doesn't support 'select', so we fetch all fields
+        all_linked_images_raw = []
+        if url_conditions:
+            try:
+                all_linked_images_raw = await prisma.assetsimage.find_many(
+                    where={"OR": url_conditions} if url_conditions else {}
+                )
+            except Exception as e:
+                logger.warning(f"Error querying linked images: {e}")
+        
+        # Extract only the fields we need
+        all_linked_images = [
+            {
+                "assetTagId": img.assetTagId,
+                "imageUrl": img.imageUrl,
+                "imageType": img.imageType,
+                "imageSize": img.imageSize,
+            }
+            for img in all_linked_images_raw
+        ]
+        
+        # Create maps for quick lookup
+        image_url_to_asset_tag_ids: Dict[str, set] = {}
+        image_url_to_metadata: Dict[str, Dict[str, Any]] = {}
+        
+        for img in all_linked_images:
+            if not img.get('assetTagId') or not img.get('imageUrl'):
+                continue
+            
+            img_url = img['imageUrl']
+            normalized_img_url = normalize_url(img_url)
+            
+            # Store metadata
+            image_url_to_metadata[img_url] = {
+                "imageType": img.get('imageType'),
+                "imageSize": img.get('imageSize'),
+            }
+            
+            # Map by exact URL
+            if img_url not in image_url_to_asset_tag_ids:
+                image_url_to_asset_tag_ids[img_url] = set()
+            image_url_to_asset_tag_ids[img_url].add(img['assetTagId'])
+            
+            # Also map normalized URL
+            if normalized_img_url not in image_url_to_asset_tag_ids:
+                image_url_to_asset_tag_ids[normalized_img_url] = set()
+            image_url_to_asset_tag_ids[normalized_img_url].add(img['assetTagId'])
+        
+        # Match database URLs to storage publicUrls
+        for fd in file_data:
+            public_url = fd['publicUrl']
+            normalized_public_url = normalize_url(public_url)
+            
+            # Check if any database URL matches this publicUrl
+            for img in all_linked_images:
+                if not img.get('assetTagId') or not img.get('imageUrl'):
+                    continue
+                
+                normalized_db_url = normalize_url(img['imageUrl'])
+                
+                # Match by exact URL or normalized URL
+                if img['imageUrl'] == public_url or normalized_db_url == normalized_public_url:
+                    if public_url not in image_url_to_asset_tag_ids:
+                        image_url_to_asset_tag_ids[public_url] = set()
+                    image_url_to_asset_tag_ids[public_url].add(img['assetTagId'])
+        
+        # Also check for filename matches
+        for fd in file_data:
+            public_url = fd['publicUrl']
+            actual_file_name = fd['actualFileName']
+            if not actual_file_name:
+                continue
+            
+            normalized_public_url = normalize_url(public_url)
+            file_name_lower = actual_file_name.lower()
+            
+            for img in all_linked_images:
+                if not img.get('assetTagId') or not img.get('imageUrl'):
+                    continue
+                
+                normalized_db_url = normalize_url(img['imageUrl'])
+                db_url_lower = img['imageUrl'].lower()
+                
+                # Check multiple matching strategies
+                if (normalized_db_url == normalized_public_url or 
+                    file_name_lower in db_url_lower or 
+                    file_name_lower in normalized_public_url):
+                    if public_url not in image_url_to_asset_tag_ids:
+                        image_url_to_asset_tag_ids[public_url] = set()
+                    image_url_to_asset_tag_ids[public_url].add(img['assetTagId'])
+        
+        # Get all unique asset tag IDs that are linked
+        all_linked_asset_tag_ids = set()
+        for fd in file_data:
+            tag_ids = image_url_to_asset_tag_ids.get(fd['publicUrl'], set())
+            all_linked_asset_tag_ids.update(tag_ids)
+        
+        # Batch query: Get all asset deletion status
+        linked_assets_info_map = {}
+        if all_linked_asset_tag_ids:
+            try:
+                assets = await prisma.assets.find_many(
+                    where={"assetTagId": {"in": list(all_linked_asset_tag_ids)}}
+                )
+                for asset in assets:
+                    linked_assets_info_map[asset.assetTagId] = asset.isDeleted or False
+            except Exception as e:
+                logger.warning(f"Error querying linked assets: {e}")
+        
+        # Calculate total storage used from ALL files (not just paginated)
+        images_files = [f for f in combined_files if f['path'].startswith('assets_images/') or f['path'].startswith('assets/assets_images/')]
+        all_file_data = []
+        for file in images_files:
+            try:
+                url_data = supabase_admin.storage.from_(file['bucket']).get_public_url(file['path'])
+                public_url = url_data.get('publicUrl', '') if isinstance(url_data, dict) else str(url_data)
+                all_file_data.append({
+                    "publicUrl": public_url,
+                    "storageSize": file.get('metadata', {}).get('size') if isinstance(file.get('metadata'), dict) else None,
+                })
+            except Exception:
+                continue
+        
+        # Get metadata for all files from database
+        all_file_public_urls = [fd['publicUrl'] for fd in all_file_data if fd['publicUrl']]
+        all_db_images = []
+        if all_file_public_urls:
+            try:
+                # Normalize URLs for matching
+                normalized_all_urls = [normalize_url(url) for url in all_file_public_urls]
+                
+                # Build OR conditions for URL matching
+                all_url_conditions = []
+                if all_file_public_urls:
+                    all_url_conditions.append({"imageUrl": {"in": all_file_public_urls}})
+                if normalized_all_urls:
+                    all_url_conditions.append({"imageUrl": {"in": normalized_all_urls}})
+                
+                # Query all images from database - Note: Prisma Python doesn't support 'select', so we fetch all fields
+                all_db_images_raw = await prisma.assetsimage.find_many(
+                    where={"OR": all_url_conditions} if all_url_conditions else {}
+                )
+                # Extract only the fields we need
+                all_db_images = [
+                    {
+                        "imageUrl": img.imageUrl,
+                        "imageSize": img.imageSize,
+                    }
+                    for img in all_db_images_raw
+                ]
+            except Exception as e:
+                logger.warning(f"Error querying all images for storage calculation: {e}")
+        
+        all_image_url_to_metadata: Dict[str, Dict[str, Any]] = {}
+        for img in all_db_images:
+            if img.get('imageUrl'):
+                all_image_url_to_metadata[img['imageUrl']] = {
+                    "imageSize": img.get('imageSize'),
+                }
+        
+        # Calculate total storage used - use storage size OR database size as fallback
+        total_storage_used = sum(
+            (fd.get('storageSize') or all_image_url_to_metadata.get(fd['publicUrl'], {}).get('imageSize') or 0)
+            for fd in all_file_data
+        )
+        
+        # Build the response
+        images = []
+        for fd in file_data:
+            public_url = fd['publicUrl']
+            normalized_public_url = normalize_url(public_url)
+            
+            # Find matching database imageUrl
+            matching_db_image_url = None
+            for db_image_url in image_url_to_asset_tag_ids.keys():
+                normalized_db_url = normalize_url(db_image_url)
+                if db_image_url == public_url or normalized_db_url == normalized_public_url:
+                    matching_db_image_url = db_image_url
+                    break
+            
+            # Also check by filename if no exact match
+            if not matching_db_image_url and fd['actualFileName']:
+                for db_image_url in image_url_to_asset_tag_ids.keys():
+                    if fd['actualFileName'].lower() in db_image_url.lower():
+                        matching_db_image_url = db_image_url
+                        break
+            
+            # Use database imageUrl if found, otherwise use storage publicUrl
+            final_image_url = matching_db_image_url or public_url
+            
+            # Get linked asset tag IDs
+            linked_asset_tag_ids = list(image_url_to_asset_tag_ids.get(final_image_url, image_url_to_asset_tag_ids.get(public_url, set())))
+            linked_assets_info = [
+                {"assetTagId": tag_id, "isDeleted": linked_assets_info_map.get(tag_id, False)}
+                for tag_id in linked_asset_tag_ids
+            ]
+            has_deleted_asset = any(info['isDeleted'] for info in linked_assets_info)
+            
+            # Get metadata
+            db_metadata = image_url_to_metadata.get(final_image_url, image_url_to_metadata.get(public_url, {}))
+            image_type = fd['storageMimeType'] or db_metadata.get('imageType')
+            image_size = fd['storageSize'] or db_metadata.get('imageSize')
+            
+            images.append({
+                "id": fd['file'].get('id') or fd['file']['path'],
+                "imageUrl": final_image_url,
+                "assetTagId": fd['assetTagId'],
+                "fileName": fd['actualFileName'],
+                "createdAt": fd['file'].get('created_at') or datetime.now().isoformat(),
+                "isLinked": len(linked_asset_tag_ids) > 0,
+                "linkedAssetTagId": linked_asset_tag_ids[0] if linked_asset_tag_ids else None,
+                "linkedAssetTagIds": linked_asset_tag_ids,
+                "linkedAssetsInfo": linked_assets_info,
+                "assetIsDeleted": has_deleted_asset,
+                "imageType": image_type,
+                "imageSize": image_size,
+            })
+        
+        return {
+            "images": images,
+            "pagination": {
+                "total": total_count,
+                "page": page,
+                "pageSize": pageSize,
+                "totalPages": (total_count + pageSize - 1) // pageSize,
+            },
+            "storage": {
+                "used": total_storage_used,
+                "limit": 5 * 1024 * 1024,  # 5MB limit
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching media: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch media")
+
+
+@router.post("/media/upload")
+async def upload_media(
+    file: UploadFile = File(...),
+    auth: dict = Depends(verify_auth)
+):
+    """Upload a media file (image) to storage"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+        has_permission = await check_permission(user_id, "canManageMedia")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canManageMedia required")
+
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No file provided")
+
+        # Validate file type
+        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed."
+            )
+
+        # Read file content
+        contents = await file.read()
+        file_size = len(contents)
+
+        # Validate file size (max 5MB per file)
+        max_file_size = 5 * 1024 * 1024  # 5MB
+        if file_size > max_file_size:
+            raise HTTPException(
+                status_code=400,
+                detail="File size too large. Maximum size is 5MB."
+            )
+
+        # Check storage limit (5GB total)
+        storage_limit = 5 * 1024 * 1024 * 1024  # 5GB
+        supabase_admin = get_supabase_admin_client()
+
+        # Calculate current storage used (simplified - just check if we're close to limit)
+        # In production, you might want to cache this or calculate more efficiently
+        try:
+            # List files to calculate storage
+            async def list_all_files(bucket: str, folder: str = "") -> List[Dict[str, Any]]:
+                all_files: List[Dict[str, Any]] = []
+                try:
+                    response = supabase_admin.storage.from_(bucket).list(folder, {"limit": 1000})
+                    if not response:
+                        return all_files
+                    for item in response:
+                        item_path = f"{folder}/{item['name']}" if folder else item['name']
+                        is_folder = item.get('id') is None
+                        if is_folder:
+                            sub_files = await list_all_files(bucket, item_path)
+                            all_files.extend(sub_files)
+                        else:
+                            all_files.append({
+                                "metadata": item.get('metadata', {}),
+                                "path": item_path
+                            })
+                except Exception as e:
+                    logger.warning(f"Error listing files from {bucket}/{folder}: {e}")
+                return all_files
+
+            assets_files = await list_all_files('assets', '')
+            file_history_files = await list_all_files('file-history', 'assets')
+
+            current_storage_used = 0
+            for f in assets_files + file_history_files:
+                if f.get('metadata', {}).get('size'):
+                    current_storage_used += f['metadata']['size']
+
+            if current_storage_used + file_size > storage_limit:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Storage limit exceeded. Current usage: {(current_storage_used / (1024 * 1024)):.2f}MB / {(storage_limit / (1024 * 1024)):.2f}MB"
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Could not check storage limit: {e}")
+
+        # Generate unique file path
+        timestamp = datetime.now().isoformat().replace(':', '-').replace('.', '-')
+        file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+        sanitized_extension = file_extension.lower()
+        file_name = f"media-{timestamp}.{sanitized_extension}"
+        file_path = f"assets_images/{file_name}"
+
+        # Upload to Supabase storage
+        public_url = None
+        final_file_path = file_path
+
+        try:
+            upload_response = supabase_admin.storage.from_('assets').upload(
+                file_path,
+                contents,
+                file_options={"content-type": file.content_type, "upsert": "false"}
+            )
+            if upload_response and isinstance(upload_response, dict) and upload_response.get('error'):
+                # Try file-history bucket as fallback
+                fallback_path = file_path
+                fallback_response = supabase_admin.storage.from_('file-history').upload(
+                    fallback_path,
+                    contents,
+                    file_options={"content-type": file.content_type, "upsert": "false"}
+                )
+                if fallback_response and isinstance(fallback_response, dict) and fallback_response.get('error'):
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to upload image to storage: {fallback_response.get('error')}"
+                    )
+                url_data = supabase_admin.storage.from_('file-history').get_public_url(fallback_path)
+                public_url = url_data.get('publicUrl') if isinstance(url_data, dict) else str(url_data)
+                final_file_path = fallback_path
+            else:
+                url_data = supabase_admin.storage.from_('assets').get_public_url(file_path)
+                public_url = url_data.get('publicUrl') if isinstance(url_data, dict) else str(url_data)
+        except Exception as upload_error:
+            logger.error(f"Storage upload error: {upload_error}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to upload image to storage: {str(upload_error)}"
+            )
+
+        if not public_url:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to get public URL for uploaded image"
+            )
+
+        return {
+            "filePath": final_file_path,
+            "fileName": file_name,
+            "fileSize": file_size,
+            "mimeType": file.content_type,
+            "publicUrl": public_url,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading media: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to upload media")
+
+
+@router.delete("/media/delete")
+async def delete_media(
+    imageUrl: str = Query(...),
+    auth: dict = Depends(verify_auth)
+):
+    """Delete a media file by its URL (removes database links and optionally the file from storage)"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+        has_permission = await check_permission(user_id, "canManageMedia")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canManageMedia required")
+
+        if not imageUrl:
+            raise HTTPException(status_code=400, detail="Image URL is required")
+
+        # Find all AssetsImage records linked to this image URL
+        linked_images = await prisma.assetsimage.find_many(
+            where={"imageUrl": imageUrl}
+        )
+
+        # Delete all database links for this image (if any exist)
+        if linked_images:
+            await prisma.assetsimage.delete_many(
+                where={"imageUrl": imageUrl}
+            )
+
+        # Delete the file from storage
+        try:
+            supabase_admin = get_supabase_admin_client()
+            import re
+            from urllib.parse import unquote, urlparse
+            
+            # Decode URL-encoded characters
+            decoded_url = unquote(imageUrl)
+            
+            # Extract bucket and path from URL
+            # URLs are like: https://[project].supabase.co/storage/v1/object/public/[bucket]/[path]
+            url_match = re.search(r'/storage/v1/object/public/([^/]+)/(.+)', decoded_url)
+            if url_match:
+                bucket = url_match.group(1)
+                path = url_match.group(2)
+                
+                # Remove query parameters from path (e.g., ?t=timestamp)
+                path = path.split('?')[0]
+                
+                # Remove URL-encoding from path
+                path = unquote(path)
+                
+                logger.info(f"Attempting to delete file from storage: bucket={bucket}, path={path}")
+                
+                # Delete from storage
+                delete_response = supabase_admin.storage.from_(bucket).remove([path])
+                
+                # Check for errors in response
+                if delete_response:
+                    if isinstance(delete_response, dict):
+                        if delete_response.get('error'):
+                            logger.error(f"Failed to delete file from storage: {imageUrl}, Error: {delete_response['error']}")
+                        else:
+                            logger.info(f"Successfully deleted file from storage: {path}")
+                    elif isinstance(delete_response, list):
+                        # Supabase Python client might return a list
+                        logger.info(f"Successfully deleted file from storage: {path}")
+                    else:
+                        logger.info(f"File deletion response: {delete_response}")
+                else:
+                    logger.warning(f"No response from storage deletion for: {path}")
+            else:
+                logger.warning(f"Could not parse storage URL: {imageUrl}")
+        except Exception as storage_error:
+            logger.error(f"Storage deletion error for {imageUrl}: {storage_error}", exc_info=True)
+
+        return {
+            "success": True,
+            "message": f"Deleted {len(linked_images)} link(s) and attempted to delete file from storage",
+            "deletedLinks": len(linked_images),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting media: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete media")
+
+
+@router.delete("/media/bulk-delete")
+async def bulk_delete_media(
+    request: Dict[str, Any],
+    auth: dict = Depends(verify_auth)
+):
+    """Bulk delete media files by URLs (removes database links and optionally files from storage)"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+        has_permission = await check_permission(user_id, "canManageMedia")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canManageMedia required")
+
+        image_urls = request.get("imageUrls")
+        if not image_urls or not isinstance(image_urls, list) or len(image_urls) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Image URLs array is required"
+            )
+
+        total_deleted_links = 0
+        supabase_admin = get_supabase_admin_client()
+
+        for image_url in image_urls:
+            # Find all AssetsImage records linked to this image URL
+            linked_images = await prisma.assetsimage.find_many(
+                where={"imageUrl": image_url}
+            )
+
+            # Delete all database links for this image (if any exist)
+            if linked_images:
+                await prisma.assetsimage.delete_many(
+                    where={"imageUrl": image_url}
+                )
+                total_deleted_links += len(linked_images)
+
+            # Delete the file from storage
+            try:
+                import re
+                from urllib.parse import unquote
+                
+                # Decode URL-encoded characters
+                decoded_url = unquote(image_url)
+                
+                # Extract bucket and path from URL
+                url_match = re.search(r'/storage/v1/object/public/([^/]+)/(.+)', decoded_url)
+                if url_match:
+                    bucket = url_match.group(1)
+                    path = url_match.group(2)
+                    
+                    # Remove query parameters from path (e.g., ?t=timestamp)
+                    path = path.split('?')[0]
+                    
+                    # Remove URL-encoding from path
+                    path = unquote(path)
+                    
+                    # Delete from storage
+                    delete_response = supabase_admin.storage.from_(bucket).remove([path])
+                    
+                    # Check for errors in response
+                    if delete_response:
+                        if isinstance(delete_response, dict) and delete_response.get('error'):
+                            logger.error(f"Failed to delete file from storage: {image_url}, Error: {delete_response['error']}")
+                        else:
+                            logger.info(f"Successfully deleted file from storage: {path}")
+                    else:
+                        logger.warning(f"No response from storage deletion for: {path}")
+                else:
+                    logger.warning(f"Could not parse storage URL: {image_url}")
+            except Exception as storage_error:
+                logger.error(f"Storage deletion error for {image_url}: {storage_error}", exc_info=True)
+
+        return {
+            "success": True,
+            "message": f"Deleted {len(image_urls)} image(s){f' and removed {total_deleted_links} link(s)' if total_deleted_links > 0 else ''}",
+            "deletedCount": len(image_urls),
+            "deletedLinks": total_deleted_links,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error bulk deleting media: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to bulk delete media")
+
+
+@router.post("/upload-document")
+async def upload_document_to_asset(
+    req: Request,
+    auth: dict = Depends(verify_auth)
+):
+    """Upload or link a document to an asset"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+        has_permission = await check_permission(user_id, "canCreateAssets")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canCreateAssets required")
+
+        content_type = req.headers.get("content-type", "")
+        file: Optional[UploadFile] = None
+        asset_tag_id: Optional[str] = None
+        document_url: Optional[str] = None
+        link_existing = False
+        document_type: Optional[str] = None
+
+        # Check if request is JSON (for linking) or FormData (for uploading)
+        if "application/json" in content_type:
+            # Handle JSON body (linking existing document)
+            body = await req.json()
+            asset_tag_id = body.get("assetTagId")
+            document_url = body.get("documentUrl")
+            link_existing = body.get("linkExisting", False)
+            document_type = body.get("documentType")
+        else:
+            # Handle FormData (file upload)
+            form = await req.form()
+            file = form.get("file")
+            if file and isinstance(file, UploadFile):
+                pass  # file is already UploadFile
+            asset_tag_id = form.get("assetTagId")
+            if isinstance(asset_tag_id, str):
+                pass
+            else:
+                asset_tag_id = None
+            document_type = form.get("documentType")
+            if isinstance(document_type, str):
+                pass
+            else:
+                document_type = None
+
+        if not asset_tag_id:
+            raise HTTPException(status_code=400, detail="Asset Tag ID is required")
+
+        # Verify asset exists
+        asset = await prisma.assets.find_unique(
+            where={"assetTagId": asset_tag_id}
+        )
+
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        # If linking existing document
+        if link_existing and document_url:
+            # Extract document type and size from URL/storage
+            url_extension = document_url.split('.')[-1].split('?')[0].lower() if '.' in document_url else None
+            mime_type = None
+            if url_extension:
+                mime_types = {
+                    'pdf': 'application/pdf',
+                    'doc': 'application/msword',
+                    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'xls': 'application/vnd.ms-excel',
+                    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'txt': 'text/plain',
+                    'csv': 'text/csv',
+                    'rtf': 'application/rtf',
+                }
+                mime_type = mime_types.get(url_extension)
+
+            # Try to get file size from storage
+            document_size = None
+            try:
+                supabase_admin = get_supabase_admin_client()
+                import re
+                url_match = re.search(r'/storage/v1/object/public/([^/]+)/(.+)', document_url)
+                if url_match:
+                    bucket = url_match.group(1)
+                    full_path = url_match.group(2)
+                    path_parts = full_path.split('/')
+                    file_name = path_parts[-1]
+                    folder_path = '/'.join(path_parts[:-1]) if len(path_parts) > 1 else ''
+
+                    file_list = supabase_admin.storage.from_(bucket).list(folder_path, {"limit": 1000})
+                    if file_list:
+                        for f in file_list:
+                            if f.get('name') == file_name and f.get('metadata', {}).get('size'):
+                                document_size = f['metadata']['size']
+                                break
+            except Exception as e:
+                logger.warning(f"Could not fetch file size from storage: {e}")
+
+            # Extract filename from URL
+            url_parts = document_url.split('/')
+            file_name = url_parts[-1].split('?')[0] if url_parts else None
+
+            # Create document record
+            document_record = await prisma.assetsdocument.create(
+                data={
+                    "assetTagId": asset_tag_id,
+                    "documentUrl": document_url,
+                    "documentType": document_type,
+                    "documentSize": document_size,
+                    "fileName": file_name,
+                    "mimeType": mime_type,
+                }
+            )
+
+            return {
+                "id": str(document_record.id),
+                "assetTagId": document_record.assetTagId,
+                "documentUrl": document_record.documentUrl,
+                "publicUrl": document_url,
+            }
+
+        # Handle file upload
+        if not file:
+            raise HTTPException(status_code=400, detail="File is required for upload")
+
+        # Validate file type
+        allowed_types = [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'text/plain',
+            'text/csv',
+            'application/rtf',
+            'image/jpeg',
+            'image/jpg',
+            'image/png',
+            'image/gif',
+            'image/webp',
+        ]
+        allowed_extensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv', '.rtf', '.jpg', '.jpeg', '.png', '.gif', '.webp']
+        file_extension = '.' + (file.filename.split('.')[-1] if '.' in file.filename else '').lower()
+
+        if file.content_type not in allowed_types and file_extension not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Only PDF, DOC, DOCX, XLS, XLSX, TXT, CSV, RTF, JPEG, PNG, GIF, and WebP files are allowed."
+            )
+
+        # Validate file size
+        contents = await file.read()
+        file_size = len(contents)
+        max_file_size = 5 * 1024 * 1024  # 5MB
+        if file_size > max_file_size:
+            raise HTTPException(
+                status_code=400,
+                detail="File size too large. Maximum size is 5MB."
+            )
+
+        # Generate unique file path
+        timestamp = datetime.now().isoformat().replace(':', '-').replace('.', '-')
+        sanitized_extension = file_extension[1:] if file_extension.startswith('.') else 'pdf'
+        file_name = f"{asset_tag_id}-{timestamp}.{sanitized_extension}"
+        file_path = f"assets_documents/{file_name}"
+
+        # Upload to Supabase storage
+        supabase_admin = get_supabase_admin_client()
+        public_url = None
+        final_file_path = file_path
+
+        try:
+            upload_response = supabase_admin.storage.from_('assets').upload(
+                file_path,
+                contents,
+                file_options={"content-type": file.content_type, "upsert": "false"}
+            )
+            if upload_response and isinstance(upload_response, dict) and upload_response.get('error'):
+                # Try file-history bucket as fallback
+                fallback_path = f"assets/{file_path}"
+                fallback_response = supabase_admin.storage.from_('file-history').upload(
+                    fallback_path,
+                    contents,
+                    file_options={"content-type": file.content_type, "upsert": "false"}
+                )
+                if fallback_response and isinstance(fallback_response, dict) and fallback_response.get('error'):
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to upload document to storage: {fallback_response.get('error')}"
+                    )
+                url_data = supabase_admin.storage.from_('file-history').get_public_url(fallback_path)
+                public_url = url_data.get('publicUrl') if isinstance(url_data, dict) else str(url_data)
+                final_file_path = fallback_path
+            else:
+                url_data = supabase_admin.storage.from_('assets').get_public_url(file_path)
+                public_url = url_data.get('publicUrl') if isinstance(url_data, dict) else str(url_data)
+        except Exception as upload_error:
+            logger.error(f"Storage upload error: {upload_error}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to upload document to storage: {str(upload_error)}"
+            )
+
+        if not public_url:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to get public URL for uploaded document"
+            )
+
+        # Save document record to database
+        document_record = await prisma.assetsdocument.create(
+            data={
+                "assetTagId": asset_tag_id,
+                "documentUrl": public_url,
+                "documentType": document_type,
+                "documentSize": file_size,
+                "fileName": file.filename,
+                "mimeType": file.content_type,
+            }
+        )
+
+        return {
+            "id": str(document_record.id),
+            "assetTagId": document_record.assetTagId,
+            "documentUrl": document_record.documentUrl,
+            "publicUrl": public_url,
+            "filePath": final_file_path,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading/linking document: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to upload/link document")
+
+
+@router.post("/upload-image")
+async def upload_image_to_asset(
+    req: Request,
+    auth: dict = Depends(verify_auth)
+):
+    """Upload or link an image to an asset"""
+    try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+        has_permission = await check_permission(user_id, "canCreateAssets")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Permission denied: canCreateAssets required")
+
+        content_type = req.headers.get("content-type", "")
+        file: Optional[UploadFile] = None
+        asset_tag_id: Optional[str] = None
+        image_url: Optional[str] = None
+        link_existing = False
+
+        # Check if request is JSON (for linking) or FormData (for uploading)
+        if "application/json" in content_type:
+            # Handle JSON body (linking existing image)
+            body = await req.json()
+            asset_tag_id = body.get("assetTagId")
+            image_url = body.get("imageUrl")
+            link_existing = body.get("linkExisting", False)
+        else:
+            # Handle FormData (file upload)
+            form = await req.form()
+            file = form.get("file")
+            if file and isinstance(file, UploadFile):
+                pass  # file is already UploadFile
+            asset_tag_id = form.get("assetTagId")
+            if isinstance(asset_tag_id, str):
+                pass
+            else:
+                asset_tag_id = None
+
+        if not asset_tag_id:
+            raise HTTPException(status_code=400, detail="Asset Tag ID is required")
+
+        # Verify asset exists
+        asset = await prisma.assets.find_unique(
+            where={"assetTagId": asset_tag_id}
+        )
+
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        # If linking existing image
+        if link_existing and image_url:
+            # Extract image type from URL
+            url_extension = image_url.split('.')[-1].split('?')[0].lower() if '.' in image_url else None
+            image_type = f"image/{url_extension}" if url_extension else None
+            if image_type and url_extension == 'jpg':
+                image_type = 'image/jpeg'
+
+            # Try to get file size from storage
+            image_size = None
+            try:
+                supabase_admin = get_supabase_admin_client()
+                import re
+                url_match = re.search(r'/storage/v1/object/public/([^/]+)/(.+)', image_url)
+                if url_match:
+                    bucket = url_match.group(1)
+                    full_path = url_match.group(2)
+                    path_parts = full_path.split('/')
+                    file_name = path_parts[-1]
+                    folder_path = '/'.join(path_parts[:-1]) if len(path_parts) > 1 else ''
+
+                    file_list = supabase_admin.storage.from_(bucket).list(folder_path, {"limit": 1000})
+                    if file_list:
+                        for f in file_list:
+                            if f.get('name') == file_name and f.get('metadata', {}).get('size'):
+                                image_size = f['metadata']['size']
+                                break
+            except Exception as e:
+                logger.warning(f"Could not fetch file size from storage: {e}")
+
+            # Create image record
+            image_record = await prisma.assetsimage.create(
+                data={
+                    "assetTagId": asset_tag_id,
+                    "imageUrl": image_url,
+                    "imageType": image_type,
+                    "imageSize": image_size,
+                }
+            )
+
+            return {
+                "id": str(image_record.id),
+                "assetTagId": image_record.assetTagId,
+                "imageUrl": image_record.imageUrl,
+                "publicUrl": image_url,
+            }
+
+        # Handle file upload
+        if not file:
+            raise HTTPException(status_code=400, detail="File is required for upload")
+
+        # Validate file type
+        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed."
+            )
+
+        # Validate file size
+        contents = await file.read()
+        file_size = len(contents)
+        max_size = 5 * 1024 * 1024  # 5MB
+        if file_size > max_size:
+            raise HTTPException(
+                status_code=400,
+                detail="File size too large. Maximum size is 5MB."
+            )
+
+        # Generate unique file path
+        timestamp = datetime.now().isoformat().replace(':', '-').replace('.', '-')
+        file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+        sanitized_extension = file_extension.lower()
+        file_name = f"{asset_tag_id}-{timestamp}.{sanitized_extension}"
+        file_path = f"assets_images/{file_name}"
+
+        # Upload to Supabase storage
+        supabase_admin = get_supabase_admin_client()
+        public_url = None
+        final_file_path = file_path
+
+        try:
+            upload_response = supabase_admin.storage.from_('assets').upload(
+                file_path,
+                contents,
+                file_options={"content-type": file.content_type, "upsert": "false"}
+            )
+            if upload_response and isinstance(upload_response, dict) and upload_response.get('error'):
+                # Try file-history bucket as fallback
+                fallback_path = f"assets/{file_path}"
+                fallback_response = supabase_admin.storage.from_('file-history').upload(
+                    fallback_path,
+                    contents,
+                    file_options={"content-type": file.content_type, "upsert": "false"}
+                )
+                if fallback_response and isinstance(fallback_response, dict) and fallback_response.get('error'):
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to upload image to storage: {fallback_response.get('error')}"
+                    )
+                url_data = supabase_admin.storage.from_('file-history').get_public_url(fallback_path)
+                public_url = url_data.get('publicUrl') if isinstance(url_data, dict) else str(url_data)
+                final_file_path = fallback_path
+            else:
+                url_data = supabase_admin.storage.from_('assets').get_public_url(file_path)
+                public_url = url_data.get('publicUrl') if isinstance(url_data, dict) else str(url_data)
+        except Exception as upload_error:
+            logger.error(f"Storage upload error: {upload_error}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to upload image to storage: {str(upload_error)}"
+            )
+
+        if not public_url:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to get public URL for uploaded image"
+            )
+
+        # Save image record to database
+        image_record = await prisma.assetsimage.create(
+            data={
+                "assetTagId": asset_tag_id,
+                "imageUrl": public_url,
+                "imageType": file.content_type,
+                "imageSize": file_size,
+            }
+        )
+
+        return {
+            "id": str(image_record.id),
+            "assetTagId": image_record.assetTagId,
+            "imageUrl": image_record.imageUrl,
+            "filePath": final_file_path,
+            "fileName": file_name,
+            "fileSize": file_size,
+            "mimeType": file.content_type,
+            "publicUrl": public_url,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading image: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to upload image")
+
+
 @router.get("/{asset_id}", response_model=AssetResponse)
 async def get_asset(
     asset_id: str,
@@ -1584,6 +3780,7 @@ async def update_asset(
         # Update asset and create history logs in transaction
         async with prisma.tx() as transaction:
             # Update asset
+            # Note: Prisma Python doesn't support 'order' inside 'include', so we'll sort in Python
             updated_asset_data = await transaction.assets.update(
                 where={"id": asset_id},
                 data=update_data,
@@ -1593,9 +3790,7 @@ async def update_asset(
                     "checkouts": {
                         "include": {
                             "employeeUser": True
-                        },
-                        "order": {"checkoutDate": "desc"},
-                        "take": 1
+                        }
                     }
                 }
             )
@@ -1635,7 +3830,14 @@ async def update_asset(
         
         checkouts_list = []
         if updated_asset_data.checkouts:
-            for checkout in updated_asset_data.checkouts[:1]:
+            # Sort by checkoutDate descending (most recent first)
+            # Note: Prisma Python doesn't support 'order' inside 'include', so we sort in Python
+            sorted_checkouts = sorted(
+                updated_asset_data.checkouts,
+                key=lambda x: x.checkoutDate if x.checkoutDate else datetime.min,
+                reverse=True
+            )
+            for checkout in sorted_checkouts[:1]:
                 employee_info = None
                 if checkout.employeeUser:
                     employee_info = EmployeeInfo(
@@ -1845,6 +4047,43 @@ async def restore_asset(
     except Exception as e:
         logger.error(f"Error restoring asset: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to restore asset")
+
+
+@router.post("/bulk-restore", response_model=BulkRestoreResponse)
+async def bulk_restore_assets(
+    request: BulkRestoreRequest,
+    auth: dict = Depends(verify_auth)
+):
+    """Bulk restore multiple soft-deleted assets"""
+    try:
+        if not request.ids or len(request.ids) == 0:
+            raise HTTPException(status_code=400, detail="Invalid request. Expected an array of asset IDs.")
+        
+        # Restore all assets in a transaction
+        async with prisma.tx() as transaction:
+            # Update all assets to restore them
+            result = await transaction.assets.update_many(
+                where={
+                    "id": {"in": request.ids},
+                    "isDeleted": True  # Only restore assets that are actually deleted
+                },
+                data={
+                    "deletedAt": None,
+                    "isDeleted": False
+                }
+            )
+        
+        return BulkRestoreResponse(
+            success=True,
+            restoredCount=result,
+            message=f"{result} asset(s) restored successfully"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error bulk restoring assets: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to restore assets")
 
 
 @router.delete("/trash/empty")

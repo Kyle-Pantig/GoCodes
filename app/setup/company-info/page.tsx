@@ -43,7 +43,25 @@ async function uploadLogo(
   logoType: 'primary' | 'secondary',
   onProgress?: (progress: number) => void
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
+    const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+      ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+      : ''
+    const url = `${baseUrl}/api/company-info/upload-logo`
+    
+    // Get auth token for FastAPI
+    let authToken: string | null = null
+    if (baseUrl) {
+      try {
+        const { createClient } = await import('@/lib/supabase-client')
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        authToken = session?.access_token || null
+      } catch (error) {
+        console.error('Error getting auth token:', error)
+      }
+    }
+
     const formData = new FormData()
     formData.append('file', file)
     formData.append('logoType', logoType)
@@ -70,7 +88,8 @@ async function uploadLogo(
       } else {
         try {
           const error = JSON.parse(xhr.responseText)
-          reject(new Error(error.error || 'Failed to upload logo'))
+          const errorMessage = error.detail || error.error || 'Failed to upload logo'
+          reject(new Error(errorMessage))
         } catch {
           reject(new Error(`Upload failed with status ${xhr.status}`))
         }
@@ -86,7 +105,14 @@ async function uploadLogo(
       reject(new Error('Upload aborted'))
     })
 
-    xhr.open('POST', '/api/setup/company-info/upload-logo')
+    xhr.open('POST', url)
+    
+    // Add auth header if using FastAPI
+    if (baseUrl && authToken) {
+      xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
+    }
+    
+    xhr.withCredentials = true
     xhr.send(formData)
   })
 }
@@ -270,8 +296,24 @@ export default function CompanyInfoPage() {
       // Delete old logo from storage if it exists
       if (primaryLogoUrl && !primaryLogoPreview) {
         try {
-          const response = await fetch(`/api/setup/company-info/delete-logo?logoUrl=${encodeURIComponent(primaryLogoUrl)}`, {
+          const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+            ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+            : ''
+          const url = `${baseUrl}/api/company-info/delete-logo?logoUrl=${encodeURIComponent(primaryLogoUrl)}`
+          
+          // Get auth token
+          const { createClient } = await import('@/lib/supabase-client')
+          const supabase = createClient()
+          const { data: { session } } = await supabase.auth.getSession()
+          const headers: HeadersInit = {}
+          if (baseUrl && session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+          
+          const response = await fetch(url, {
             method: 'DELETE',
+            headers,
+            credentials: 'include',
           })
           if (!response.ok) {
             console.error('Failed to delete previous primary logo from storage')
@@ -297,8 +339,24 @@ export default function CompanyInfoPage() {
       // Delete old logo from storage if it exists
       if (secondaryLogoUrl && !secondaryLogoPreview) {
         try {
-          const response = await fetch(`/api/setup/company-info/delete-logo?logoUrl=${encodeURIComponent(secondaryLogoUrl)}`, {
+          const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+            ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+            : ''
+          const url = `${baseUrl}/api/company-info/delete-logo?logoUrl=${encodeURIComponent(secondaryLogoUrl)}`
+          
+          // Get auth token
+          const { createClient } = await import('@/lib/supabase-client')
+          const supabase = createClient()
+          const { data: { session } } = await supabase.auth.getSession()
+          const headers: HeadersInit = {}
+          if (baseUrl && session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+          
+          const response = await fetch(url, {
             method: 'DELETE',
+            headers,
+            credentials: 'include',
           })
           if (!response.ok) {
             console.error('Failed to delete previous secondary logo from storage')
@@ -561,8 +619,24 @@ export default function CompanyInfoPage() {
     // Handle logo removal - delete from storage first
     if (removePrimaryLogo && primaryLogoUrlToDelete) {
       try {
-        const response = await fetch(`/api/setup/company-info/delete-logo?logoUrl=${encodeURIComponent(primaryLogoUrlToDelete)}`, {
+        const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+          ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+          : ''
+        const url = `${baseUrl}/api/company-info/delete-logo?logoUrl=${encodeURIComponent(primaryLogoUrlToDelete)}`
+        
+        // Get auth token
+        const { createClient } = await import('@/lib/supabase-client')
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        const headers: HeadersInit = {}
+        if (baseUrl && session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+        
+        const response = await fetch(url, {
           method: 'DELETE',
+          headers,
+          credentials: 'include',
         })
         if (!response.ok) {
           console.error('Failed to delete primary logo from storage')
@@ -578,8 +652,24 @@ export default function CompanyInfoPage() {
     }
     if (removeSecondaryLogo && secondaryLogoUrlToDelete) {
       try {
-        const response = await fetch(`/api/setup/company-info/delete-logo?logoUrl=${encodeURIComponent(secondaryLogoUrlToDelete)}`, {
+        const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+          ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+          : ''
+        const url = `${baseUrl}/api/company-info/delete-logo?logoUrl=${encodeURIComponent(secondaryLogoUrlToDelete)}`
+        
+        // Get auth token
+        const { createClient } = await import('@/lib/supabase-client')
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        const headers: HeadersInit = {}
+        if (baseUrl && session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+        
+        const response = await fetch(url, {
           method: 'DELETE',
+          headers,
+          credentials: 'include',
         })
         if (!response.ok) {
           console.error('Failed to delete secondary logo from storage')
@@ -956,7 +1046,12 @@ export default function CompanyInfoPage() {
             <CardContent className="space-y-6">
               {/* Primary Logo */}
               <div className="space-y-3">
-                <Label className="text-sm font-medium">Primary Logo</Label>
+                <Label className="text-sm font-medium">
+                  Primary Logo{' '}
+                  <span className="text-xs text-muted-foreground font-normal">
+                    (Used to display in sidebar and forms PDF)
+                  </span>
+                </Label>
                 <div className="space-y-3">
                   {(primaryLogoPreview || primaryLogoUrl) ? (
                     <div className="relative w-full h-40 border rounded-lg overflow-hidden bg-muted">
@@ -1034,7 +1129,12 @@ export default function CompanyInfoPage() {
 
               {/* Secondary Logo */}
               <div className="space-y-3">
-                <Label className="text-sm font-medium">Secondary Logo</Label>
+                <Label className="text-sm font-medium">
+                  Secondary Logo{' '}
+                  <span className="text-xs text-muted-foreground font-normal">
+                    (Used to display as background template of forms PDF)
+                  </span>
+                </Label>
                 <div className="space-y-3">
                   {(secondaryLogoPreview || secondaryLogoUrl) ? (
                     <div className="relative w-full h-40 border rounded-lg overflow-hidden bg-muted">
