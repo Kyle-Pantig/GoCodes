@@ -1181,6 +1181,7 @@ async def get_inventory_transactions(
     page: int = Query(1, ge=1),
     pageSize: int = Query(50, ge=1, le=10000),
     type: Optional[str] = Query(None, description="Filter by transaction type"),
+    search: Optional[str] = Query(None, description="Search by reference, action by, or notes"),
     auth: dict = Depends(verify_auth)
 ):
     """Get transactions for an inventory item"""
@@ -1204,12 +1205,21 @@ async def get_inventory_transactions(
             raise HTTPException(status_code=404, detail="Inventory item not found")
         
         # Build where clause for transactions
-        transaction_where = {
+        transaction_where: dict = {
             "inventoryItemId": inventory_item.id
         }
         
         if type:
             transaction_where["transactionType"] = type
+        
+        # Add search filter
+        if search:
+            search_lower = search.lower()
+            transaction_where["OR"] = [
+                {"reference": {"contains": search_lower, "mode": "insensitive"}},
+                {"actionBy": {"contains": search_lower, "mode": "insensitive"}},
+                {"notes": {"contains": search_lower, "mode": "insensitive"}},
+            ]
         
         # Get total count and transactions
         total_count = await prisma.inventorytransaction.count(where=transaction_where)

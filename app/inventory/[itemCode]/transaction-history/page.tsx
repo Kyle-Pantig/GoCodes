@@ -87,8 +87,10 @@ export default function InventoryTransactionHistoryPage() {
   const page = parseInt(searchParams.get('page') || '1', 10)
   const pageSize = parseInt(searchParams.get('pageSize') || '20', 10)
   const transactionTypeFilter = searchParams.get('type') || 'all'
+  const searchQuery = searchParams.get('search') || ''
 
-  const [searchInput, setSearchInput] = useState('')
+  const [searchInput, setSearchInput] = useState(searchQuery)
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery)
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -100,6 +102,34 @@ export default function InventoryTransactionHistoryPage() {
   // Use ref to track transactions to avoid dependency issues in callbacks
   const transactionsRef = useRef<InventoryTransaction[]>([])
 
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchInput])
+
+  // Update URL when debounced search changes
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (debouncedSearch) {
+      params.set('search', debouncedSearch)
+      params.set('page', '1')
+    } else {
+      params.delete('search')
+    }
+    // Only update URL if the search value changed
+    if (debouncedSearch !== searchQuery) {
+      router.push(`/inventory/${itemCode}/transaction-history?${params.toString()}`)
+    }
+  }, [debouncedSearch, itemCode, router, searchParams, searchQuery])
+
+  // Sync searchInput with URL when navigating
+  useEffect(() => {
+    setSearchInput(searchQuery)
+  }, [searchQuery])
+
   // Fetch inventory item
   const { data: item, isLoading: isLoadingItem } = useInventoryItem(itemCode, !!itemCode)
 
@@ -110,6 +140,7 @@ export default function InventoryTransactionHistoryPage() {
       page,
       pageSize,
       type: transactionTypeFilter !== 'all' ? transactionTypeFilter : undefined,
+      search: searchQuery || undefined,
     },
     !!itemCode && !!item
   )
@@ -661,7 +692,15 @@ export default function InventoryTransactionHistoryPage() {
                   {searchInput ? (
                     <button
                       type="button"
-                      onClick={() => setSearchInput('')}
+                      onClick={() => {
+                        setSearchInput('')
+                        setDebouncedSearch('')
+                        // Clear search from URL while preserving type filter
+                        const params = new URLSearchParams(searchParams.toString())
+                        params.delete('search')
+                        params.set('page', '1')
+                        router.push(`/inventory/${itemCode}/transaction-history?${params.toString()}`)
+                      }}
                       className="absolute left-2 top-2 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer z-10"
                     >
                       <X className="h-4 w-4" />

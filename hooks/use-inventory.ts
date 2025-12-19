@@ -332,17 +332,19 @@ export const useInventoryTransactions = (
     page?: number
     pageSize?: number
     type?: string
+    search?: string
   } = {},
   enabled: boolean = true
 ) => {
   return useQuery({
-    queryKey: ["inventory-transactions", itemId, params.page, params.pageSize, params.type],
+    queryKey: ["inventory-transactions", itemId, params.page, params.pageSize, params.type, params.search],
     queryFn: async () => {
       const baseUrl = getApiBaseUrl()
       const queryParams = new URLSearchParams()
       if (params.page) queryParams.set('page', params.page.toString())
       if (params.pageSize) queryParams.set('pageSize', params.pageSize.toString())
       if (params.type && params.type !== 'all') queryParams.set('type', params.type)
+      if (params.search) queryParams.set('search', params.search)
 
       const token = await getAuthToken()
       const headers: HeadersInit = {}
