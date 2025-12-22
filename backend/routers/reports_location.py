@@ -33,7 +33,7 @@ async def get_location_reports(
     startDate: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     endDate: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     page: int = Query(1, ge=1),
-    pageSize: int = Query(50, ge=1, le=1000),
+    pageSize: int = Query(50, ge=1, le=10000),
     auth: dict = Depends(verify_auth)
 ):
     """Get location reports with optional filters and pagination"""
