@@ -1218,35 +1218,85 @@ function InventoryPageContent() {
     return html
   }, [])
 
-  // PDF Export handler
-  const handlePDFExport = useCallback(async (_allData: InventoryItem[], summaryData: SummaryData | null) => {
-    // Generate HTML for PDF
-    const html = generateInventoryReportHTML(_allData, summaryData, selectedSummaryFields, selectedExportFields, data?.items || [])
+  // Helper functions for FastAPI integration
+  const getApiBaseUrl = useCallback(() => {
+    const useFastAPI = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true'
+    const fastApiUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000'
+    return useFastAPI ? fastApiUrl : ''
+  }, [])
+
+  const getAuthToken = useCallback(async (): Promise<string | null> => {
+    try {
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if (error) {
+        console.error('Failed to get auth token:', error)
+        return null
+      }
+      if (!session?.access_token) {
+        console.warn('No active session found')
+        return null
+      }
+      return session.access_token
+    } catch (error) {
+      console.error('Failed to get auth token:', error)
+      return null
+    }
+  }, [])
+
+  // PDF Export handler - using FastAPI endpoint with same pattern as reports
+  const handlePDFExport = useCallback(async () => {
+    // Use FastAPI base URL
+    const baseUrl = getApiBaseUrl()
     
-    const response = await fetch('/api/inventory/pdf', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ html }),
+    // Build query params
+    const params = new URLSearchParams()
+    params.set('format', 'pdf')
+    if (searchQuery) params.set('search', searchQuery)
+    if (categoryFilter && categoryFilter !== 'all') params.set('category', categoryFilter)
+    if (lowStockFilter) params.set('lowStock', 'true')
+    if (selectedSummaryFields.has('summary')) params.set('includeSummary', 'true')
+    if (selectedSummaryFields.has('byCategory')) params.set('includeByCategory', 'true')
+    if (selectedSummaryFields.has('byStatus')) params.set('includeByStatus', 'true')
+    if (selectedSummaryFields.has('totalCost')) params.set('includeTotalCost', 'true')
+    if (selectedSummaryFields.has('lowStock')) params.set('includeLowStock', 'true')
+    if (selectedExportFields.size > 0) {
+      params.set('includeItemList', 'true')
+      params.set('itemFields', Array.from(selectedExportFields).join(','))
+    }
+    
+    const url = `${baseUrl}/api/inventory/export?${params.toString()}`
+    
+    // Get auth token
+    const token = await getAuthToken()
+    const headers: HeadersInit = {}
+    if (baseUrl && token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+    
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers,
     })
 
     if (!response.ok) {
-      throw new Error('PDF generation failed')
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.detail || error.error || 'PDF generation failed')
     }
 
     const blob = await response.blob()
-    const url = window.URL.createObjectURL(blob)
+    const downloadUrl = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
+    a.href = downloadUrl
     a.download = `inventory-report-${new Date().toISOString().split('T')[0]}.pdf`
     document.body.appendChild(a)
     a.click()
-    window.URL.revokeObjectURL(url)
+    window.URL.revokeObjectURL(downloadUrl)
     document.body.removeChild(a)
 
     toast.success('PDF exported successfully')
-  }, [selectedSummaryFields, selectedExportFields, data?.items, generateInventoryReportHTML])
+  }, [searchQuery, categoryFilter, lowStockFilter, selectedSummaryFields, selectedExportFields, getApiBaseUrl, getAuthToken])
 
   // Export inventory hook
   const exportMutation = useExportInventory()
@@ -1261,9 +1311,8 @@ function InventoryPageContent() {
     setIsExporting(true)
     try {
       if (exportFormat === 'pdf') {
-        // Handle PDF export - still needs summary data for HTML generation
-        const summaryData = calculateSummaryData()
-        await handlePDFExport([], summaryData)
+        // Handle PDF export using FastAPI endpoint
+        await handlePDFExport()
       } else {
         // Handle Excel export via hook
         const blob = await exportMutation.mutateAsync({
@@ -1299,7 +1348,7 @@ function InventoryPageContent() {
     } finally {
       setIsExporting(false)
     }
-  }, [selectedExportFields, selectedSummaryFields, exportFormat, searchQuery, categoryFilter, lowStockFilter, calculateSummaryData, handlePDFExport, exportMutation])
+  }, [selectedExportFields, selectedSummaryFields, exportFormat, searchQuery, categoryFilter, lowStockFilter, handlePDFExport, exportMutation])
 
   const handleExportClick = useCallback((format: 'excel' | 'pdf' = 'excel') => {
     if (!data?.items || data.items.length === 0) {
@@ -1438,7 +1487,22 @@ function InventoryPageContent() {
   // Generate new item code
   const generateNewItemCode = async (): Promise<string> => {
     try {
-      const response = await fetch('/api/inventory/generate-code')
+      // Use FastAPI if enabled
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/inventory/generate-code`
+      
+      // Get auth token
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: sessionData } = await supabase.auth.getSession()
+      const headers: HeadersInit = {}
+      if (sessionData?.session?.access_token) {
+        headers['Authorization'] = `Bearer ${sessionData.session.access_token}`
+      }
+      
+      const response = await fetch(url, { headers })
       if (!response.ok) throw new Error('Failed to generate item code')
       const data = await response.json()
       return data.itemCode
@@ -1450,33 +1514,6 @@ function InventoryPageContent() {
 
   // Import inventory items from Excel
   const handleImport = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    // Helper functions for import
-    const getApiBaseUrl = () => {
-      const useFastAPI = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true'
-      const fastApiUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000'
-      return useFastAPI ? fastApiUrl : ''
-    }
-
-    const getAuthToken = async (): Promise<string | null> => {
-      try {
-        const { createClient } = await import('@/lib/supabase-client')
-        const supabase = createClient()
-        const { data: { session }, error } = await supabase.auth.getSession()
-        if (error) {
-          console.error('Failed to get auth token:', error)
-          return null
-        }
-        if (!session?.access_token) {
-          console.warn('No active session found')
-          return null
-        }
-        return session.access_token
-      } catch (error) {
-        console.error('Failed to get auth token:', error)
-        return null
-      }
-    }
-
     const createItem = async (itemData: {
       itemCode: string
       name: string

@@ -49,7 +49,9 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
   const [editingCheckoutId, setEditingCheckoutId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'assign' | 'history'>('assign')
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
+  const [selectedDeptEmployeeId, setSelectedDeptEmployeeId] = useState<string | null>(null)
   const [isCommandOpen, setIsCommandOpen] = useState(false)
+  const [isDeptCommandOpen, setIsDeptCommandOpen] = useState(false)
 
   // Fetch checkout records
   const { data: checkoutData, isLoading: isLoadingCheckouts } = useQuery({
@@ -122,10 +124,14 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
   })
 
   const reservations = reservationData?.reservations || []
-  // Get the most recent active reservation (Employee type)
-  const activeReservation = reservations.find((r: { reservationType: string; employeeUserId: string | null }) => 
+  // Get the most recent active reservation (Employee or Department type)
+  const activeEmployeeReservation = reservations.find((r: { reservationType: string; employeeUserId: string | null }) => 
     r.reservationType === 'Employee' && r.employeeUserId
   )
+  const activeDepartmentReservation = reservations.find((r: { reservationType: string; department: string | null }) => 
+    r.reservationType === 'Department' && r.department
+  )
+  const activeReservation = activeEmployeeReservation || activeDepartmentReservation
 
   // Fetch employees - fetch all pages to get complete list
   const { data: employees = [] } = useAllEmployees(true)
@@ -177,6 +183,7 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
       }
       // Clear selections immediately
       setSelectedEmployeeId(null)
+      setSelectedDeptEmployeeId(null)
       setEditingCheckoutId(null)
       setActiveTab('assign')
       toast.success('Employee assigned successfully')
@@ -193,9 +200,22 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
   // Checkout from reservation mutation
   const checkoutFromReservationMutation = useMutation({
     mutationFn: async ({ reservationId, employeeUserId }: { reservationId: string; employeeUserId: string }) => {
-      const response = await fetch('/api/assets/checkout', {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/checkout`
+      
+      // Get auth token
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = { 'Content-Type': 'application/json' }
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           assetIds: [assetId],
           employeeUserId,
@@ -209,23 +229,12 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
       const result = await response.json()
       
       // Delete the reservation after successful checkout
-      const deleteBaseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
-        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
-        : ''
-      const deleteUrl = `${deleteBaseUrl}/api/assets/reserve/${reservationId}`
-      
-      // Get auth token for delete
-      const deleteSupabase = createClient()
-      const { data: { session: deleteSession } } = await deleteSupabase.auth.getSession()
-      const deleteHeaders: HeadersInit = {}
-      if (deleteSession?.access_token) {
-        deleteHeaders['Authorization'] = `Bearer ${deleteSession.access_token}`
-      }
+      const deleteUrl = `${baseUrl}/api/assets/reserve/${reservationId}`
       
       const deleteResponse = await fetch(deleteUrl, {
         method: 'DELETE',
         credentials: 'include',
-        headers: deleteHeaders,
+        headers,
       })
       if (!deleteResponse.ok) {
         console.error('Failed to delete reservation after checkout')
@@ -241,6 +250,8 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
       // Also invalidate general assets queries to refetch assets table
       queryClient.invalidateQueries({ queryKey: ['assets'] })
       queryClient.invalidateQueries({ queryKey: ['assets-list'] })
+      // Clear selections
+      setSelectedDeptEmployeeId(null)
       toast.success('Asset checked out successfully')
       if (onOpenChange) {
         onOpenChange(false)
@@ -254,8 +265,22 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
   // Cancel reservation mutation
   const cancelReservationMutation = useMutation({
     mutationFn: async (reservationId: string) => {
-      const response = await fetch(`/api/assets/reserve/${reservationId}`, {
+      const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+        ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+        : ''
+      const url = `${baseUrl}/api/assets/reserve/${reservationId}`
+      
+      // Get auth token
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: HeadersInit = {}
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      
+      const response = await fetch(url, {
         method: 'DELETE',
+        headers,
       })
       if (!response.ok) {
         const error = await response.json()
@@ -418,15 +443,15 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
               </div>
             ) : (
               <>
-                {/* Reservation Display */}
-                {activeReservation && assetStatus === 'Reserved' && activeReservation.employeeUser && (
-                  <div className="space-y-3 p-3 border rounded-md">
+                {/* Employee Reservation Display */}
+                {activeEmployeeReservation && assetStatus === 'Reserved' && activeEmployeeReservation.employeeUser && (
+                  <div className="space-y-3 p-3 border rounded-md ">
                     <div className="text-sm">
-                      <span className="text-muted-foreground">Reserved by:</span>{' '}
-                      <span className="font-medium">{activeReservation.employeeUser.name}</span>
-                      {activeReservation.reservationDate && (
+                      <span className="text-muted-foreground">Reserved for Employee:</span>{' '}
+                      <span className="font-medium">{activeEmployeeReservation.employeeUser.name}</span>
+                      {activeEmployeeReservation.reservationDate && (
                         <span className="text-muted-foreground ml-2">
-                          • {new Date(activeReservation.reservationDate).toLocaleDateString('en-US', {
+                          • {new Date(activeEmployeeReservation.reservationDate).toLocaleDateString('en-US', {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric'
@@ -438,8 +463,8 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
                       <Button
                         onClick={() => {
                           checkoutFromReservationMutation.mutate({
-                            reservationId: activeReservation.id,
-                            employeeUserId: activeReservation.employeeUserId!,
+                            reservationId: activeEmployeeReservation.id,
+                            employeeUserId: activeEmployeeReservation.employeeUserId!,
                           })
                         }}
                         disabled={checkoutFromReservationMutation.isPending || cancelReservationMutation.isPending}
@@ -453,14 +478,136 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
                         ) : (
                           <>
                             <Check className="mr-2 h-4 w-4" />
-                            Checkout
+                            Checkout to {activeEmployeeReservation.employeeUser.name}
                           </>
                         )}
                       </Button>
                       <Button
                         onClick={() => {
                           if (confirm('Cancel this reservation?')) {
-                            cancelReservationMutation.mutate(activeReservation.id)
+                            cancelReservationMutation.mutate(activeEmployeeReservation.id)
+                          }
+                        }}
+                        disabled={checkoutFromReservationMutation.isPending || cancelReservationMutation.isPending}
+                        variant="outline"
+                      >
+                        {cancelReservationMutation.isPending ? (
+                          <Spinner className="h-4 w-4" />
+                        ) : (
+                          <XCircle className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Department Reservation Display */}
+                {activeDepartmentReservation && assetStatus === 'Reserved' && activeDepartmentReservation.department && !activeEmployeeReservation && (
+                  <div className="space-y-3 p-3 border rounded-md bg-purple-50/50 dark:bg-purple-950/20">
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Reserved for Department:</span>{' '}
+                      <span className="font-medium">{activeDepartmentReservation.department}</span>
+                      {activeDepartmentReservation.reservationDate && (
+                        <span className="text-muted-foreground ml-2">
+                          • {new Date(activeDepartmentReservation.reservationDate).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </span>
+                      )}
+                    </div>
+                    
+                    {/* Employee Selection for Department Reservation */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Select Employee from {activeDepartmentReservation.department}</label>
+                      <Command>
+                        <CommandInput 
+                          placeholder={`Search employees in ${activeDepartmentReservation.department}...`}
+                          onFocus={() => setIsDeptCommandOpen(true)}
+                          onBlur={() => setTimeout(() => setIsDeptCommandOpen(false), 200)}
+                        />
+                        {isDeptCommandOpen && (
+                          <CommandList className="max-h-[200px]">
+                            <CommandEmpty>
+                              No employees found in this department.
+                            </CommandEmpty>
+                            <CommandGroup heading={`Employees in ${activeDepartmentReservation.department}`}>
+                              {employees
+                                .filter((emp: { department?: string | null }) => 
+                                  emp.department?.toLowerCase() === activeDepartmentReservation.department?.toLowerCase()
+                                )
+                                .map((emp: { id: string; name: string; email: string; department?: string | null }) => {
+                                  const isSelected = selectedDeptEmployeeId === emp.id
+                                  return (
+                                    <CommandItem
+                                      key={emp.id}
+                                      value={`${emp.name} ${emp.email}`}
+                                      onSelect={() => {
+                                        setSelectedDeptEmployeeId(emp.id)
+                                      }}
+                                    >
+                                      <Check
+                                        className={cn(
+                                          "mr-2 h-4 w-4",
+                                          isSelected ? "opacity-100" : "opacity-0"
+                                        )}
+                                      />
+                                      <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                                        <span className="font-medium text-sm truncate text-left">{emp.name}</span>
+                                        <span className="text-xs text-muted-foreground truncate">{emp.email}</span>
+                                      </div>
+                                    </CommandItem>
+                                  )
+                                })}
+                            </CommandGroup>
+                          </CommandList>
+                        )}
+                      </Command>
+                      
+                      {/* Show selected employee */}
+                      {selectedDeptEmployeeId && (() => {
+                        const selectedEmp = employees.find((emp: { id: string }) => emp.id === selectedDeptEmployeeId)
+                        return selectedEmp ? (
+                          <div className="text-sm py-2">
+                            <span className="text-muted-foreground">Selected: </span>
+                            <span className="font-medium">{selectedEmp.name}</span>
+                          </div>
+                        ) : null
+                      })()}
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => {
+                          if (!selectedDeptEmployeeId) {
+                            toast.error('Please select an employee from the department')
+                            return
+                          }
+                          checkoutFromReservationMutation.mutate({
+                            reservationId: activeDepartmentReservation.id,
+                            employeeUserId: selectedDeptEmployeeId,
+                          })
+                        }}
+                        disabled={checkoutFromReservationMutation.isPending || cancelReservationMutation.isPending || !selectedDeptEmployeeId}
+                        className="flex-1"
+                      >
+                        {checkoutFromReservationMutation.isPending ? (
+                          <>
+                            <Spinner className="mr-2 h-4 w-4" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="mr-2 h-4 w-4" />
+                            Checkout to Selected Employee
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          if (confirm('Cancel this reservation?')) {
+                            cancelReservationMutation.mutate(activeDepartmentReservation.id)
                           }
                         }}
                         disabled={checkoutFromReservationMutation.isPending || cancelReservationMutation.isPending}
@@ -712,6 +859,7 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
         if (!isOpen) {
           setEditingCheckoutId(null)
           setSelectedEmployeeId(null)
+          setSelectedDeptEmployeeId(null)
           setActiveTab('assign')
         }
       }}>

@@ -45,14 +45,27 @@ async def create_lease_return(
         
         async with prisma.tx() as transaction:
             for asset_id in return_data.assetIds:
-                # Find the most recent active lease for this asset
+                # First get the asset to show proper tag ID in error messages
+                asset = await transaction.assets.find_unique(
+                    where={"id": asset_id}
+                )
+
+                if not asset:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Asset not found: {asset_id}"
+                    )
+
+                asset_tag_id = asset.assetTagId or asset_id
+
+                # Find the most recent unreturned lease for this asset
+                # We don't filter by leaseEndDate because late returns are allowed
                 active_lease = await transaction.assetslease.find_first(
                     where={
                         "assetId": asset_id,
-                        "OR": [
-                            {"leaseEndDate": None},
-                            {"leaseEndDate": {"gte": return_date}}
-                        ]
+                        "returns": {
+                            "none": {}  # Exclude leases that have already been returned
+                        }
                     },
                     order={"leaseStartDate": "desc"}
                 )
@@ -60,18 +73,7 @@ async def create_lease_return(
                 if not active_lease:
                     raise HTTPException(
                         status_code=404,
-                        detail=f"No active lease found for asset {asset_id}"
-                    )
-
-                # Check if this lease has already been returned
-                existing_return = await transaction.assetsleasereturn.find_first(
-                    where={"leaseId": active_lease.id}
-                )
-
-                if existing_return:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"This lease has already been returned"
+                        detail=f"No active lease found for asset {asset_tag_id}"
                     )
 
                 # Get update data for this asset (condition, notes)

@@ -350,7 +350,13 @@ function ReserveAssetPageContent() {
 
     // Always fetch fresh asset data to ensure we have the latest values
     try {
-      const response = await fetch(`/api/assets/${assetToSelect.id}`)
+      const baseUrl = getApiBaseUrl()
+      const token = await getAuthToken()
+      const headers: HeadersInit = {}
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      const response = await fetch(`${baseUrl}/api/assets/${assetToSelect.id}`, { headers })
       if (response.ok) {
         const result = await response.json()
         assetToSelect = result.asset as Asset
@@ -456,7 +462,13 @@ function ReserveAssetPageContent() {
       // Fetch and select the asset from URL
       const selectAssetFromUrl = async () => {
         try {
-          const response = await fetch(`/api/assets/${urlAssetId}`)
+          const baseUrl = getApiBaseUrl()
+          const token = await getAuthToken()
+          const headers: HeadersInit = {}
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`
+          }
+          const response = await fetch(`${baseUrl}/api/assets/${urlAssetId}`, { headers })
           if (response.ok) {
             const data = await response.json()
             const asset = data.asset as Asset
@@ -581,9 +593,16 @@ function ReserveAssetPageContent() {
       purpose?: string
       notes?: string
     }) => {
-      const response = await fetch('/api/assets/reserve', {
+      const baseUrl = getApiBaseUrl()
+      const token = await getAuthToken()
+      const headers: HeadersInit = { "Content-Type": "application/json" }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
+      const response = await fetch(`${baseUrl}/api/assets/reserve`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(data),
       })
 
@@ -605,7 +624,13 @@ function ReserveAssetPageContent() {
       // Fetch fresh asset data to update selectedAsset if it's still selected
       if (selectedAsset && selectedAsset.id === variables.assetId) {
         try {
-          const response = await fetch(`/api/assets/${variables.assetId}`)
+          const baseUrl = getApiBaseUrl()
+          const token = await getAuthToken()
+          const headers: HeadersInit = {}
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`
+          }
+          const response = await fetch(`${baseUrl}/api/assets/${variables.assetId}`, { headers })
           if (response.ok) {
             const result = await response.json()
             const updatedAsset = result.asset as Asset

@@ -504,7 +504,13 @@ function LeaseReturnPageContent() {
       // Fetch and add the asset from URL
       const addAssetFromUrl = async () => {
         try {
-          const response = await fetch(`/api/assets/${urlAssetId}`)
+          const baseUrl = getApiBaseUrl()
+          const token = await getAuthToken()
+          const headers: HeadersInit = {}
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`
+          }
+          const response = await fetch(`${baseUrl}/api/assets/${urlAssetId}`, { headers })
           if (response.ok) {
             const data = await response.json()
             const asset = data.asset as Asset
@@ -678,9 +684,16 @@ function LeaseReturnPageContent() {
       returnDate: string
       updates: Record<string, { condition?: string; notes?: string }>
     }) => {
-      const response = await fetch('/api/assets/lease-return', {
+      const baseUrl = getApiBaseUrl()
+      const token = await getAuthToken()
+      const headers: HeadersInit = { "Content-Type": "application/json" }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
+      const response = await fetch(`${baseUrl}/api/assets/lease-return`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(data),
       })
 

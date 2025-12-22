@@ -36,14 +36,24 @@ export async function POST(request: NextRequest) {
       const returnResults = []
 
       for (const assetId of assetIds) {
-        // Find the most recent active lease for this asset
+        // First get the asset to show proper tag ID in error messages
+        const asset = await tx.assets.findUnique({
+          where: { id: assetId },
+          select: { id: true, assetTagId: true },
+        })
+
+        if (!asset) {
+          throw new Error(`Asset not found: ${assetId}`)
+        }
+
+        // Find the most recent unreturned lease for this asset
+        // We don't filter by leaseEndDate because late returns are allowed
         const activeLease = await tx.assetsLease.findFirst({
           where: {
             assetId,
-            OR: [
-              { leaseEndDate: null },
-              { leaseEndDate: { gte: parseDate(returnDate)! } },
-            ],
+            returns: {
+              none: {}, // Exclude leases that have already been returned
+            },
           },
           orderBy: {
             leaseStartDate: 'desc',
@@ -51,18 +61,7 @@ export async function POST(request: NextRequest) {
         })
 
         if (!activeLease) {
-          throw new Error(`No active lease found for asset ${assetId}`)
-        }
-
-        // Check if this lease has already been returned
-        const existingReturn = await tx.assetsLeaseReturn.findFirst({
-          where: {
-            leaseId: activeLease.id,
-          },
-        })
-
-        if (existingReturn) {
-          throw new Error(`This lease has already been returned`)
+          throw new Error(`No active lease found for asset ${asset.assetTagId}`)
         }
 
         // Get update data for this asset (condition, notes)

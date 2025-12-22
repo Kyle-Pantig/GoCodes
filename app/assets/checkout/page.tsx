@@ -390,7 +390,13 @@ function CheckoutPageContent() {
       // Fetch and add the asset from URL
       const addAssetFromUrl = async () => {
         try {
-          const response = await fetch(`/api/assets/${urlAssetId}`)
+          const baseUrl = getApiBaseUrl()
+          const token = await getAuthToken()
+          const headers: HeadersInit = {}
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`
+          }
+          const response = await fetch(`${baseUrl}/api/assets/${urlAssetId}`, { headers })
           if (response.ok) {
             const data = await response.json()
             const asset = data.asset as Asset

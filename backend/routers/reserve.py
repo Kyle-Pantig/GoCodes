@@ -169,13 +169,14 @@ async def create_reserve(
             # Create history log entries
             if history_logs:
                 for log_entry in history_logs:
-                    await transaction.assethistory.create(
+                    await transaction.assetshistorylogs.create(
                         data={
                             "assetId": reserve_data.assetId,
+                            "eventType": "edited",
                             "field": log_entry["field"],
                             "changeFrom": log_entry["changeFrom"],
                             "changeTo": log_entry["changeTo"],
-                            "changedBy": userName,
+                            "actionBy": userName,
                             "eventDate": reservation_date
                         }
                     )

@@ -443,7 +443,13 @@ function MaintenancePageContent() {
       // Fetch and select the asset from URL
       const selectAssetFromUrl = async () => {
         try {
-          const response = await fetch(`/api/assets/${urlAssetId}`)
+          const baseUrl = getApiBaseUrl()
+          const token = await getAuthToken()
+          const headers: HeadersInit = {}
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`
+          }
+          const response = await fetch(`${baseUrl}/api/assets/${urlAssetId}`, { headers })
           if (response.ok) {
             const data = await response.json()
             const asset = data.asset as Asset

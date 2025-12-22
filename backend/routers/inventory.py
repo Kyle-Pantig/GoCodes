@@ -2,12 +2,12 @@
 Inventory API router
 """
 from fastapi import APIRouter, HTTPException, Query, Depends, Path, Body
+from fastapi.responses import StreamingResponse, Response
 from typing import Optional
 import logging
 from decimal import Decimal
 import re
 from datetime import datetime
-from fastapi.responses import StreamingResponse
 import io
 from models.inventory import (
     InventoryItem,
@@ -34,6 +34,7 @@ from models.inventory import (
 )
 from auth import verify_auth
 from database import prisma
+from utils.pdf_generator import ReportPDF, PDF_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +197,7 @@ async def check_item_codes(
 
 @router.get("/export")
 async def export_inventory(
-    format: str = Query("excel", description="Export format"),
+    format: str = Query("excel", description="Export format: excel or pdf"),
     search: Optional[str] = Query(None, description="Search term"),
     category: Optional[str] = Query(None, description="Filter by category"),
     lowStock: bool = Query(False, description="Filter low stock items only"),
@@ -209,11 +210,17 @@ async def export_inventory(
     itemFields: Optional[str] = Query(None, description="Comma-separated item fields to include"),
     auth: dict = Depends(verify_auth)
 ):
-    """Export inventory data to Excel"""
+    """Export inventory data to Excel or PDF"""
     try:
         user_id = auth.get("user", {}).get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        if format not in ["excel", "pdf"]:
+            raise HTTPException(status_code=400, detail="Invalid format. Use excel or pdf.")
+        
+        if format == "pdf" and not PDF_AVAILABLE:
+            raise HTTPException(status_code=500, detail="PDF export not available - fpdf2 not installed")
         
         # Import openpyxl for Excel generation
         try:
@@ -425,20 +432,157 @@ async def export_inventory(
             ws = wb.create_sheet("Inventory")
             ws.append(["No data selected for export"])
         
-        # Save to buffer
-        buffer = io.BytesIO()
-        wb.save(buffer)
-        buffer.seek(0)
+        # Generate output based on format
+        if format == "pdf":
+            # Generate PDF using fpdf2
+            pdf = ReportPDF("Inventory Report", "inventory")
+            pdf.add_page()
+            
+            # Summary section
+            if includeSummary:
+                pdf.add_section_title("Summary")
+                summary_rows = [
+                    ["Total Items", str(total_items)],
+                    ["Total Stock", str(int(total_stock))],
+                    ["Total Cost", format_number(total_cost)]
+                ]
+                pdf.add_table(["Metric", "Value"], summary_rows)
+                pdf.ln(10)
+            
+            # By Category section
+            if includeByCategory and by_category:
+                pdf.add_section_title("By Category")
+                cat_rows = []
+                for cat, data in by_category.items():
+                    cat_rows.append([cat, str(data['count']), str(int(data['totalStock'])), format_number(data['totalCost'])])
+                pdf.add_table(["Category", "Item Count", "Total Stock", "Total Cost"], cat_rows)
+                pdf.ln(10)
+            
+            # By Status section
+            if includeByStatus and by_status:
+                pdf.add_section_title("By Status")
+                status_rows = []
+                for status, data in by_status.items():
+                    status_rows.append([status, str(data['count']), str(int(data['totalStock'])), format_number(data['totalCost'])])
+                pdf.add_table(["Status", "Item Count", "Total Stock", "Total Cost"], status_rows)
+                pdf.ln(10)
+            
+            # Total Cost section
+            if includeTotalCost:
+                pdf.add_section_title("Total Cost")
+                pdf.add_table(["Description", "Amount"], [["Total Inventory Value", format_number(total_cost)]])
+                pdf.ln(10)
+            
+            # Low Stock Items section
+            if includeLowStock and low_stock_items:
+                pdf.add_section_title(f"Low Stock Items ({len(low_stock_items)} items)")
+                low_stock_rows = []
+                for item in low_stock_items:
+                    low_stock_rows.append([
+                        item.itemCode,
+                        item.name,
+                        str(int(float(item.currentStock))),
+                        str(int(float(item.minStockLevel))) if item.minStockLevel else ''
+                    ])
+                pdf.add_table(["Item Code", "Name", "Current Stock", "Min Level"], low_stock_rows)
+                pdf.ln(10)
+            
+            # Item List section
+            if includeItemList and itemFields:
+                field_list = [f.strip() for f in itemFields.split(',') if f.strip()]
+                if field_list and filtered_items:
+                    field_labels = {
+                        'itemCode': 'Item Code',
+                        'name': 'Name',
+                        'description': 'Description',
+                        'category': 'Category',
+                        'unit': 'Unit',
+                        'currentStock': 'Current Stock',
+                        'minStockLevel': 'Min Stock',
+                        'maxStockLevel': 'Max Stock',
+                        'unitCost': 'Unit Cost',
+                        'location': 'Location',
+                        'supplier': 'Supplier',
+                        'brand': 'Brand',
+                        'model': 'Model',
+                        'sku': 'SKU',
+                        'barcode': 'Barcode',
+                        'remarks': 'Remarks',
+                    }
+                    
+                    pdf.add_section_title(f"Item List ({len(filtered_items)} items)")
+                    headers = [field_labels.get(f, f) for f in field_list]
+                    
+                    item_rows = []
+                    for item in filtered_items:
+                        row = []
+                        for field in field_list:
+                            if field == 'itemCode':
+                                row.append(item.itemCode or '')
+                            elif field == 'name':
+                                row.append(item.name or '')
+                            elif field == 'description':
+                                desc = item.description or ''
+                                row.append(desc[:50] + '...' if len(desc) > 50 else desc)
+                            elif field == 'category':
+                                row.append(item.category or '')
+                            elif field == 'unit':
+                                row.append(item.unit or '')
+                            elif field == 'currentStock':
+                                row.append(str(int(float(item.currentStock))))
+                            elif field == 'minStockLevel':
+                                row.append(str(int(float(item.minStockLevel))) if item.minStockLevel else '')
+                            elif field == 'maxStockLevel':
+                                row.append(str(int(float(item.maxStockLevel))) if item.maxStockLevel else '')
+                            elif field == 'unitCost':
+                                row.append(format_number(item.unitCost) if item.unitCost else '')
+                            elif field == 'location':
+                                row.append(item.location or '')
+                            elif field == 'supplier':
+                                row.append(item.supplier or '')
+                            elif field == 'brand':
+                                row.append(item.brand or '')
+                            elif field == 'model':
+                                row.append(item.model or '')
+                            elif field == 'sku':
+                                row.append(item.sku or '')
+                            elif field == 'barcode':
+                                row.append(item.barcode or '')
+                            elif field == 'remarks':
+                                remarks = item.remarks or ''
+                                row.append(remarks[:50] + '...' if len(remarks) > 50 else remarks)
+                            else:
+                                row.append('')
+                        item_rows.append(row)
+                    
+                    pdf.add_table(headers, item_rows)
+            
+            pdf_content = bytes(pdf.output())
+            filename = f"inventory-export-{datetime.now().strftime('%Y-%m-%d')}.pdf"
+            
+            return Response(
+                content=pdf_content,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"'
+                }
+            )
         
-        filename = f"inventory-export-{datetime.now().strftime('%Y-%m-%d')}.xlsx"
-        
-        return StreamingResponse(
-            buffer,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"'
-            }
-        )
+        else:  # Excel format
+            # Save to buffer
+            buffer = io.BytesIO()
+            wb.save(buffer)
+            buffer.seek(0)
+            
+            filename = f"inventory-export-{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+            
+            return StreamingResponse(
+                buffer,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"'
+                }
+            )
     
     except HTTPException:
         raise
