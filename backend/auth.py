@@ -27,8 +27,25 @@ security = HTTPBearer(auto_error=False)
 async def verify_auth(request: Request) -> dict:
     """
     Verify user authentication using Supabase session from cookies or Authorization header.
+    Also accepts CRON_SECRET for internal cron job calls.
     Returns the user data if authenticated, raises HTTPException if not.
     """
+    # Check for internal cron call with CRON_SECRET
+    auth_header = request.headers.get("Authorization")
+    is_cron_internal = request.headers.get("X-Cron-Internal") == "true"
+    
+    if auth_header and auth_header.startswith("Bearer ") and is_cron_internal:
+        token = auth_header.split("Bearer ")[1]
+        cron_secret = os.getenv("CRON_SECRET")
+        if cron_secret and token == cron_secret:
+            # Return a system user for cron jobs
+            return {
+                "user": {"id": "system-cron", "email": "cron@system.internal"},
+                "user_id": "system-cron",
+                "email": "cron@system.internal",
+                "user_metadata": {"name": "System Cron Job"}
+            }
+    
     if not SUPABASE_URL or not SUPABASE_ANON_KEY:
         missing = []
         if not SUPABASE_URL:
@@ -43,7 +60,6 @@ async def verify_auth(request: Request) -> dict:
     access_token = None
     
     # Try to get token from Authorization header first
-    auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         access_token = auth_header.split("Bearer ")[1]
     else:

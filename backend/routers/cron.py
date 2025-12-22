@@ -78,8 +78,15 @@ async def _generate_report_export(
         
         logger.info(f"Report params: {params}")
         
+        # Pass CRON_SECRET for internal authentication
+        cron_secret = os.getenv("CRON_SECRET")
+        headers = {}
+        if cron_secret:
+            headers["Authorization"] = f"Bearer {cron_secret}"
+            headers["X-Cron-Internal"] = "true"
+        
         async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.get(export_url, params=params)
+            response = await client.get(export_url, params=params, headers=headers)
             
             if response.status_code != 200:
                 logger.error(f"Failed to generate report: {response.status_code} - {response.text[:500]}")
