@@ -11,6 +11,7 @@ import httpx
 
 from database import prisma
 from utils.report_schedule import calculate_next_run_at, TIMEZONE_OFFSET_HOURS, LOCAL_TIMEZONE
+from utils.pdf_generator import generate_pdf_from_excel_data, is_pdf_available
 
 # Try to import Resend for email sending
 try:
@@ -34,10 +35,11 @@ async def _generate_report_export(
 ) -> Optional[Dict[str, Any]]:
     """Generate report export by calling the export endpoint"""
     try:
-        # Export endpoints only support CSV and Excel, not PDF
-        export_format = format
-        if format == "pdf":
-            export_format = "excel"
+        # Determine if we need PDF conversion
+        needs_pdf_conversion = format == "pdf"
+        
+        # Export endpoints only support CSV and Excel, so always use Excel for PDF
+        export_format = "excel" if needs_pdf_conversion else format
         
         # Map report types to export endpoints
         report_type_map = {
@@ -92,7 +94,32 @@ async def _generate_report_export(
                 logger.error(f"Failed to generate report: {response.status_code} - {response.text[:500]}")
                 return None
             
-            extension_map = {"pdf": "xlsx", "csv": "csv", "excel": "xlsx"}
+            content = response.content
+            mime_type = response.headers.get("content-type", "application/octet-stream")
+            
+            # Convert to PDF if requested
+            if needs_pdf_conversion:
+                if is_pdf_available():
+                    logger.info(f"Converting Excel to PDF for report: {report_name}")
+                    pdf_content = generate_pdf_from_excel_data(
+                        excel_content=content,
+                        report_name=report_name,
+                        report_type=report_type
+                    )
+                    if pdf_content:
+                        content = pdf_content
+                        mime_type = "application/pdf"
+                        logger.info(f"PDF conversion successful: {len(content)} bytes")
+                    else:
+                        logger.warning(f"PDF conversion failed, falling back to Excel")
+                        # Fall back to Excel
+                        format = "excel"
+                else:
+                    logger.warning("PDF library not available, falling back to Excel")
+                    format = "excel"
+            
+            # Determine file extension based on actual format
+            extension_map = {"pdf": "pdf", "csv": "csv", "excel": "xlsx"}
             extension = extension_map.get(format, "xlsx")
             
             safe_name = ''.join(c if c.isalnum() else '_' for c in report_name.lower())
@@ -103,13 +130,13 @@ async def _generate_report_export(
             date_str = now_local.strftime("%Y-%m-%d")
             filename = f"{safe_name}_{date_str}.{extension}"
             
-            content_length = len(response.content)
+            content_length = len(content)
             logger.info(f"Report generated successfully: {filename} ({content_length} bytes)")
             
             return {
                 "filename": filename,
-                "content": response.content,
-                "mime_type": response.headers.get("content-type", "application/octet-stream")
+                "content": content,
+                "mime_type": mime_type
             }
     
     except Exception as e:
