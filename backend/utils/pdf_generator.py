@@ -20,9 +20,8 @@ class ReportPDF(FPDF):
     """Custom PDF class for report generation"""
     
     def __init__(self, report_name: str, report_type: str):
-        # Use Legal size (wider than A4) in Landscape for maximum width
-        # A4 Landscape: 297mm wide, Legal Landscape: 356mm wide
-        super().__init__(orientation='L', format='Legal')
+        # A4 Landscape: 297mm x 210mm
+        super().__init__(orientation='L', format='A4')
         self.report_name = report_name
         self.report_type = report_type
         self.set_auto_page_break(auto=True, margin=15)
