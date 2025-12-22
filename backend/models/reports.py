@@ -171,14 +171,14 @@ class LeaseReportResponse(BaseModel):
     leases: List[LeaseItem]
     pagination: PaginationInfo
 
-class LocationGroup(BaseModel):
+class LocationReportGroup(BaseModel):
     location: str
     assetCount: int
     totalValue: float
     averageValue: float
     utilizationPercentage: float
 
-class SiteGroup(BaseModel):
+class SiteReportGroup(BaseModel):
     site: str
     assetCount: int
     totalValue: float
@@ -190,8 +190,8 @@ class LocationSummary(BaseModel):
     totalAssets: int
     totalLocations: int
     totalSites: int
-    byLocation: List[LocationGroup]
-    bySite: List[SiteGroup]
+    byLocation: List[LocationReportGroup]
+    bySite: List[SiteReportGroup]
 
 class LocationAsset(BaseModel):
     id: str
@@ -260,7 +260,7 @@ class UpcomingMaintenance(BaseModel):
     maintenanceBy: Optional[str] = None
     daysUntilDue: Optional[int] = None
 
-class StatusGroup(BaseModel):
+class MaintenanceStatusGroup(BaseModel):
     status: str
     count: int
     totalCost: float
@@ -280,7 +280,7 @@ class MaintenanceSummary(BaseModel):
     totalCost: float
     averageCost: float
     totalCostByStatus: TotalCostByStatus
-    byStatus: List[StatusGroup]
+    byStatus: List[MaintenanceStatusGroup]
 
 class MaintenanceReportResponse(BaseModel):
     summary: MaintenanceSummary

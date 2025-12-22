@@ -10,7 +10,7 @@ import io
 import csv
 import asyncio
 
-from models.reports import MaintenanceReportResponse, MaintenanceSummary, MaintenanceItem, UpcomingMaintenance, StatusGroup, TotalCostByStatus, MaintenanceInventoryItem, PaginationInfo
+from models.reports import MaintenanceReportResponse, MaintenanceSummary, MaintenanceItem, UpcomingMaintenance, MaintenanceStatusGroup, TotalCostByStatus, MaintenanceInventoryItem, PaginationInfo
 from auth import verify_auth
 from database import prisma
 
@@ -182,7 +182,7 @@ async def get_maintenance_reports(
             by_status_map[status_key]["totalCost"] += float(maintenance.cost) if maintenance.cost else 0.0
 
         by_status = [
-            StatusGroup(
+            MaintenanceStatusGroup(
                 status=group["status"],
                 count=group["count"],
                 totalCost=group["totalCost"],

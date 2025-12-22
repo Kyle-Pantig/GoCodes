@@ -7,6 +7,24 @@ import { usePermissions } from '@/hooks/use-permissions'
 import { useForm, Controller, useWatch, type SubmitHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { automatedReportScheduleSchema, type AutomatedReportScheduleFormData } from '@/lib/validations/automated-reports'
+
+/**
+ * Parse a datetime string as local time (not UTC).
+ * The backend stores times in the configured local timezone, so we need to
+ * interpret them as local time without any UTC conversion.
+ */
+function parseAsLocalTime(dateStr: string): Date {
+  // Remove any Z suffix (UTC indicator) to prevent UTC conversion
+  const cleanStr = dateStr.replace(/Z$/, '').replace(' ', 'T')
+  
+  // Parse the datetime parts manually to create a local date
+  const [datePart, timePart] = cleanStr.split('T')
+  const [year, month, day] = datePart.split('-').map(Number)
+  const [hour, minute, second = 0] = (timePart || '00:00:00').split(':').map(n => parseInt(n) || 0)
+  
+  // Create date in local timezone
+  return new Date(year, month - 1, day, hour, minute, second)
+}
 import {
   Table,
   TableBody,
@@ -623,7 +641,7 @@ function AutomatedReportsPageContent() {
                             <div className="flex items-center gap-2">
                               <Calendar className="h-4 w-4 text-muted-foreground" />
                               <span className="text-sm">
-                                {format(new Date(schedule.nextRunAt), 'MMM d, yyyy HH:mm')}
+                                {format(parseAsLocalTime(schedule.nextRunAt), 'MMM d, yyyy h:mm a')}
                               </span>
                             </div>
                           ) : (
@@ -801,6 +819,18 @@ function AutomatedReportsPageContent() {
                   />
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="scheduledTime">Time (24-hour) *</Label>
+                  <Input
+                    id="scheduledTime"
+                    type="time"
+                    {...register('scheduledTime')}
+                    className={errors.scheduledTime ? 'border-destructive' : ''}
+                  />
+                  {errors.scheduledTime && (
+                    <p className="text-sm text-destructive">{errors.scheduledTime.message}</p>
+                  )}
+                </div>
               </div>
 
               {frequency === 'weekly' && (

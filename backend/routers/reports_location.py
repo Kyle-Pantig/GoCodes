@@ -10,7 +10,7 @@ import io
 import csv
 import asyncio
 
-from models.reports import LocationReportResponse, LocationSummary, LocationGroup, SiteGroup, LocationAsset, MovementItem, PaginationInfo
+from models.reports import LocationReportResponse, LocationSummary, LocationReportGroup, SiteReportGroup, LocationAsset, MovementItem, PaginationInfo
 from auth import verify_auth
 from database import prisma
 
@@ -156,7 +156,7 @@ async def get_location_reports(
 
         # Calculate location utilization
         by_location = [
-            LocationGroup(
+            LocationReportGroup(
                 location=group["location"],
                 assetCount=group["count"],
                 totalValue=group["totalValue"],
@@ -168,7 +168,7 @@ async def get_location_reports(
 
         # Calculate site utilization
         by_site = [
-            SiteGroup(
+            SiteReportGroup(
                 site=group["site"],
                 assetCount=group["count"],
                 totalValue=group["totalValue"],
