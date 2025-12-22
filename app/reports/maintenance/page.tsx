@@ -133,6 +133,9 @@ interface ReportFilters {
   status?: string
   assetId?: string
   category?: string
+  location?: string
+  site?: string
+  department?: string
   startDate?: string
   endDate?: string
 }
