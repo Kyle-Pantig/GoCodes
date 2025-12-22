@@ -34,9 +34,10 @@ interface ReportFiltersProps {
   }
   onFiltersChange: (filters: ReportFiltersProps['filters']) => void
   disabled?: boolean
+  hideStatus?: boolean
 }
 
-export function ReportFilters({ filters, onFiltersChange, disabled = false }: ReportFiltersProps) {
+export function ReportFilters({ filters, onFiltersChange, disabled = false, hideStatus = false }: ReportFiltersProps) {
   const [open, setOpen] = useState(false)
   const [localFilters, setLocalFilters] = useState(filters)
 
@@ -99,25 +100,27 @@ export function ReportFilters({ filters, onFiltersChange, disabled = false }: Re
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* Status Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="status-filter">Status</Label>
-              <Select
-                value={localFilters.status || 'all'}
-                onValueChange={(value) => handleFilterChange('status', value === 'all' ? undefined : value)}
-              >
-                <SelectTrigger id="status-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All statuses" className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  {statusOptions.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {status}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {!hideStatus && (
+              <div className="space-y-2">
+                <Label htmlFor="status-filter">Status</Label>
+                <Select
+                  value={localFilters.status || 'all'}
+                  onValueChange={(value) => handleFilterChange('status', value === 'all' ? undefined : value)}
+                >
+                  <SelectTrigger id="status-filter" className="w-full min-w-0">
+                    <SelectValue placeholder="All statuses" className="truncate" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {statusOptions.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {status}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Category Filter */}
             <div className="space-y-2">
@@ -132,7 +135,7 @@ export function ReportFilters({ filters, onFiltersChange, disabled = false }: Re
                 <SelectContent>
                   <SelectItem value="all">All categories</SelectItem>
                   {categories?.map((category: { id: string; name: string }) => (
-                    <SelectItem key={category.id} value={category.id}>
+                    <SelectItem key={category.id} value={category.name}>
                       {category.name}
                     </SelectItem>
                   ))}

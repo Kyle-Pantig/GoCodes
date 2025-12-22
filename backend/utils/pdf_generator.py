@@ -161,14 +161,39 @@ class ReportPDF(FPDF):
             row_fill = not row_fill
 
     def _draw_header_row(self, headers: List[str], col_widths: List[int]):
-        """Draw the header row"""
+        """Draw the header row with text wrapping support"""
         self.set_font('Helvetica', 'B', 8)
         self.set_fill_color(102, 126, 234)
         self.set_text_color(255, 255, 255)
+        
+        # Calculate header row height based on longest header
+        header_height = 7
         for i, header in enumerate(headers):
             w = col_widths[i] if i < len(col_widths) else col_widths[-1]
-            self.cell(w, 7, str(header), border=1, fill=True, align='C')
-        self.ln()
+            # Calculate how many lines this header needs
+            text = str(header)
+            char_width = 2.5  # Approximate char width for bold 8pt
+            chars_per_line = max(1, int((w - 2) / char_width))
+            lines_needed = max(1, -(-len(text) // chars_per_line))  # Ceiling division
+            needed_height = lines_needed * 4 + 3
+            header_height = max(header_height, needed_height)
+        
+        start_x = self.get_x()
+        start_y = self.get_y()
+        
+        for i, header in enumerate(headers):
+            w = col_widths[i] if i < len(col_widths) else col_widths[-1]
+            text = str(header)
+            
+            # Draw cell background and border
+            self.set_xy(start_x + sum(col_widths[:i]), start_y)
+            self.cell(w, header_height, '', border=1, fill=True)
+            
+            # Draw text centered in cell
+            self.set_xy(start_x + sum(col_widths[:i]) + 1, start_y + 1)
+            self.multi_cell(w - 2, 4, text, border=0, align='C')
+        
+        self.set_xy(start_x, start_y + header_height)
         
     def _calculate_smart_widths(self, headers: List[str], rows: List[List[str]], page_width: float) -> List[int]:
         """Calculate smart column widths based on content"""
@@ -210,6 +235,14 @@ class ReportPDF(FPDF):
                 widths.append(35)
             elif 'metric' in header_lower:
                 widths.append(40)
+            elif 'method' in header_lower:
+                widths.append(28)
+            elif 'accumulated' in header_lower:
+                widths.append(30)
+            elif 'remaining' in header_lower:
+                widths.append(25)
+            elif 'lessee' in header_lower:
+                widths.append(35)
             else:
                 # Default based on header length
                 widths.append(max(min_width, min(max_width, len(header) * 3 + 10)))
@@ -250,6 +283,58 @@ def generate_pdf_from_excel_data(
         pdf = ReportPDF(report_name, report_type)
         pdf.add_page()
         
+        # Define simplified columns per report type (to fit well in A4 Landscape PDF)
+        REPORT_TYPE_COLUMNS = {
+            "assets": [
+                "Asset Tag ID", "Description", "Category", "Status", 
+                "Cost", "Location", "Site", "Department"
+            ],
+            "location": [
+                "Asset Tag", "Description", "Location", "Site", 
+                "Department", "Status", "Last Move"
+            ],
+            "checkout": [
+                "Asset Tag ID", "Description", "Category", "SUB-CATEGORY",
+                "Check-out Date", "Due date", "Return Date", "Department", "Cost", "Employee"
+            ],
+            "maintenance": [
+                "Asset Tag", "Description", "Title", "Status",
+                "Due Date", "Completed", "Cost", "Inventory Items"
+            ],
+            "audit": [
+                "Asset Tag ID", "Category", "Sub-Category", "Audit Type",
+                "Audited to Site", "Audited to Location", "Last Audit Date", "Audit By"
+            ],
+            "depreciation": [
+                "Asset Tag ID", "Description", "Category", "Depreciation Method",
+                "Original Cost", "Depreciable Cost", "Accumulated Depreciation", "Current Value", "Date Acquired"
+            ],
+            "lease": [
+                "Asset Tag ID", "Description", "Category", "Lessee",
+                "Lease Start", "Lease End", "Status", "Days Remaining", "Asset Cost"
+            ],
+            "reservation": [
+                "Asset Tag ID", "Description", "Category", "Reservation Type",
+                "Reserved By", "Reservation Date", "Status", "Days Until/From", "Asset Cost"
+            ],
+            "transaction": [
+                "Transaction Type", "Asset Tag ID", "Description", "Category",
+                "Date", "Action By", "Details", "Location", "Asset Cost"
+            ],
+        }
+        
+        # Get simplified columns for this report type (default to assets)
+        report_type_lower = report_type.lower()
+        SIMPLIFIED_COLUMNS = REPORT_TYPE_COLUMNS.get(report_type_lower, REPORT_TYPE_COLUMNS["assets"])
+        
+        # Sheets that should use simplified columns (detail lists)
+        DETAIL_SHEET_NAMES = [
+            "Asset List", "Assets", "Asset Details", "Details",
+            "Checkout List", "Maintenance List", "Audit List",
+            "Lease List", "Reservation List", "Transaction List",
+            "Location Assets", "Depreciation List"
+        ]
+        
         for sheet_name in wb.sheetnames:
             sheet = wb[sheet_name]
             
@@ -265,15 +350,71 @@ def generate_pdf_from_excel_data(
                 continue
                 
             # First row is header
-            headers = [str(h) if h else '' for h in rows[0]]
-            data_rows = [[str(c) if c else '' for c in row] for row in rows[1:]]
+            original_headers = [str(h) if h else '' for h in rows[0]]
+            original_data_rows = [[str(c) if c else '' for c in row] for row in rows[1:]]
             
-            if headers and data_rows:
-                pdf.add_table(headers, data_rows)
-            elif headers and not data_rows:
-                # Just show headers if no data
-                pdf.set_font('Helvetica', 'I', 10)
-                pdf.cell(0, 6, 'No records found', new_x='LMARGIN', new_y='NEXT')
+            # Check if this is a detail list sheet that should use simplified columns
+            is_detail_sheet = any(
+                name.lower() in sheet_name.lower() 
+                for name in DETAIL_SHEET_NAMES
+            )
+            
+            # Also check if headers contain many columns (detail list indicator)
+            has_many_columns = (
+                len(original_headers) > 10 and 
+                any('asset' in h.lower() or 'tag' in h.lower() or 'id' in h.lower() for h in original_headers)
+            )
+            
+            if is_detail_sheet or has_many_columns:
+                # Use simplified columns for detail list
+                # Map original headers to simplified ones
+                header_indices = []
+                simplified_headers = []
+                
+                for simplified_col in SIMPLIFIED_COLUMNS:
+                    # Find matching column in original headers (case-insensitive, partial match)
+                    for idx, orig_header in enumerate(original_headers):
+                        # Normalize for comparison
+                        orig_lower = orig_header.lower().replace(' ', '').replace('_', '')
+                        simp_lower = simplified_col.lower().replace(' ', '').replace('_', '')
+                        
+                        if simp_lower in orig_lower or orig_lower in simp_lower:
+                            header_indices.append(idx)
+                            simplified_headers.append(simplified_col)
+                            break
+                
+                if simplified_headers and header_indices:
+                    # Extract only the simplified columns from data rows
+                    simplified_data_rows = []
+                    for row in original_data_rows:
+                        simplified_row = []
+                        for idx in header_indices:
+                            if idx < len(row):
+                                value = row[idx]
+                                # Truncate long descriptions
+                                if idx == header_indices[1] if len(header_indices) > 1 else -1:  # Description column
+                                    value = value[:50] + '...' if len(value) > 50 else value
+                                simplified_row.append(value)
+                            else:
+                                simplified_row.append('')
+                        simplified_data_rows.append(simplified_row)
+                    
+                    if simplified_headers and simplified_data_rows:
+                        pdf.add_table(simplified_headers, simplified_data_rows)
+                    elif simplified_headers:
+                        pdf.set_font('Helvetica', 'I', 10)
+                        pdf.cell(0, 6, 'No records found', new_x='LMARGIN', new_y='NEXT')
+                else:
+                    # Fallback to original if mapping failed
+                    if original_headers and original_data_rows:
+                        pdf.add_table(original_headers, original_data_rows)
+            else:
+                # Non-asset-list sheets (Summary, By Status, By Category, etc.) - use all columns
+                if original_headers and original_data_rows:
+                    pdf.add_table(original_headers, original_data_rows)
+                elif original_headers and not original_data_rows:
+                    pdf.set_font('Helvetica', 'I', 10)
+                    pdf.cell(0, 6, 'No records found', new_x='LMARGIN', new_y='NEXT')
                 
             pdf.ln(10)
         

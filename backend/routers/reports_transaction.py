@@ -13,6 +13,7 @@ import asyncio
 from models.reports import TransactionReportResponse, TransactionSummary, TransactionTypeGroup, TransactionItem, PaginationInfo
 from auth import verify_auth
 from database import prisma
+from utils.pdf_generator import ReportPDF, PDF_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -957,8 +958,11 @@ async def export_transaction_reports(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        if format not in ["csv", "excel"]:
-            raise HTTPException(status_code=400, detail="Invalid format. Use csv or excel.")
+        if format not in ["csv", "excel", "pdf"]:
+            raise HTTPException(status_code=400, detail="Invalid format. Use csv, excel, or pdf.")
+        
+        if format == "pdf" and not PDF_AVAILABLE:
+            raise HTTPException(status_code=500, detail="PDF export not available - fpdf2 not installed")
 
         # Fetch all data for export
         page_size = 10000 if includeTransactionList else 1
@@ -1058,7 +1062,7 @@ async def export_transaction_reports(
                 }
             )
 
-        else:  # excel
+        elif format == "excel":
             # Import openpyxl for Excel generation
             try:
                 from openpyxl import Workbook  # type: ignore
@@ -1135,6 +1139,243 @@ async def export_transaction_reports(
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 }
             )
+
+        else:  # pdf
+            pdf = ReportPDF("Transaction Report", "Transaction")
+            pdf.add_page()
+
+            pdf.add_section_title("Summary Statistics")
+            # Overall summary
+            overall_rows = [
+                ["Total Transactions", str(summary.totalTransactions)],
+            ]
+            pdf.add_table(["Metric", "Value"], overall_rows)
+            
+            pdf.ln(5)
+            
+            # Breakdown by type
+            if summary.byType:
+                pdf.add_section_title("Transactions By Type")
+                type_rows = [
+                    [item.type, str(item.count), format_number(item.totalValue)]
+                    for item in summary.byType
+                ]
+                pdf.add_table(["Transaction Type", "Count", "Total Value"], type_rows)
+            
+            pdf.ln(10)
+
+            if transactions and includeTransactionList:
+                pdf.add_section_title(f"Transaction List ({len(transactions)} transactions)")
+                
+                # Different columns based on transaction type filter
+                trans_type = transactionType or ""
+                
+                if trans_type == "" or trans_type.lower() == "all":
+                    # All Transactions
+                    simplified_headers = ["Transaction Type", "Asset Tag ID", "Description", "Category", "Date", "Action By", "Details", "Location", "Asset Cost"]
+                    simplified_rows = [
+                        [
+                            str(t.transactionType or ""),
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or "")[:35],
+                            str(t.category or ""),
+                            t.transactionDate.split('T')[0] if t.transactionDate else "",
+                            str(t.actionBy or ""),
+                            str(t.details or "")[:25],
+                            str(t.location or ""),
+                            format_number(t.assetCost),
+                        ]
+                        for t in transactions
+                    ]
+                elif trans_type == "Add Asset":
+                    simplified_headers = ["Asset Tag ID", "Description", "Category", "Date", "Added By", "Location", "Site", "Department", "Asset Cost"]
+                    simplified_rows = [
+                        [
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or "")[:40],
+                            str(t.category or ""),
+                            t.transactionDate.split('T')[0] if t.transactionDate else "",
+                            str(t.actionBy or ""),
+                            str(t.location or ""),
+                            str(t.site or ""),
+                            str(t.department or ""),
+                            format_number(t.assetCost),
+                        ]
+                        for t in transactions
+                    ]
+                elif trans_type in ["Sold Asset", "Donated Asset", "Scrapped Asset", "Lost/Missing Asset", "Destroyed Asset"]:
+                    simplified_headers = ["Asset Tag ID", "Description", "Category", "Disposal Date", "Reason", "Disposal Value", "Location", "Original Cost"]
+                    simplified_rows = [
+                        [
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or "")[:40],
+                            str(t.category or ""),
+                            t.transactionDate.split('T')[0] if t.transactionDate else "",
+                            str(t.details or "")[:30],
+                            format_number(t.disposeValue),
+                            str(t.location or ""),
+                            format_number(t.assetCost),
+                        ]
+                        for t in transactions
+                    ]
+                elif trans_type == "Edit Asset":
+                    simplified_headers = ["Asset Tag ID", "Description", "Category", "Date", "Edited By", "Field Changed", "Old Value", "New Value"]
+                    simplified_rows = [
+                        [
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or "")[:35],
+                            str(t.category or ""),
+                            t.transactionDate.split('T')[0] if t.transactionDate else "",
+                            str(t.actionBy or ""),
+                            str(t.fieldChanged or ""),
+                            str(t.oldValue or "")[:20],
+                            str(t.newValue or "")[:20],
+                        ]
+                        for t in transactions
+                    ]
+                elif trans_type == "Lease Out":
+                    simplified_headers = ["Asset Tag ID", "Description", "Category", "Lessee", "Lease Start", "Lease End", "Conditions", "Asset Cost"]
+                    simplified_rows = [
+                        [
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or "")[:35],
+                            str(t.category or ""),
+                            str(t.lessee or ""),
+                            t.leaseStartDate.split('T')[0] if t.leaseStartDate else "",
+                            t.leaseEndDate.split('T')[0] if t.leaseEndDate else "",
+                            str(t.conditions or "")[:25],
+                            format_number(t.assetCost),
+                        ]
+                        for t in transactions
+                    ]
+                elif trans_type == "Lease Return":
+                    simplified_headers = ["Asset Tag ID", "Description", "Category", "Lessee", "Return Date", "Condition", "Notes", "Asset Cost"]
+                    simplified_rows = [
+                        [
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or "")[:35],
+                            str(t.category or ""),
+                            str(t.lessee or ""),
+                            t.transactionDate.split('T')[0] if t.transactionDate else "",
+                            str(t.condition or ""),
+                            str(t.notes or "")[:25],
+                            format_number(t.assetCost),
+                        ]
+                        for t in transactions
+                    ]
+                elif trans_type == "Repair Asset":
+                    simplified_headers = ["Asset Tag ID", "Description", "Category", "Title", "Maintained By", "Due Date", "Status", "Cost", "Completed"]
+                    simplified_rows = [
+                        [
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or "")[:30],
+                            str(t.category or ""),
+                            str(t.title or "")[:25],
+                            str(t.maintenanceBy or ""),
+                            t.dueDate.split('T')[0] if t.dueDate else "",
+                            str(t.status or ""),
+                            format_number(t.cost),
+                            t.dateCompleted.split('T')[0] if t.dateCompleted else "",
+                        ]
+                        for t in transactions
+                    ]
+                elif trans_type == "Move Asset":
+                    simplified_headers = ["Asset Tag ID", "Description", "Category", "Move Type", "Move Date", "Assigned To", "Reason", "From", "To"]
+                    simplified_rows = [
+                        [
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or "")[:30],
+                            str(t.category or ""),
+                            str(t.moveType or ""),
+                            t.transactionDate.split('T')[0] if t.transactionDate else "",
+                            str(t.employeeName or ""),
+                            str(t.reason or "")[:20],
+                            str(t.fromLocation or ""),
+                            str(t.toLocation or ""),
+                        ]
+                        for t in transactions
+                    ]
+                elif trans_type == "Checkout Asset":
+                    simplified_headers = ["Asset Tag ID", "Description", "Category", "Checked Out To", "Checkout Date", "Expected Return", "Status", "Location", "Asset Cost"]
+                    simplified_rows = [
+                        [
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or "")[:30],
+                            str(t.category or ""),
+                            str(t.employeeName or ""),
+                            t.checkoutDate.split('T')[0] if t.checkoutDate else "",
+                            t.expectedReturnDate.split('T')[0] if t.expectedReturnDate else "",
+                            "Overdue" if t.isOverdue else "Active",
+                            str(t.location or ""),
+                            format_number(t.assetCost),
+                        ]
+                        for t in transactions
+                    ]
+                elif trans_type == "Checkin Asset":
+                    simplified_headers = ["Asset Tag ID", "Description", "Category", "Checked In From", "Checkin Date", "Condition", "Notes", "Location", "Asset Cost"]
+                    simplified_rows = [
+                        [
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or "")[:30],
+                            str(t.category or ""),
+                            str(t.employeeName or ""),
+                            t.transactionDate.split('T')[0] if t.transactionDate else "",
+                            str(t.condition or ""),
+                            str(t.notes or "")[:20],
+                            str(t.location or ""),
+                            format_number(t.assetCost),
+                        ]
+                        for t in transactions
+                    ]
+                elif trans_type == "Delete Asset":
+                    simplified_headers = ["Asset Tag ID", "Description", "Category", "Deleted By", "Deleted Date", "Reason", "Location", "Asset Cost"]
+                    simplified_rows = [
+                        [
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or "")[:35],
+                            str(t.category or ""),
+                            str(t.actionBy or ""),
+                            t.transactionDate.split('T')[0] if t.transactionDate else "",
+                            str(t.details or "")[:25],
+                            str(t.location or ""),
+                            format_number(t.assetCost),
+                        ]
+                        for t in transactions
+                    ]
+                elif trans_type == "Actions By Users":
+                    simplified_headers = ["Action By", "Action Type", "Asset Tag ID", "Description", "Date", "Details"]
+                    simplified_rows = [
+                        [
+                            str(t.actionBy or ""),
+                            str(t.transactionType or ""),
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or ""),
+                            t.transactionDate.split('T')[0] if t.transactionDate else "",
+                            str(t.details or ""),
+                        ]
+                        for t in transactions
+                    ]
+                else:
+                    # Default fallback
+                    simplified_headers = ["Asset Tag ID", "Description", "Category", "Date", "Action By", "Details", "Location", "Asset Cost"]
+                    simplified_rows = [
+                        [
+                            str(t.assetTagId or ""),
+                            str(t.assetDescription or "")[:40],
+                            str(t.category or ""),
+                            t.transactionDate.split('T')[0] if t.transactionDate else "",
+                            str(t.actionBy or ""),
+                            str(t.details or "")[:30],
+                            str(t.location or ""),
+                            format_number(t.assetCost),
+                        ]
+                        for t in transactions
+                    ]
+                pdf.add_table(simplified_headers, simplified_rows)
+
+            pdf_content = bytes(pdf.output())
+            filename += ".pdf"
+            return Response(content=pdf_content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     except HTTPException:
         raise

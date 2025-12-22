@@ -12,6 +12,7 @@ import csv
 from models.reports import AuditReportResponse, AuditItem, PaginationInfo
 from auth import verify_auth
 from database import prisma
+from utils.pdf_generator import ReportPDF, PDF_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -156,8 +157,11 @@ async def export_audit_reports(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        if format not in ["csv", "excel"]:
-            raise HTTPException(status_code=400, detail="Invalid format. Use csv or excel.")
+        if format not in ["csv", "excel", "pdf"]:
+            raise HTTPException(status_code=400, detail="Invalid format. Use csv, excel, or pdf.")
+        
+        if format == "pdf" and not PDF_AVAILABLE:
+            raise HTTPException(status_code=500, detail="PDF export not available - fpdf2 not installed")
 
         # Build where clause (same as main route)
         where_clause: Dict[str, Any] = {
@@ -288,7 +292,7 @@ async def export_audit_reports(
                 }
             )
 
-        else:  # excel
+        elif format == "excel":
             # Import openpyxl for Excel generation
             try:
                 from openpyxl import Workbook  # type: ignore
@@ -337,6 +341,47 @@ async def export_audit_reports(
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 }
             )
+
+        else:  # pdf
+            pdf = ReportPDF("Audit Report", "Audit")
+            pdf.add_page()
+
+            pdf.add_section_title("Summary Statistics")
+            summary_rows = [
+                ["Total Audits", str(total_audits)],
+                ["Unique Audit Types", str(len(unique_audit_types))],
+            ]
+            # Add audits by type
+            for item in audits_by_type:
+                summary_rows.append([f"Type: {item['auditType']}", str(item['count'])])
+            
+            if summary_rows:
+                headers = ["Metric", "Value"]
+                pdf.add_table(headers, summary_rows)
+            
+            pdf.ln(10)
+
+            if formatted_audits and includeAuditList:
+                pdf.add_section_title(f"Audit List ({len(formatted_audits)} audits)")
+                simplified_headers = ["Asset Tag ID", "Category", "Sub-Category", "Audit Type", "Audited to Site", "Audited to Location", "Last Audit Date", "Audit By"]
+                simplified_rows = [
+                    [
+                        str(a.get("Asset Tag ID", "")),
+                        str(a.get("Category", "")),
+                        str(a.get("Sub-Category", "")),
+                        str(a.get("Audit Type", "")),
+                        str(a.get("Audited to Site", "")),
+                        str(a.get("Audited to Location", "")),
+                        str(a.get("Last Audit Date", "")),
+                        str(a.get("Audit By", "")),
+                    ]
+                    for a in formatted_audits
+                ]
+                pdf.add_table(simplified_headers, simplified_rows)
+
+            pdf_content = bytes(pdf.output())
+            filename += ".pdf"
+            return Response(content=pdf_content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     except HTTPException:
         raise

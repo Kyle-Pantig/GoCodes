@@ -12,6 +12,7 @@ import csv
 from models.reports import ReservationReportResponse, ReservationItem, PaginationInfo
 from auth import verify_auth
 from database import prisma
+from utils.pdf_generator import ReportPDF, PDF_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -212,8 +213,11 @@ async def export_reservation_reports(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        if format not in ["csv", "excel"]:
-            raise HTTPException(status_code=400, detail="Invalid format. Use csv or excel.")
+        if format not in ["csv", "excel", "pdf"]:
+            raise HTTPException(status_code=400, detail="Invalid format. Use csv, excel, or pdf.")
+        
+        if format == "pdf" and not PDF_AVAILABLE:
+            raise HTTPException(status_code=500, detail="PDF export not available - fpdf2 not installed")
 
         # Fetch all data for export
         page_size = 10000 if includeReservationList else 1
@@ -353,7 +357,7 @@ async def export_reservation_reports(
                 }
             )
 
-        else:  # excel
+        elif format == "excel":
             # Import openpyxl for Excel generation
             try:
                 from openpyxl import Workbook  # type: ignore
@@ -444,6 +448,49 @@ async def export_reservation_reports(
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 }
             )
+
+        else:  # pdf
+            pdf = ReportPDF("Reservation Report", "Reservation")
+            pdf.add_page()
+
+            pdf.add_section_title("Summary Statistics")
+            summary_rows = [
+                ["Total Reservations", str(len(reservations))],
+                ["Upcoming", str(len(upcoming_reservations))],
+                ["Today", str(len(today_reservations))],
+                ["Past", str(len(past_reservations))],
+                ["Employee Reservations", str(len(employee_reservations))],
+                ["Department Reservations", str(len(department_reservations))],
+                ["Total Asset Value", format_number(total_asset_value)],
+            ]
+            if summary_rows:
+                headers = ["Metric", "Value"]
+                pdf.add_table(headers, summary_rows)
+            
+            pdf.ln(10)
+
+            if reservations and includeReservationList:
+                pdf.add_section_title(f"Reservation List ({len(reservations)} reservations)")
+                simplified_headers = ["Asset Tag ID", "Description", "Category", "Reservation Type", "Reserved By", "Reservation Date", "Status", "Days Until/From", "Asset Cost"]
+                simplified_rows = [
+                    [
+                        str(r.assetTagId or ""),
+                        str(r.description or "")[:50],
+                        str(r.category or ""),
+                        str(r.reservationType or ""),
+                        str(r.employeeName or r.department or ""),
+                        r.reservationDate.split('T')[0] if r.reservationDate else "",
+                        str(r.reservationStatus or ""),
+                        f"{r.daysUntil} days" if r.daysUntil != 0 else "Today",
+                        format_number(r.assetCost),
+                    ]
+                    for r in reservations
+                ]
+                pdf.add_table(simplified_headers, simplified_rows)
+
+            pdf_content = bytes(pdf.output())
+            filename += ".pdf"
+            return Response(content=pdf_content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     except HTTPException:
         raise

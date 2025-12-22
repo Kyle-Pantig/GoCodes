@@ -12,6 +12,7 @@ import csv
 from models.reports import DepreciationReportResponse, DepreciationAsset, PaginationInfo
 from auth import verify_auth
 from database import prisma
+from utils.pdf_generator import ReportPDF, PDF_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -239,8 +240,11 @@ async def export_depreciation_reports(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        if format not in ["csv", "excel"]:
-            raise HTTPException(status_code=400, detail="Invalid format. Use csv or excel.")
+        if format not in ["csv", "excel", "pdf"]:
+            raise HTTPException(status_code=400, detail="Invalid format. Use csv, excel, or pdf.")
+        
+        if format == "pdf" and not PDF_AVAILABLE:
+            raise HTTPException(status_code=500, detail="PDF export not available - fpdf2 not installed")
 
         # Fetch all assets for export
         page_size = 10000 if includeAssetList else 1
@@ -340,7 +344,7 @@ async def export_depreciation_reports(
                         format_number(asset.depreciableCost),
                         format_number(asset.salvageValue),
                         asset.assetLifeMonths or "N/A",
-                        asset.dateAcquired or "N/A",
+                        asset.dateAcquired[:10] if asset.dateAcquired else "N/A",
                         format_number(asset.monthlyDepreciation),
                         format_number(asset.annualDepreciation),
                         format_number(asset.accumulatedDepreciation),
@@ -380,7 +384,7 @@ async def export_depreciation_reports(
                 }
             )
 
-        else:  # excel
+        elif format == "excel":
             # Import openpyxl for Excel generation
             try:
                 from openpyxl import Workbook  # type: ignore
@@ -424,7 +428,7 @@ async def export_depreciation_reports(
                         format_number(asset.depreciableCost),
                         format_number(asset.salvageValue),
                         asset.assetLifeMonths or "N/A",
-                        asset.dateAcquired or "N/A",
+                        asset.dateAcquired[:10] if asset.dateAcquired else "N/A",
                         format_number(asset.monthlyDepreciation),
                         format_number(asset.annualDepreciation),
                         format_number(asset.accumulatedDepreciation),
@@ -464,6 +468,53 @@ async def export_depreciation_reports(
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 }
             )
+
+        else:  # pdf
+            pdf = ReportPDF("Depreciation Report", "Depreciation")
+            pdf.add_page()
+
+            pdf.add_section_title("Summary Statistics")
+            summary_rows = [
+                ["Total Assets", str(len(assets))],
+                ["Depreciable Assets", str(len(depreciable_assets))],
+                ["Total Original Cost", format_number(total_original_cost)],
+                ["Total Depreciable Cost", format_number(total_depreciable_cost)],
+                ["Total Accumulated Depreciation", format_number(total_accumulated_depreciation)],
+                ["Total Current Value", format_number(total_current_value)],
+                ["Total Annual Depreciation", format_number(total_annual_depreciation)],
+            ]
+            # Add by method breakdown
+            for method, stats in by_method.items():
+                summary_rows.append([f"Method: {method}", f"{stats['count']} assets"])
+            
+            if summary_rows:
+                headers = ["Metric", "Value"]
+                pdf.add_table(headers, summary_rows)
+            
+            pdf.ln(10)
+
+            if assets and includeAssetList:
+                pdf.add_section_title(f"Asset List ({len(assets)} assets)")
+                simplified_headers = ["Asset Tag ID", "Description", "Category", "Depreciation Method", "Original Cost", "Depreciable Cost", "Accumulated Depreciation", "Current Value", "Date Acquired"]
+                simplified_rows = [
+                    [
+                        str(a.assetTagId or ""),
+                        str(a.description or "")[:50],
+                        str(a.category or ""),
+                        str(a.depreciationMethod or ""),
+                        format_number(a.originalCost),
+                        format_number(a.depreciableCost),
+                        format_number(a.accumulatedDepreciation),
+                        format_number(a.currentValue),
+                        a.dateAcquired[:10] if a.dateAcquired else "",
+                    ]
+                    for a in assets
+                ]
+                pdf.add_table(simplified_headers, simplified_rows)
+
+            pdf_content = bytes(pdf.output())
+            filename += ".pdf"
+            return Response(content=pdf_content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     except HTTPException:
         raise

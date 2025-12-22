@@ -12,6 +12,7 @@ import csv
 from models.reports import LeaseReportResponse, LeaseItem, PaginationInfo
 from auth import verify_auth
 from database import prisma
+from utils.pdf_generator import ReportPDF, PDF_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -250,8 +251,11 @@ async def export_lease_reports(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        if format not in ["csv", "excel"]:
-            raise HTTPException(status_code=400, detail="Invalid format. Use csv or excel.")
+        if format not in ["csv", "excel", "pdf"]:
+            raise HTTPException(status_code=400, detail="Invalid format. Use csv, excel, or pdf.")
+        
+        if format == "pdf" and not PDF_AVAILABLE:
+            raise HTTPException(status_code=500, detail="PDF export not available - fpdf2 not installed")
 
         # Fetch all leases for export
         page_size = 10000 if includeLeaseList else 1
@@ -375,7 +379,7 @@ async def export_lease_reports(
                 }
             )
 
-        else:  # excel
+        elif format == "excel":
             # Import openpyxl for Excel generation
             try:
                 from openpyxl import Workbook  # type: ignore
@@ -455,6 +459,47 @@ async def export_lease_reports(
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 }
             )
+
+        else:  # pdf
+            pdf = ReportPDF("Lease Report", "Lease")
+            pdf.add_page()
+
+            pdf.add_section_title("Summary Statistics")
+            summary_rows = [
+                ["Total Leases", str(len(leases))],
+                ["Active Leases", str(len(active_leases))],
+                ["Expired Leases", str(len(expired_leases))],
+                ["Upcoming Leases", str(len(upcoming_leases))],
+                ["Total Asset Value", format_number(total_asset_value)],
+            ]
+            if summary_rows:
+                headers = ["Metric", "Value"]
+                pdf.add_table(headers, summary_rows)
+            
+            pdf.ln(10)
+
+            if leases and includeLeaseList:
+                pdf.add_section_title(f"Lease List ({len(leases)} leases)")
+                simplified_headers = ["Asset Tag ID", "Description", "Category", "Lessee", "Lease Start", "Lease End", "Status", "Days Remaining", "Asset Cost"]
+                simplified_rows = [
+                    [
+                        str(l.assetTagId or ""),
+                        str(l.description or "")[:50],
+                        str(l.category or ""),
+                        str(l.lessee or ""),
+                        l.leaseStartDate.split('T')[0] if l.leaseStartDate else "",
+                        l.leaseEndDate.split('T')[0] if l.leaseEndDate else "",
+                        str(l.leaseStatus or ""),
+                        str(l.daysRemaining) if l.daysRemaining is not None else "",
+                        format_number(l.assetCost),
+                    ]
+                    for l in leases
+                ]
+                pdf.add_table(simplified_headers, simplified_rows)
+
+            pdf_content = bytes(pdf.output())
+            filename += ".pdf"
+            return Response(content=pdf_content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     except HTTPException:
         raise

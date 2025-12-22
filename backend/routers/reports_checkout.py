@@ -12,6 +12,7 @@ import csv
 from models.reports import CheckoutReportResponse, CheckoutItem, CheckoutSummary, EmployeeGroup, DepartmentGroup, PaginationInfo
 from auth import verify_auth
 from database import prisma
+from utils.pdf_generator import ReportPDF, PDF_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -340,8 +341,11 @@ async def export_checkout_reports(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        if format not in ["csv", "excel"]:
-            raise HTTPException(status_code=400, detail="Invalid format. Use csv or excel.")
+        if format not in ["csv", "excel", "pdf"]:
+            raise HTTPException(status_code=400, detail="Invalid format. Use csv, excel, or pdf.")
+        
+        if format == "pdf" and not PDF_AVAILABLE:
+            raise HTTPException(status_code=500, detail="PDF export not available - fpdf2 not installed")
 
         # Fetch checkout report data (same logic as main endpoint)
         # We'll reuse the helper function but fetch all data if includeCheckoutList is True
@@ -482,6 +486,7 @@ async def export_checkout_reports(
                 "Return Date": c.returnDate or "",
                 "Department": c.employeeDepartment or "",
                 "Cost": format_number(c.assetCost) if c.assetCost else "",
+                "Employee": c.employeeName or "",
             }
             for c in checkouts
         ]
@@ -530,7 +535,7 @@ async def export_checkout_reports(
                 }
             )
 
-        else:  # excel
+        elif format == "excel":
             # Import openpyxl for Excel generation
             try:
                 from openpyxl import Workbook  # type: ignore
@@ -596,6 +601,52 @@ async def export_checkout_reports(
             return StreamingResponse(
                 buffer,
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"'
+                }
+            )
+
+        else:  # pdf
+            # Generate PDF using fpdf2
+            pdf = ReportPDF("Checkout Report", "Checkout")
+            pdf.add_page()
+
+            # Summary section
+            pdf.add_section_title("Summary Statistics")
+            if summary_data:
+                headers = list(summary_data[0].keys())
+                rows = [[str(row.get(h, '')) for h in headers] for row in summary_data]
+                pdf.add_table(headers, rows)
+            
+            pdf.ln(10)
+
+            # Checkout List section
+            if checkout_list_data and includeCheckoutList:
+                pdf.add_section_title(f"Checkout List ({len(checkout_list_data)} checkouts)")
+                simplified_headers = ["Asset Tag ID", "Description", "Category", "SUB-CATEGORY", "Check-out Date", "Due date", "Return Date", "Department", "Cost", "Employee"]
+                simplified_rows = [
+                    [
+                        str(row.get("Asset Tag ID", "")),
+                        str(row.get("Description", ""))[:50],
+                        str(row.get("Category", "")),
+                        str(row.get("SUB-CATEGORY", "")),
+                        str(row.get("Check-out Date", "")),
+                        str(row.get("Due date", "")),
+                        str(row.get("Return Date", "")),
+                        str(row.get("Department", "")),
+                        str(row.get("Cost", "")),
+                        str(row.get("Employee", "")),
+                    ]
+                    for row in checkout_list_data
+                ]
+                pdf.add_table(simplified_headers, simplified_rows)
+
+            pdf_content = bytes(pdf.output())
+            
+            filename += ".pdf"
+            return Response(
+                content=pdf_content,
+                media_type="application/pdf",
                 headers={
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 }

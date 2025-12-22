@@ -299,65 +299,45 @@ function DepreciationReportsPageContent() {
       return
     }
 
-    // Fetch all assets for PDF export only if includeAssetList is checked
-    let allAssets: typeof assets | undefined = undefined
-    if (includeAssetList) {
-      try {
-        const baseUrl = getApiBaseUrl()
-        const params = new URLSearchParams()
-        if (filters.category) params.set('category', filters.category)
-        if (filters.depreciationMethod) params.set('depreciationMethod', filters.depreciationMethod)
-        if (filters.location) params.set('location', filters.location)
-        if (filters.site) params.set('site', filters.site)
-        if (filters.isDepreciable !== undefined) params.set('isDepreciable', filters.isDepreciable.toString())
-        if (filters.startDate) params.set('startDate', filters.startDate)
-        if (filters.endDate) params.set('endDate', filters.endDate)
-        params.set('pageSize', '10000')
-        
-        const url = `${baseUrl}/api/reports/depreciation?${params.toString()}`
-        
-        const token = await getAuthToken()
-        const headers: HeadersInit = {}
-        if (baseUrl && token) {
-          headers['Authorization'] = `Bearer ${token}`
-        }
-        
-        const response = await fetch(url, {
-          credentials: 'include',
-          headers,
-        })
-        if (response.ok) {
-          const responseData = await response.json()
-          allAssets = responseData.assets || []
-        }
-      } catch (error) {
-        console.error('Failed to fetch all assets for PDF:', error)
-      }
+    // Use FastAPI backend PDF export
+    const baseUrl = getApiBaseUrl()
+    const params = new URLSearchParams()
+    params.set('format', 'pdf')
+    if (filters.category) params.set('category', filters.category)
+    if (filters.depreciationMethod) params.set('depreciationMethod', filters.depreciationMethod)
+    if (filters.location) params.set('location', filters.location)
+    if (filters.site) params.set('site', filters.site)
+    if (filters.isDepreciable !== undefined) params.set('isDepreciable', filters.isDepreciable.toString())
+    if (filters.startDate) params.set('startDate', filters.startDate)
+    if (filters.endDate) params.set('endDate', filters.endDate)
+    if (includeAssetList) params.set('includeAssetList', 'true')
+
+    const url = `${baseUrl}/api/reports/depreciation/export?${params.toString()}`
+    
+    const token = await getAuthToken()
+    const headers: HeadersInit = {}
+    if (baseUrl && token) {
+      headers['Authorization'] = `Bearer ${token}`
     }
 
-    // Generate HTML for PDF
-    const html = generateDepreciationReportHTML(data, allAssets, includeAssetList)
-
-    const response = await fetch('/api/reports/assets/pdf', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ html }),
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers,
     })
 
     if (!response.ok) {
-      throw new Error('PDF generation failed')
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.detail || error.error || 'PDF generation failed')
     }
 
     const blob = await response.blob()
-    const url = window.URL.createObjectURL(blob)
+    const downloadUrl = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
+    a.href = downloadUrl
     a.download = `depreciation-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`
     document.body.appendChild(a)
     a.click()
-    window.URL.revokeObjectURL(url)
+    window.URL.revokeObjectURL(downloadUrl)
     document.body.removeChild(a)
 
     toast.success('Report exported successfully as PDF')
@@ -853,7 +833,7 @@ function DepreciationReportsPageContent() {
               </CardHeader>
               <CardContent className="flex-1 px-0 relative">
                 {isFetching && data && assets.length > 0 && (
-                  <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+                  <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/30 backdrop-blur-sm z-20 flex items-center justify-center rounded-b-2xl">
                     <Spinner variant="default" size={24} className="text-muted-foreground" />
                   </div>
                 )}

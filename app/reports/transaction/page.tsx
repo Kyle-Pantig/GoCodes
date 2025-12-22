@@ -346,7 +346,7 @@ const getTableColumns = (reportType: TransactionReportType): TableColumn[] => {
     
     case 'Checkout Asset':
       return [
-        ...baseColumns.filter(c => c.key !== 'transactionType'),
+        ...baseColumns.filter(c => c.key !== 'transactionType' && c.key !== 'transactionDate'),
         { key: 'employeeName', label: 'Checked Out To' },
         { key: 'checkoutDate', label: 'Checkout Date' },
         { key: 'expectedReturnDate', label: 'Expected Return' },
@@ -357,7 +357,7 @@ const getTableColumns = (reportType: TransactionReportType): TableColumn[] => {
     
     case 'Checkin Asset':
       return [
-        ...baseColumns.filter(c => c.key !== 'transactionType'),
+        ...baseColumns.filter(c => c.key !== 'transactionType' && c.key !== 'transactionDate'),
         { key: 'employeeName', label: 'Checked In From' },
         { key: 'checkinDate', label: 'Checkin Date' },
         { key: 'condition', label: 'Condition' },
@@ -378,13 +378,12 @@ const getTableColumns = (reportType: TransactionReportType): TableColumn[] => {
     
     case 'Actions By Users':
       return [
-        { key: 'actionBy', label: 'User' },
+        { key: 'actionBy', label: 'Action By' },
         { key: 'transactionType', label: 'Action Type' },
         { key: 'assetTagId', label: 'Asset Tag ID', className: 'font-mono text-sm' },
         { key: 'description', label: 'Description', className: 'max-w-[200px] truncate' },
         { key: 'transactionDate', label: 'Date' },
         { key: 'details', label: 'Details', className: 'max-w-[200px] truncate' },
-        { key: 'count', label: 'Action Count', className: 'text-right' },
       ]
     
     default: // All Transactions
@@ -643,73 +642,49 @@ function TransactionReportsPageContent() {
       return
     }
 
-    // Fetch all transactions for PDF export only if includeTransactionList is checked
-    let allTransactions: typeof transactions | undefined = undefined
-    if (includeTransactionList) {
-      try {
-        const baseUrl = getApiBaseUrl()
-        const params = new URLSearchParams()
-        // Apply report type filter
-        if (reportType !== 'all') {
-          params.set('transactionType', reportType)
-        }
-        
-        if (filters.category) params.set('category', filters.category)
-        if (filters.location) params.set('location', filters.location)
-        if (filters.site) params.set('site', filters.site)
-        if (filters.department) params.set('department', filters.department)
-        if (filters.actionBy) params.set('actionBy', filters.actionBy)
-        if (filters.startDate) params.set('startDate', filters.startDate)
-        if (filters.endDate) params.set('endDate', filters.endDate)
-        // Set a large pageSize to get all results
-        params.set('pageSize', '10000')
-        
-        const url = `${baseUrl}/api/reports/transaction?${params.toString()}`
-        
-        const token = await getAuthToken()
-        const headers: HeadersInit = {}
-        if (baseUrl && token) {
-          headers['Authorization'] = `Bearer ${token}`
-        }
-        
-        const response = await fetch(url, {
-          credentials: 'include',
-          headers,
-        })
-        if (response.ok) {
-          const responseData = await response.json()
-          allTransactions = responseData.transactions || []
-        }
-      } catch (error) {
-        console.error('Failed to fetch all transactions for PDF:', error)
-        // Fall back to undefined, which will skip the transaction list
-      }
+    // Use FastAPI backend PDF export
+    const baseUrl = getApiBaseUrl()
+    const params = new URLSearchParams()
+    params.set('format', 'pdf')
+    if (reportType !== 'all') {
+      params.set('transactionType', reportType)
+    }
+    if (filters.category) params.set('category', filters.category)
+    if (filters.location) params.set('location', filters.location)
+    if (filters.site) params.set('site', filters.site)
+    if (filters.department) params.set('department', filters.department)
+    if (filters.actionBy) params.set('actionBy', filters.actionBy)
+    if (filters.startDate) params.set('startDate', filters.startDate)
+    if (filters.endDate) params.set('endDate', filters.endDate)
+    if (includeTransactionList) params.set('includeTransactionList', 'true')
+
+    const url = `${baseUrl}/api/reports/transaction/export?${params.toString()}`
+    
+    const token = await getAuthToken()
+    const headers: HeadersInit = {}
+    if (baseUrl && token) {
+      headers['Authorization'] = `Bearer ${token}`
     }
 
-    // Generate HTML for PDF
-    const html = generateTransactionReportHTML(data, allTransactions, includeTransactionList, reportType)
-
-    const response = await fetch('/api/reports/assets/pdf', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ html }),
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers,
     })
 
     if (!response.ok) {
-      throw new Error('PDF generation failed')
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.detail || error.error || 'PDF generation failed')
     }
 
     const blob = await response.blob()
-    const url = window.URL.createObjectURL(blob)
+    const downloadUrl = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     const reportTypeLabel = reportType === 'all' ? 'all-transactions' : reportType.toLowerCase().replace(/\s+/g, '-')
-    a.href = url
+    a.href = downloadUrl
     a.download = `transaction-report-${reportTypeLabel}-${new Date().toISOString().split('T')[0]}.pdf`
     document.body.appendChild(a)
     a.click()
-    window.URL.revokeObjectURL(url)
+    window.URL.revokeObjectURL(downloadUrl)
     document.body.removeChild(a)
 
     toast.success('Report exported successfully as PDF')
@@ -1234,7 +1209,7 @@ function TransactionReportsPageContent() {
           </CardHeader>
           <CardContent className="flex-1 px-0 relative">
             {isFetching && data && transactions.length > 0 && (
-              <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+              <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/30 backdrop-blur-sm z-20 flex items-center justify-center rounded-b-2xl">
                 <Spinner variant="default" size={24} className="text-muted-foreground" />
               </div>
             )}

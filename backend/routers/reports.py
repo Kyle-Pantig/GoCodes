@@ -4,7 +4,7 @@ Reports API router
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse, Response
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import logging
 import io
 import csv
@@ -13,6 +13,11 @@ import asyncio
 from models.reports import ReportDataResponse, ReportSummary, StatusGroup, CategoryGroup, LocationGroup, SiteGroup, RecentAsset, AuditReportResponse, AuditItem, PaginationInfo
 from auth import verify_auth
 from database import prisma
+from utils.pdf_generator import is_pdf_available, ReportPDF, PDF_AVAILABLE
+
+# Timezone for PDF generation (UTC+8 for Philippines)
+TIMEZONE_OFFSET_HOURS = 8
+LOCAL_TIMEZONE = timezone(timedelta(hours=TIMEZONE_OFFSET_HOURS))
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +231,7 @@ async def get_assets_summary(
 
 @router.get("/export")
 async def export_assets_report(
-    format: str = Query("csv", description="Export format: csv or excel"),
+    format: str = Query("csv", description="Export format: csv, excel, or pdf"),
     reportType: str = Query("summary", description="Report type: summary, status, or category"),
     status: Optional[str] = Query(None, description="Filter by status"),
     category: Optional[str] = Query(None, description="Filter by category ID"),
@@ -238,14 +243,17 @@ async def export_assets_report(
     includeAssetList: Optional[bool] = Query(False, description="Include asset list in summary report"),
     auth: dict = Depends(verify_auth)
 ):
-    """Export assets report to CSV or Excel"""
+    """Export assets report to CSV, Excel, or PDF"""
     try:
         user_id = auth.get("user_id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        if format not in ["csv", "excel"]:
-            raise HTTPException(status_code=400, detail="Invalid format. Use csv or excel.")
+        if format not in ["csv", "excel", "pdf"]:
+            raise HTTPException(status_code=400, detail="Invalid format. Use csv, excel, or pdf.")
+        
+        if format == "pdf" and not PDF_AVAILABLE:
+            raise HTTPException(status_code=500, detail="PDF export not available - fpdf2 not installed")
 
         # Build where clause
         where_clause: Dict[str, Any] = {
@@ -555,7 +563,7 @@ async def export_assets_report(
                 }
             )
 
-        else:  # excel
+        elif format == "excel":
             # Import openpyxl for Excel generation
             try:
                 from openpyxl import Workbook  # type: ignore
@@ -626,6 +634,65 @@ async def export_assets_report(
             return StreamingResponse(
                 buffer,
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"'
+                }
+            )
+
+        else:  # pdf
+            # Generate PDF using fpdf2
+            report_name = f"Asset Report - {report_type_label}"
+            pdf = ReportPDF(report_name, "Assets")
+            pdf.add_page()
+
+            if isinstance(export_data, dict):
+                # Summary report with asset list
+                summary_data_pdf = export_data["summary"]
+                asset_list_data_pdf = export_data["assetList"]
+
+                # Summary section
+                pdf.add_section_title("Summary Statistics")
+                if summary_data_pdf:
+                    headers = list(summary_data_pdf[0].keys())
+                    rows = [[str(row.get(h, '')) for h in headers] for row in summary_data_pdf]
+                    pdf.add_table(headers, rows)
+                
+                pdf.ln(10)
+
+                # Asset List section
+                if asset_list_data_pdf and includeAssetList:
+                    pdf.add_section_title(f"Asset List ({len(asset_list_data_pdf)} assets)")
+                    # Use simplified columns for PDF to fit better
+                    simplified_headers = ["Asset Tag ID", "Description", "Category", "Status", "Cost", "Location", "Site", "Department"]
+                    simplified_rows = [
+                        [
+                            str(row.get("Asset Tag ID", "")),
+                            str(row.get("Description", ""))[:50],  # Truncate long descriptions
+                            str(row.get("Category", "")),
+                            str(row.get("Status", "")),
+                            str(row.get("Cost", "")),
+                            str(row.get("Location", "")),
+                            str(row.get("Site", "")),
+                            str(row.get("Department", "")),
+                        ]
+                        for row in asset_list_data_pdf
+                    ]
+                    pdf.add_table(simplified_headers, simplified_rows)
+            else:
+                # Single section export
+                if export_data:
+                    pdf.add_section_title(f"Assets by {report_type_label}")
+                    headers = list(export_data[0].keys())
+                    rows = [[str(row.get(h, '')) for h in headers] for row in export_data]
+                    pdf.add_table(headers, rows)
+
+            # Generate PDF bytes
+            pdf_content = bytes(pdf.output())
+            
+            filename += ".pdf"
+            return Response(
+                content=pdf_content,
+                media_type="application/pdf",
                 headers={
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 }

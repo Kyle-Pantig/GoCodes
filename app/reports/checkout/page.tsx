@@ -346,69 +346,46 @@ function CheckoutReportsPageContent() {
       return
     }
 
-    // Fetch all checkouts for PDF export only if includeCheckoutList is checked
-    let allCheckouts: typeof reportData.checkouts | undefined = undefined
-    if (includeCheckoutList) {
-      try {
-        const baseUrl = getApiBaseUrl()
-        const params = new URLSearchParams()
-        // Remove pagination to get all results
-        if (filters.employeeId) params.set('employeeId', filters.employeeId)
-        if (filters.dueDate) params.set('dueDate', filters.dueDate)
-        if (filters.isOverdue) params.set('isOverdue', 'true')
-        if (filters.location) params.set('location', filters.location)
-        if (filters.site) params.set('site', filters.site)
-        if (filters.department) params.set('department', filters.department)
-        if (filters.startDate) params.set('startDate', filters.startDate)
-        if (filters.endDate) params.set('endDate', filters.endDate)
-        // Set a large pageSize to get all results
-        params.set('pageSize', '10000')
-        
-        const url = `${baseUrl}/api/reports/checkout?${params.toString()}`
-        
-        const token = await getAuthToken()
-        const headers: HeadersInit = {}
-        if (baseUrl && token) {
-          headers['Authorization'] = `Bearer ${token}`
-        }
-        
-        const response = await fetch(url, {
-          credentials: 'include',
-          headers,
-        })
-        if (response.ok) {
-          const data = await response.json()
-          allCheckouts = data.checkouts || []
-        }
-      } catch (error) {
-        console.error('Failed to fetch all checkouts for PDF:', error)
-        // Fall back to undefined, which will skip the checkout list
-      }
+    // Use FastAPI backend PDF export
+    const baseUrl = getApiBaseUrl()
+    const params = new URLSearchParams()
+    params.set('format', 'pdf')
+    if (filters.employeeId) params.set('employeeId', filters.employeeId)
+    if (filters.dueDate) params.set('dueDate', filters.dueDate)
+    if (filters.isOverdue) params.set('isOverdue', 'true')
+    if (filters.location) params.set('location', filters.location)
+    if (filters.site) params.set('site', filters.site)
+    if (filters.department) params.set('department', filters.department)
+    if (filters.startDate) params.set('startDate', filters.startDate)
+    if (filters.endDate) params.set('endDate', filters.endDate)
+    if (includeCheckoutList) params.set('includeCheckoutList', 'true')
+
+    const url = `${baseUrl}/api/reports/checkout/export?${params.toString()}`
+    
+    const token = await getAuthToken()
+    const headers: HeadersInit = {}
+    if (baseUrl && token) {
+      headers['Authorization'] = `Bearer ${token}`
     }
 
-    // Generate HTML for PDF
-    const html = generateCheckoutReportHTML(reportData, allCheckouts, includeCheckoutList)
-
-    const response = await fetch('/api/reports/assets/pdf', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ html }),
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers,
     })
 
     if (!response.ok) {
-      throw new Error('PDF generation failed')
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.detail || error.error || 'PDF generation failed')
     }
 
     const blob = await response.blob()
-    const url = window.URL.createObjectURL(blob)
+    const downloadUrl = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
+    a.href = downloadUrl
     a.download = `checkout-report-${new Date().toISOString().split('T')[0]}.pdf`
     document.body.appendChild(a)
     a.click()
-    window.URL.revokeObjectURL(url)
+    window.URL.revokeObjectURL(downloadUrl)
     document.body.removeChild(a)
 
     toast.success('Report exported successfully as PDF')
@@ -862,7 +839,7 @@ function CheckoutReportsPageContent() {
               </CardHeader>
               <CardContent className="flex-1 px-0 relative">
                 {isFetching && reportData && reportData.checkouts.length > 0 && (
-                  <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+                  <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/30 backdrop-blur-sm z-20 flex items-center justify-center rounded-b-2xl">
                     <Spinner variant="default" size={24} className="text-muted-foreground" />
                   </div>
                 )}

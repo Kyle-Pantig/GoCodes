@@ -278,67 +278,49 @@ export default function AssetReportsPage() {
       return
     }
 
-    // For summary report, fetch all assets for PDF export only if includeAssetList is checked
-    let allAssets: typeof reportData.recentAssets | undefined = undefined
-    if (reportType === 'summary' && includeAssetList) {
-      try {
-        const baseUrl = getApiBaseUrl()
-        const params = new URLSearchParams()
-        params.set('includeAllAssets', 'true') // Fetch all assets instead of just 10
-        if (filters.status) params.set('status', filters.status)
-        if (filters.category) params.set('category', filters.category)
-        if (filters.location) params.set('location', filters.location)
-        if (filters.site) params.set('site', filters.site)
-        if (filters.department) params.set('department', filters.department)
-        if (filters.startDate) params.set('startDate', filters.startDate)
-        if (filters.endDate) params.set('endDate', filters.endDate)
-        
-        const url = `${baseUrl}/api/reports/assets/summary?${params.toString()}`
-        
-        const token = await getAuthToken()
-        const headers: HeadersInit = {}
-        if (baseUrl && token) {
-          headers['Authorization'] = `Bearer ${token}`
-        }
-        
-        // Fetch all assets from summary API
-        const response = await fetch(url, {
-          credentials: 'include',
-          headers,
-        })
-        if (response.ok) {
-          const data = await response.json()
-          allAssets = data.recentAssets || []
-        }
-      } catch (error) {
-        console.error('Failed to fetch all assets for PDF:', error)
-        // Fall back to undefined, which will skip the asset list
-      }
+    // Use FastAPI backend PDF export (same as CSV/Excel but with format=pdf)
+    const baseUrl = getApiBaseUrl()
+    const params = new URLSearchParams()
+    params.set('format', 'pdf')
+    params.set('reportType', reportType)
+    if (filters.status) params.set('status', filters.status)
+    if (filters.category) params.set('category', filters.category)
+    if (filters.location) params.set('location', filters.location)
+    if (filters.site) params.set('site', filters.site)
+    if (filters.department) params.set('department', filters.department)
+    if (filters.startDate) params.set('startDate', filters.startDate)
+    if (filters.endDate) params.set('endDate', filters.endDate)
+    // For summary reports, include the includeAssetList parameter
+    if (reportType === 'summary') {
+      params.set('includeAssetList', includeAssetList.toString())
     }
 
-    // Generate HTML for PDF
-    const html = generateReportHTML(reportData, allAssets, reportType === 'summary' ? includeAssetList : true)
+    const url = `${baseUrl}/api/reports/assets/export?${params.toString()}`
+    
+    const token = await getAuthToken()
+    const headers: HeadersInit = {}
+    if (baseUrl && token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
 
-    const response = await fetch('/api/reports/assets/pdf', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ html }),
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers,
     })
 
     if (!response.ok) {
-      throw new Error('PDF generation failed')
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.detail || error.error || 'PDF generation failed')
     }
 
     const blob = await response.blob()
-    const url = window.URL.createObjectURL(blob)
+    const downloadUrl = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
+    a.href = downloadUrl
     a.download = `asset-report-${reportType}-${new Date().toISOString().split('T')[0]}.pdf`
     document.body.appendChild(a)
     a.click()
-    window.URL.revokeObjectURL(url)
+    window.URL.revokeObjectURL(downloadUrl)
     document.body.removeChild(a)
 
     toast.success('Report exported successfully as PDF')

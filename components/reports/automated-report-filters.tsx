@@ -54,13 +54,13 @@ export function AutomatedReportFilters({
   const shouldFetchCategories = ['assets', 'transaction', 'maintenance', 'audit', 'depreciation', 'lease', 'reservation'].includes(reportType)
   const { data: categories = [] } = useCategories(shouldFetchCategories)
 
-  const shouldFetchLocations = ['assets', 'checkout', 'transaction', 'location', 'audit', 'depreciation', 'lease', 'reservation'].includes(reportType)
+  const shouldFetchLocations = ['assets', 'checkout', 'transaction', 'location', 'audit', 'depreciation', 'lease', 'reservation', 'maintenance'].includes(reportType)
   const { data: locations = [] } = useLocations(shouldFetchLocations)
 
-  const shouldFetchSites = ['assets', 'checkout', 'transaction', 'location', 'audit', 'depreciation', 'lease', 'reservation'].includes(reportType)
+  const shouldFetchSites = ['assets', 'checkout', 'transaction', 'location', 'audit', 'depreciation', 'lease', 'reservation', 'maintenance'].includes(reportType)
   const { data: sites = [] } = useSites(shouldFetchSites)
 
-  const shouldFetchDepartments = ['assets', 'checkout', 'transaction', 'reservation'].includes(reportType)
+  const shouldFetchDepartments = ['assets', 'checkout', 'transaction', 'reservation', 'maintenance'].includes(reportType)
   const { data: departments = [] } = useDepartments(shouldFetchDepartments)
 
   const { data: employeesData } = useEmployees(
@@ -572,26 +572,7 @@ export function AutomatedReportFilters({
         return (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="status-filter">Status</Label>
-              <Select
-                value={(localFilters.status as string) || 'all'}
-                onValueChange={(value) => handleFilterChange('status', value === 'all' ? undefined : value)}
-                disabled={disabled}
-              >
-                <SelectTrigger id="status-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All statuses" className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="Pending">Pending</SelectItem>
-                  <SelectItem value="In Progress">In Progress</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                  <SelectItem value="Cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="category-filter">Category</Label>
+              <Label htmlFor="category-filter">Asset Category</Label>
               <Select
                 value={(localFilters.category as string) || 'all'}
                 onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
@@ -603,7 +584,7 @@ export function AutomatedReportFilters({
                 <SelectContent>
                   <SelectItem value="all">All categories</SelectItem>
                   {categories?.map((cat: { id: string; name: string }) => (
-                    <SelectItem key={cat.id} value={cat.id}>
+                    <SelectItem key={cat.id} value={cat.name}>
                       {cat.name}
                     </SelectItem>
                   ))}
@@ -611,7 +592,67 @@ export function AutomatedReportFilters({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="start-date-filter">Start Date</Label>
+              <Label htmlFor="location-filter">Asset Location</Label>
+              <Select
+                value={(localFilters.location as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="location-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All locations" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All locations</SelectItem>
+                  {locations?.map((loc: { id: string; name: string }) => (
+                    <SelectItem key={loc.id} value={loc.name}>
+                      {loc.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="site-filter">Asset Site</Label>
+              <Select
+                value={(localFilters.site as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="site-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All sites" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sites</SelectItem>
+                  {sites?.map((s: { id: string; name: string }) => (
+                    <SelectItem key={s.id} value={s.name}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="department-filter">Asset Department</Label>
+              <Select
+                value={(localFilters.department as string) || 'all'}
+                onValueChange={(value) => handleFilterChange('department', value === 'all' ? undefined : value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="department-filter" className="w-full min-w-0">
+                  <SelectValue placeholder="All departments" className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All departments</SelectItem>
+                  {departments?.map((dept: { id: string; name: string }) => (
+                    <SelectItem key={dept.id} value={dept.name}>
+                      {dept.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="start-date-filter">Due Date From</Label>
               <Input
                 id="start-date-filter"
                 type="date"
@@ -621,7 +662,7 @@ export function AutomatedReportFilters({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="end-date-filter">End Date</Label>
+              <Label htmlFor="end-date-filter">Due Date To</Label>
               <Input
                 id="end-date-filter"
                 type="date"

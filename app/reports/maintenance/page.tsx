@@ -218,9 +218,11 @@ function MaintenanceReportsPageContent() {
   // Build query string from filters and pagination
   const queryString = useMemo(() => {
     const params = new URLSearchParams()
-    if (filters.status) params.set('status', filters.status)
     if (filters.assetId) params.set('assetId', filters.assetId)
     if (filters.category) params.set('category', filters.category)
+    if (filters.location) params.set('location', filters.location)
+    if (filters.site) params.set('site', filters.site)
+    if (filters.department) params.set('department', filters.department)
     if (filters.startDate) params.set('startDate', filters.startDate)
     if (filters.endDate) params.set('endDate', filters.endDate)
     // Add pagination
@@ -321,9 +323,11 @@ function MaintenanceReportsPageContent() {
     const baseUrl = getApiBaseUrl()
     const params = new URLSearchParams()
     params.set('format', format)
-    if (filters.status) params.set('status', filters.status)
     if (filters.assetId) params.set('assetId', filters.assetId)
     if (filters.category) params.set('category', filters.category)
+    if (filters.location) params.set('location', filters.location)
+    if (filters.site) params.set('site', filters.site)
+    if (filters.department) params.set('department', filters.department)
     if (filters.startDate) params.set('startDate', filters.startDate)
     if (filters.endDate) params.set('endDate', filters.endDate)
     if (includeMaintenanceList) params.set('includeMaintenanceList', 'true')
@@ -365,65 +369,45 @@ function MaintenanceReportsPageContent() {
       return
     }
 
-    // Fetch all maintenances for PDF export only if includeMaintenanceList is checked
-    let allMaintenances: typeof reportData.maintenances | undefined = undefined
-    if (includeMaintenanceList) {
-      try {
-        const baseUrl = getApiBaseUrl()
-        const params = new URLSearchParams()
-        if (filters.status) params.set('status', filters.status)
-        if (filters.assetId) params.set('assetId', filters.assetId)
-        if (filters.category) params.set('category', filters.category)
-        if (filters.startDate) params.set('startDate', filters.startDate)
-        if (filters.endDate) params.set('endDate', filters.endDate)
-        // Set a large pageSize to get all results
-        params.set('pageSize', '10000')
-        
-        const url = `${baseUrl}/api/reports/maintenance?${params.toString()}`
-        
-        const token = await getAuthToken()
-        const headers: HeadersInit = {}
-        if (baseUrl && token) {
-          headers['Authorization'] = `Bearer ${token}`
-        }
-        
-        const response = await fetch(url, {
-          credentials: 'include',
-          headers,
-        })
-        if (response.ok) {
-          const data = await response.json()
-          allMaintenances = data.maintenances || []
-        }
-      } catch (error) {
-        console.error('Failed to fetch all maintenances for PDF:', error)
-        // Fall back to undefined, which will skip the maintenance list
-      }
+    // Use FastAPI backend PDF export
+    const baseUrl = getApiBaseUrl()
+    const params = new URLSearchParams()
+    params.set('format', 'pdf')
+    if (filters.assetId) params.set('assetId', filters.assetId)
+    if (filters.category) params.set('category', filters.category)
+    if (filters.location) params.set('location', filters.location)
+    if (filters.site) params.set('site', filters.site)
+    if (filters.department) params.set('department', filters.department)
+    if (filters.startDate) params.set('startDate', filters.startDate)
+    if (filters.endDate) params.set('endDate', filters.endDate)
+    if (includeMaintenanceList) params.set('includeMaintenanceList', 'true')
+
+    const url = `${baseUrl}/api/reports/maintenance/export?${params.toString()}`
+    
+    const token = await getAuthToken()
+    const headers: HeadersInit = {}
+    if (baseUrl && token) {
+      headers['Authorization'] = `Bearer ${token}`
     }
 
-    // Generate HTML for PDF
-    const html = generateMaintenanceReportHTML(reportData, allMaintenances, includeMaintenanceList)
-
-    const response = await fetch('/api/reports/assets/pdf', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ html }),
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers,
     })
 
     if (!response.ok) {
-      throw new Error('PDF generation failed')
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.detail || error.error || 'PDF generation failed')
     }
 
     const blob = await response.blob()
-    const url = window.URL.createObjectURL(blob)
+    const downloadUrl = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
+    a.href = downloadUrl
     a.download = `maintenance-report-${new Date().toISOString().split('T')[0]}.pdf`
     document.body.appendChild(a)
     a.click()
-    window.URL.revokeObjectURL(url)
+    window.URL.revokeObjectURL(downloadUrl)
     document.body.removeChild(a)
 
     toast.success('PDF exported successfully')
@@ -648,7 +632,7 @@ function MaintenanceReportsPageContent() {
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <ReportFilters filters={filters} onFiltersChange={handleFiltersChange} disabled={isExporting} />
+          <ReportFilters filters={filters} onFiltersChange={handleFiltersChange} disabled={isExporting} hideStatus={true} />
           <Button
             variant="outline"
             size="sm"
@@ -705,18 +689,6 @@ function MaintenanceReportsPageContent() {
           animate={{ opacity: 1, y: 0 }}
           className="flex flex-wrap gap-2"
         >
-          {filters.status && (
-            <Badge variant="secondary" className="gap-1">
-              Status: {filters.status}
-              <button
-                onClick={() => removeFilter('status')}
-                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
-                disabled={isExporting}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
-          )}
           {filters.assetId && (
             <Badge variant="secondary" className="gap-1">
               Asset: {filters.assetId}
@@ -734,6 +706,42 @@ function MaintenanceReportsPageContent() {
               Category: {filters.category}
               <button
                 onClick={() => removeFilter('category')}
+                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                disabled={isExporting}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {filters.location && (
+            <Badge variant="secondary" className="gap-1">
+              Location: {filters.location}
+              <button
+                onClick={() => removeFilter('location')}
+                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                disabled={isExporting}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {filters.site && (
+            <Badge variant="secondary" className="gap-1">
+              Site: {filters.site}
+              <button
+                onClick={() => removeFilter('site')}
+                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                disabled={isExporting}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {filters.department && (
+            <Badge variant="secondary" className="gap-1">
+              Department: {filters.department}
+              <button
+                onClick={() => removeFilter('department')}
                 className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
                 disabled={isExporting}
               >
@@ -822,7 +830,7 @@ function MaintenanceReportsPageContent() {
               </CardHeader>
               <CardContent className="flex-1 px-0 relative">
                 {isFetching && reportData && reportData.maintenances && reportData.maintenances.length > 0 && (
-                  <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/50 backdrop-blur-sm z-20 flex items-center justify-center">
+                  <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/30 backdrop-blur-sm z-20 flex items-center justify-center rounded-b-2xl">
                     <Spinner variant="default" size={24} className="text-muted-foreground" />
                   </div>
                 )}

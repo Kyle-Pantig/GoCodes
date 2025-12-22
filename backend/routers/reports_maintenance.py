@@ -13,6 +13,7 @@ import asyncio
 from models.reports import MaintenanceReportResponse, MaintenanceSummary, MaintenanceItem, UpcomingMaintenance, MaintenanceStatusGroup, TotalCostByStatus, MaintenanceInventoryItem, PaginationInfo
 from auth import verify_auth
 from database import prisma
+from utils.pdf_generator import ReportPDF, PDF_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +27,11 @@ def format_number(value: Optional[float]) -> str:
 
 @router.get("", response_model=MaintenanceReportResponse)
 async def get_maintenance_reports(
-    status: Optional[str] = Query(None, description="Filter by status"),
     assetId: Optional[str] = Query(None, description="Filter by asset ID"),
-    category: Optional[str] = Query(None, description="Filter by category ID"),
+    category: Optional[str] = Query(None, description="Filter by category name"),
+    location: Optional[str] = Query(None, description="Filter by asset location"),
+    site: Optional[str] = Query(None, description="Filter by asset site"),
+    department: Optional[str] = Query(None, description="Filter by asset department"),
     startDate: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     endDate: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     page: int = Query(1, ge=1),
@@ -47,9 +50,6 @@ async def get_maintenance_reports(
         where_clause: Dict[str, Any] = {}
 
         # Apply filters
-        if status:
-            where_clause["status"] = status
-
         if assetId:
             where_clause["assetId"] = assetId
 
@@ -126,12 +126,33 @@ async def get_maintenance_reports(
             )
         )
 
-        # Filter by category if needed (for summary)
+        # Filter by asset properties (category, location, site, department)
         filtered_all_maintenances = all_maintenances_raw
+        
         if category:
+            # Filter by category name (case-insensitive)
             filtered_all_maintenances = [
-                m for m in all_maintenances_raw
-                if m.asset.category and m.asset.category.id == category
+                m for m in filtered_all_maintenances
+                if m.asset and m.asset.category and m.asset.category.name and 
+                   m.asset.category.name.lower() == category.lower()
+            ]
+        
+        if location:
+            filtered_all_maintenances = [
+                m for m in filtered_all_maintenances
+                if m.asset and m.asset.location and m.asset.location.lower() == location.lower()
+            ]
+        
+        if site:
+            filtered_all_maintenances = [
+                m for m in filtered_all_maintenances
+                if m.asset and m.asset.site and m.asset.site.lower() == site.lower()
+            ]
+        
+        if department:
+            filtered_all_maintenances = [
+                m for m in filtered_all_maintenances
+                if m.asset and m.asset.department and m.asset.department.lower() == department.lower()
             ]
 
         # Get today's date for calculations
@@ -205,10 +226,30 @@ async def get_maintenance_reports(
 
         # Filter paginated maintenances by category if needed
         filtered_maintenances = paginated_maintenances_raw
+        # Apply asset property filters to paginated results
         if category:
             filtered_maintenances = [
-                m for m in paginated_maintenances_raw
-                if m.asset.category and m.asset.category.id == category
+                m for m in filtered_maintenances
+                if m.asset and m.asset.category and m.asset.category.name and 
+                   m.asset.category.name.lower() == category.lower()
+            ]
+        
+        if location:
+            filtered_maintenances = [
+                m for m in filtered_maintenances
+                if m.asset and m.asset.location and m.asset.location.lower() == location.lower()
+            ]
+        
+        if site:
+            filtered_maintenances = [
+                m for m in filtered_maintenances
+                if m.asset and m.asset.site and m.asset.site.lower() == site.lower()
+            ]
+        
+        if department:
+            filtered_maintenances = [
+                m for m in filtered_maintenances
+                if m.asset and m.asset.department and m.asset.department.lower() == department.lower()
             ]
 
         # Format maintenances
@@ -330,10 +371,12 @@ async def get_maintenance_reports(
 
 @router.get("/export")
 async def export_maintenance_reports(
-    format: str = Query("csv", description="Export format: csv or excel"),
-    status: Optional[str] = Query(None, description="Filter by status"),
+    format: str = Query("csv", description="Export format: csv, excel, or pdf"),
     assetId: Optional[str] = Query(None, description="Filter by asset ID"),
-    category: Optional[str] = Query(None, description="Filter by category ID"),
+    category: Optional[str] = Query(None, description="Filter by category name"),
+    location: Optional[str] = Query(None, description="Filter by asset location"),
+    site: Optional[str] = Query(None, description="Filter by asset site"),
+    department: Optional[str] = Query(None, description="Filter by asset department"),
     startDate: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     endDate: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     includeMaintenanceList: Optional[bool] = Query(False, description="Include maintenance list in export"),
@@ -345,15 +388,20 @@ async def export_maintenance_reports(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        if format not in ["csv", "excel"]:
-            raise HTTPException(status_code=400, detail="Invalid format. Use csv or excel.")
+        if format not in ["csv", "excel", "pdf"]:
+            raise HTTPException(status_code=400, detail="Invalid format. Use csv, excel, or pdf.")
+        
+        if format == "pdf" and not PDF_AVAILABLE:
+            raise HTTPException(status_code=500, detail="PDF export not available - fpdf2 not installed")
 
         # Fetch all data for export
         page_size = 10000 if includeMaintenanceList else 1
         report_data = await get_maintenance_reports(
-            status=status,
             assetId=assetId,
             category=category,
+            location=location,
+            site=site,
+            department=department,
             startDate=startDate,
             endDate=endDate,
             page=1,
@@ -529,7 +577,7 @@ async def export_maintenance_reports(
                 }
             )
 
-        else:  # excel
+        elif format == "excel":
             # Import openpyxl for Excel generation
             try:
                 from openpyxl import Workbook  # type: ignore
@@ -585,6 +633,40 @@ async def export_maintenance_reports(
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 }
             )
+
+        else:  # pdf
+            pdf = ReportPDF("Maintenance Report", "Maintenance")
+            pdf.add_page()
+
+            pdf.add_section_title("Summary Statistics")
+            if summary_data:
+                headers = list(summary_data[0].keys())
+                rows = [[str(row.get(h, '')) for h in headers] for row in summary_data]
+                pdf.add_table(headers, rows)
+            
+            pdf.ln(10)
+
+            if maintenance_list_data and includeMaintenanceList:
+                pdf.add_section_title(f"Maintenance List ({len(maintenance_list_data)} records)")
+                simplified_headers = ["Asset Tag", "Description", "Title", "Status", "Due Date", "Completed", "Cost", "Inventory Items"]
+                simplified_rows = [
+                    [
+                        str(m.get("Asset Tag ID", "")),
+                        str(m.get("Asset Description", ""))[:50],
+                        str(m.get("Title", "")),
+                        str(m.get("Status", "")),
+                        str(m.get("Due Date", "")),
+                        str(m.get("Date Completed", "")),
+                        str(m.get("Cost", "")),
+                        str(m.get("Inventory Items", ""))[:40],
+                    ]
+                    for m in maintenance_list_data
+                ]
+                pdf.add_table(simplified_headers, simplified_rows)
+
+            pdf_content = bytes(pdf.output())
+            filename += ".pdf"
+            return Response(content=pdf_content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     except HTTPException:
         raise

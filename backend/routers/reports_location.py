@@ -13,6 +13,7 @@ import asyncio
 from models.reports import LocationReportResponse, LocationSummary, LocationReportGroup, SiteReportGroup, LocationAsset, MovementItem, PaginationInfo
 from auth import verify_auth
 from database import prisma
+from utils.pdf_generator import ReportPDF, PDF_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -285,8 +286,11 @@ async def export_location_reports(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        if format not in ["csv", "excel"]:
-            raise HTTPException(status_code=400, detail="Invalid format. Use csv or excel.")
+        if format not in ["csv", "excel", "pdf"]:
+            raise HTTPException(status_code=400, detail="Invalid format. Use csv, excel, or pdf.")
+        
+        if format == "pdf" and not PDF_AVAILABLE:
+            raise HTTPException(status_code=500, detail="PDF export not available - fpdf2 not installed")
 
         # Fetch all data for export
         page_size = 10000 if includeAssetList else 1
@@ -447,7 +451,7 @@ async def export_location_reports(
                 }
             )
 
-        else:  # excel
+        elif format == "excel":
             # Import openpyxl for Excel generation
             try:
                 from openpyxl import Workbook  # type: ignore
@@ -508,6 +512,49 @@ async def export_location_reports(
             return StreamingResponse(
                 buffer,
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"'
+                }
+            )
+
+        else:  # pdf
+            # Generate PDF using fpdf2
+            pdf = ReportPDF("Location Report", "Location")
+            pdf.add_page()
+
+            # Summary section
+            pdf.add_section_title("Summary Statistics")
+            if summary_data:
+                headers = list(summary_data[0].keys())
+                rows = [[str(row.get(h, '')) for h in headers] for row in summary_data]
+                pdf.add_table(headers, rows)
+            
+            pdf.ln(10)
+
+            # Asset List section
+            if asset_list_data and includeAssetList:
+                pdf.add_section_title(f"Asset List ({len(asset_list_data)} assets)")
+                simplified_headers = ["Asset Tag", "Description", "Location", "Site", "Department", "Status", "Last Move"]
+                simplified_rows = [
+                    [
+                        str(row.get("Asset Tag ID", "")),
+                        str(row.get("Description", ""))[:50],
+                        str(row.get("Location", "")),
+                        str(row.get("Site", "")),
+                        str(row.get("Department", "")),
+                        str(row.get("Status", "")),
+                        str(row.get("Last Move Date", "")),
+                    ]
+                    for row in asset_list_data
+                ]
+                pdf.add_table(simplified_headers, simplified_rows)
+
+            pdf_content = bytes(pdf.output())
+            
+            filename += ".pdf"
+            return Response(
+                content=pdf_content,
+                media_type="application/pdf",
                 headers={
                     "Content-Disposition": f'attachment; filename="{filename}"'
                 }
