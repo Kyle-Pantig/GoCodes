@@ -58,9 +58,12 @@ async def _generate_report_export(
         
         endpoint_name = report_type_map[report_type]
         
-        # Get base URL for FastAPI
+        # Get base URL for FastAPI - use FASTAPI_BASE_URL environment variable
         base_url = os.getenv("FASTAPI_BASE_URL", "http://localhost:8000")
+        
         export_url = f"{base_url}/api/reports/{endpoint_name}/export"
+        
+        logger.info(f"Generating report from: {export_url}")
         
         # Build query parameters
         params: Dict[str, Any] = {"format": export_format}
@@ -73,19 +76,28 @@ async def _generate_report_export(
         if include_list:
             params["includeAssetList"] = "true"
         
+        logger.info(f"Report params: {params}")
+        
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.get(export_url, params=params)
             
             if response.status_code != 200:
-                logger.error(f"Failed to generate report: {response.status_code}")
+                logger.error(f"Failed to generate report: {response.status_code} - {response.text[:500]}")
                 return None
             
             extension_map = {"pdf": "xlsx", "csv": "csv", "excel": "xlsx"}
             extension = extension_map.get(format, "xlsx")
             
             safe_name = ''.join(c if c.isalnum() else '_' for c in report_name.lower())
-            date_str = datetime.now().strftime("%Y-%m-%d")
+            
+            # Use local timezone for date
+            now_utc = datetime.now(timezone.utc)
+            now_local = now_utc.astimezone(LOCAL_TIMEZONE)
+            date_str = now_local.strftime("%Y-%m-%d")
             filename = f"{safe_name}_{date_str}.{extension}"
+            
+            content_length = len(response.content)
+            logger.info(f"Report generated successfully: {filename} ({content_length} bytes)")
             
             return {
                 "filename": filename,
@@ -118,6 +130,14 @@ async def _send_report_email(
         from_email = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
         site_name = os.getenv("NEXT_PUBLIC_SITE_NAME", "Asset Dog")
         
+        # Use local timezone for generated timestamp
+        now_utc = datetime.now(timezone.utc)
+        now_local = now_utc.astimezone(LOCAL_TIMEZONE)
+        generated_time = now_local.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Check if attachment exists
+        attachment_status = "attached" if attachment else "not available"
+        
         email_html = f"""
         <!DOCTYPE html>
         <html>
@@ -128,19 +148,19 @@ async def _send_report_email(
             <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
               <h2 style="color: #333; margin-top: 0;">Scheduled Report: {report_name}</h2>
               <p style="color: #666; font-size: 16px;">
-                Your scheduled {report_type} report is attached.
+                Your scheduled {report_type} report is {attachment_status}.
               </p>
               <div style="background: white; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #667eea;">
                 <p style="margin: 5px 0;"><strong>Report Type:</strong> {report_type}</p>
                 <p style="margin: 5px 0;"><strong>Format:</strong> {format.upper()}</p>
-                <p style="margin: 5px 0;"><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                <p style="margin: 5px 0;"><strong>Generated:</strong> {generated_time}</p>
               </div>
               <p style="color: #666; font-size: 14px; margin-top: 30px;">
                 This is an automated email. Please do not reply to this message.
               </p>
             </div>
             <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
-              <p>&copy; {datetime.now().year} {site_name}. All rights reserved.</p>
+              <p>&copy; {now_local.year} {site_name}. All rights reserved.</p>
             </div>
           </body>
         </html>
