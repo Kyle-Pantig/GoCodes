@@ -3,10 +3,14 @@ PDF generation utility for automated reports
 """
 import io
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Use same timezone as report_schedule (UTC+8 for Philippines)
+TIMEZONE_OFFSET_HOURS = 8
+LOCAL_TIMEZONE = timezone(timedelta(hours=TIMEZONE_OFFSET_HOURS))
 
 try:
     from fpdf import FPDF
@@ -25,17 +29,28 @@ class ReportPDF(FPDF):
         self.report_name = report_name
         self.report_type = report_type
         self.set_auto_page_break(auto=True, margin=15)
+        self._header_printed = False
+        # Store generated time in local timezone
+        now_utc = datetime.now(timezone.utc)
+        now_local = now_utc.astimezone(LOCAL_TIMEZONE)
+        self._generated_time = now_local.strftime("%Y-%m-%d %H:%M:%S")
         
     def header(self):
-        """PDF Header"""
-        self.set_font('Helvetica', 'B', 16)
-        self.set_text_color(102, 126, 234)  # Purple color from email template
-        self.cell(0, 10, self.report_name, new_x='LMARGIN', new_y='NEXT', align='C')
-        self.set_font('Helvetica', '', 10)
-        self.set_text_color(128, 128, 128)
-        self.cell(0, 5, f'{self.report_type.title()} Report', new_x='LMARGIN', new_y='NEXT', align='C')
-        self.cell(0, 5, f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}', new_x='LMARGIN', new_y='NEXT', align='C')
-        self.ln(10)
+        """PDF Header - only show title on first page"""
+        if not self._header_printed:
+            # Full header on first page only
+            self.set_font('Helvetica', 'B', 16)
+            self.set_text_color(102, 126, 234)  # Purple color from email template
+            self.cell(0, 10, self.report_name, new_x='LMARGIN', new_y='NEXT', align='C')
+            self.set_font('Helvetica', '', 10)
+            self.set_text_color(128, 128, 128)
+            self.cell(0, 5, f'{self.report_type.title()} Report', new_x='LMARGIN', new_y='NEXT', align='C')
+            self.cell(0, 5, f'Generated: {self._generated_time}', new_x='LMARGIN', new_y='NEXT', align='C')
+            self.ln(10)
+            self._header_printed = True
+        else:
+            # Minimal header on subsequent pages - just some spacing
+            self.ln(5)
         
     def footer(self):
         """PDF Footer"""
