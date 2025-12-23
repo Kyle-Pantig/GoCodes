@@ -171,9 +171,9 @@ This document tracks the conversion status of Next.js API routes to FastAPI endp
 
 | Route | Method(s) | Status | FastAPI Router | Pages/Components Using | Integration |
 |-------|-----------|--------|----------------|----------------------|-------------|
-| `/api/assets/[id]/pdf` | GET | ❌ | - | Asset details print | 📄 Direct (Next.js API) |
-| `/api/assets/accountability-form/pdf` | POST | ❌ | - | `app/forms/accountability-form/page.tsx` | 📄 Direct (Next.js API) |
-| `/api/assets/return-form/pdf` | POST | ❌ | - | `app/forms/return-form/page.tsx` | 📄 Direct (Next.js API) |
+| `/api/assets/[id]/pdf` | POST | ✅ | `routers/assets.py` | Asset details print | 📄 Direct (Next.js API) |
+| `/api/assets/accountability-form/pdf` | POST | ✅ | `routers/assets.py` | `app/forms/accountability-form/page.tsx` | 📄 Direct (FastAPI) |
+| `/api/assets/return-form/pdf` | POST | ✅ | `routers/assets.py` | `app/forms/return-form/page.tsx` | 📄 Direct (FastAPI) |
 
 ---
 
@@ -276,7 +276,7 @@ This document tracks the conversion status of Next.js API routes to FastAPI endp
 |-------|-----------|--------|----------------|----------------------|-------------|
 | `/api/reports/assets/summary` | GET | ✅ | `routers/reports.py` | `app/reports/assets/page.tsx` | 🔄 Proxy (FastAPI) |
 | `/api/reports/assets/export` | GET | ✅ | `routers/reports.py` | `app/reports/assets/page.tsx` | 🔄 Proxy (FastAPI) |
-| `/api/reports/assets/pdf` | GET | ❌ | - | `app/reports/reservation/page.tsx` | 📄 Direct (Next.js API) |
+| `/api/reports/assets/pdf` | GET | ✅ | `routers/reports.py` | `app/reports/assets/page.tsx` | 🔄 Proxy (FastAPI) |
 | `/api/reports/audit` | GET | ✅ | `routers/reports_audit.py` | `app/reports/audit/page.tsx` | 🔄 Proxy (FastAPI) |
 | `/api/reports/audit/export` | GET | ✅ | `routers/reports_audit.py` | `app/reports/audit/page.tsx` | 🔄 Proxy (FastAPI) |
 | `/api/reports/checkout` | GET | ✅ | `routers/reports_checkout.py` | `app/reports/checkout/page.tsx` | 🔄 Proxy (FastAPI) |
@@ -344,9 +344,9 @@ This document tracks the conversion status of Next.js API routes to FastAPI endp
 
 | Route | Method(s) | Status | FastAPI Router | Pages/Components Using | Integration |
 |-------|-----------|--------|----------------|----------------------|-------------|
-| `/api/cron/cleanup-deleted-assets` | POST | ❌ | - | Vercel Cron | N/A (Server-side) |
-| `/api/cron/cleanup-deleted-inventory` | POST | ❌ | - | Vercel Cron | N/A (Server-side) |
-| `/api/cron/send-scheduled-reports` | POST | ❌ | - | Vercel Cron | N/A (Server-side) |
+| `/api/cron/cleanup-deleted-assets` | POST | ✅ | `cron.py` | Vercel Cron | N/A (Server-side) |
+| `/api/cron/cleanup-deleted-inventory` | POST | ✅ | `cron.py` | Vercel Cron | N/A (Server-side) |
+| `/api/cron/send-scheduled-reports` | POST | ✅ | `cron.py` | Vercel Cron | N/A (Server-side) |
 
 ---
 

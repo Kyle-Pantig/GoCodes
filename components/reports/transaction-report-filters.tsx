@@ -34,9 +34,10 @@ interface TransactionReportFiltersProps {
   }
   onFiltersChange: (filters: TransactionReportFiltersProps['filters']) => void
   disabled?: boolean
+  isMobilePopover?: boolean
 }
 
-export function TransactionReportFilters({ filters, onFiltersChange, disabled = false }: TransactionReportFiltersProps) {
+export function TransactionReportFilters({ filters, onFiltersChange, disabled = false, isMobilePopover = false }: TransactionReportFiltersProps) {
   const [open, setOpen] = useState(false)
   const [localFilters, setLocalFilters] = useState(filters)
 
@@ -75,6 +76,160 @@ export function TransactionReportFilters({ filters, onFiltersChange, disabled = 
 
   const hasActiveFilters = Object.values(filters).some((value) => value !== undefined && value !== '')
 
+  const content = (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Category Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="category-filter">Category</Label>
+          <Select
+            value={localFilters.category || 'all'}
+            onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
+            disabled={disabled}
+          >
+            <SelectTrigger id="category-filter" className="w-full min-w-0">
+              <SelectValue placeholder="All categories" className="truncate" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All categories</SelectItem>
+              {categories?.map((cat: { id: string; name: string }) => (
+                <SelectItem key={cat.id} value={cat.name} className="truncate">
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Location Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="location-filter">Location</Label>
+          <Select
+            value={localFilters.location || 'all'}
+            onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
+            disabled={disabled}
+          >
+            <SelectTrigger id="location-filter" className="w-full min-w-0">
+              <SelectValue placeholder="All locations" className="truncate" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All locations</SelectItem>
+              {locations?.map((loc: { id: string; name: string }) => (
+                <SelectItem key={loc.id} value={loc.name} className="truncate">
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Site Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="site-filter">Site</Label>
+          <Select
+            value={localFilters.site || 'all'}
+            onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
+            disabled={disabled}
+          >
+            <SelectTrigger id="site-filter" className="w-full min-w-0">
+              <SelectValue placeholder="All sites" className="truncate" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All sites</SelectItem>
+              {sites?.map((site: { id: string; name: string }) => (
+                <SelectItem key={site.id} value={site.name} className="truncate">
+                  {site.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Department Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="department-filter">Department</Label>
+          <Select
+            value={localFilters.department || 'all'}
+            onValueChange={(value) => handleFilterChange('department', value === 'all' ? undefined : value)}
+            disabled={disabled}
+          >
+            <SelectTrigger id="department-filter" className="w-full min-w-0">
+              <SelectValue placeholder="All departments" className="truncate" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All departments</SelectItem>
+              {departments?.map((dept: { id: string; name: string }) => (
+                <SelectItem key={dept.id} value={dept.name} className="truncate">
+                  {dept.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Action By Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="action-by-filter">Action By (User)</Label>
+          <Input
+            id="action-by-filter"
+            placeholder="Filter by user..."
+            value={localFilters.actionBy || ''}
+            onChange={(e) => handleFilterChange('actionBy', e.target.value || undefined)}
+            disabled={disabled}
+            className="w-full"
+          />
+        </div>
+
+        {/* Start Date Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="start-date-filter">Start Date</Label>
+          <Input
+            id="start-date-filter"
+            type="date"
+            value={localFilters.startDate || ''}
+            onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
+            disabled={disabled}
+            className="w-full"
+          />
+        </div>
+
+        {/* End Date Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="end-date-filter">End Date</Label>
+          <Input
+            id="end-date-filter"
+            type="date"
+            value={localFilters.endDate || ''}
+            onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
+            disabled={disabled}
+            className="w-full"
+          />
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-0 pt-2 border-t">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleClearFilters}
+          disabled={!hasActiveFilters}
+          className="w-full sm:w-auto"
+        >
+          <X className="h-4 w-4 mr-2" />
+          Clear All
+        </Button>
+        <Button size="sm" onClick={handleApplyFilters} disabled={disabled} className="w-full sm:w-auto">
+          Apply Filters
+        </Button>
+      </div>
+    </div>
+  )
+
+  if (isMobilePopover) {
+    return content
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -92,153 +247,7 @@ export function TransactionReportFilters({ filters, onFiltersChange, disabled = 
         </Button>
       </PopoverTrigger>
       <PopoverContent className="max-w-[500px] w-[calc(100vw-2rem)] sm:w-full" align="start">
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Category Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="category-filter">Category</Label>
-              <Select
-                value={localFilters.category || 'all'}
-                onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
-                disabled={disabled}
-              >
-                <SelectTrigger id="category-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All categories" className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All categories</SelectItem>
-                  {categories?.map((cat: { id: string; name: string }) => (
-                    <SelectItem key={cat.id} value={cat.name} className="truncate">
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Location Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="location-filter">Location</Label>
-              <Select
-                value={localFilters.location || 'all'}
-                onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
-                disabled={disabled}
-              >
-                <SelectTrigger id="location-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All locations" className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All locations</SelectItem>
-                  {locations?.map((loc: { id: string; name: string }) => (
-                    <SelectItem key={loc.id} value={loc.name} className="truncate">
-                      {loc.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Site Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="site-filter">Site</Label>
-              <Select
-                value={localFilters.site || 'all'}
-                onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
-                disabled={disabled}
-              >
-                <SelectTrigger id="site-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All sites" className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All sites</SelectItem>
-                  {sites?.map((site: { id: string; name: string }) => (
-                    <SelectItem key={site.id} value={site.name} className="truncate">
-                      {site.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Department Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="department-filter">Department</Label>
-              <Select
-                value={localFilters.department || 'all'}
-                onValueChange={(value) => handleFilterChange('department', value === 'all' ? undefined : value)}
-                disabled={disabled}
-              >
-                <SelectTrigger id="department-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All departments" className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All departments</SelectItem>
-                  {departments?.map((dept: { id: string; name: string }) => (
-                    <SelectItem key={dept.id} value={dept.name} className="truncate">
-                      {dept.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Action By Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="action-by-filter">Action By (User)</Label>
-              <Input
-                id="action-by-filter"
-                placeholder="Filter by user..."
-                value={localFilters.actionBy || ''}
-                onChange={(e) => handleFilterChange('actionBy', e.target.value || undefined)}
-                disabled={disabled}
-                className="w-full"
-              />
-            </div>
-
-            {/* Start Date Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="start-date-filter">Start Date</Label>
-              <Input
-                id="start-date-filter"
-                type="date"
-                value={localFilters.startDate || ''}
-                onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
-                disabled={disabled}
-                className="w-full"
-              />
-            </div>
-
-            {/* End Date Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="end-date-filter">End Date</Label>
-              <Input
-                id="end-date-filter"
-                type="date"
-                value={localFilters.endDate || ''}
-                onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
-                disabled={disabled}
-                className="w-full"
-              />
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-0 pt-2 border-t">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleClearFilters}
-              disabled={!hasActiveFilters}
-              className="w-full sm:w-auto"
-            >
-              <X className="h-4 w-4 mr-2" />
-              Clear All
-            </Button>
-            <Button size="sm" onClick={handleApplyFilters} disabled={disabled} className="w-full sm:w-auto">
-              Apply Filters
-            </Button>
-          </div>
-        </div>
+        {content}
       </PopoverContent>
     </Popover>
   )

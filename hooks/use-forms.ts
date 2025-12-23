@@ -289,7 +289,7 @@ export const useFormById = (formId: string, formType: string = 'accountability',
       const token = await getAuthToken()
 
       const searchParams = new URLSearchParams()
-      searchParams.set('type', formType)
+      searchParams.set('formType', formType)
 
       const headers: HeadersInit = {}
       if (token) {
@@ -322,7 +322,7 @@ export const useDeleteForm = () => {
       const token = await getAuthToken()
 
       const searchParams = new URLSearchParams()
-      searchParams.set('type', formType)
+      searchParams.set('formType', formType)
 
       const headers: HeadersInit = {}
       if (token) {

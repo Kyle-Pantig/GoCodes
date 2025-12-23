@@ -544,6 +544,133 @@ async def get_assets(
         logger.error(f"Error fetching assets: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch assets")
 
+
+# Form PDF generation request model
+from pydantic import BaseModel
+
+class FormPDFRequest(BaseModel):
+    html: Optional[str] = None
+    url: Optional[str] = None
+    elementId: Optional[str] = None
+    elementIds: Optional[List[str]] = None
+
+
+@router.post("/return-form/pdf")
+async def generate_return_form_pdf(
+    request: FormPDFRequest,
+    auth: dict = Depends(verify_auth)
+):
+    """Generate PDF from return form HTML or URL using Playwright"""
+    try:
+        user_id = auth.get("user", {}).get("id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        if not request.html and not request.url:
+            raise HTTPException(status_code=400, detail="HTML content or URL is required")
+        
+        # Support both single elementId and multiple elementIds
+        target_ids = request.elementIds or ([request.elementId] if request.elementId else [])
+        if len(target_ids) == 0:
+            raise HTTPException(status_code=400, detail="Element ID(s) required")
+        
+        try:
+            from utils.form_pdf_generator import generate_form_pdf
+            
+            pdf_data = await generate_form_pdf(
+                html=request.html,
+                url=request.url,
+                element_ids=target_ids,
+            )
+            
+            filename = "return-of-assets-combined.pdf" if len(target_ids) > 1 else "return-of-assets-it-copy.pdf"
+            
+            return Response(
+                content=pdf_data,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Content-Length": str(len(pdf_data)),
+                }
+            )
+        
+        except ImportError as ie:
+            logger.error(f"Playwright not available: {ie}")
+            raise HTTPException(
+                status_code=500, 
+                detail="PDF generation not available. Please install playwright: pip install playwright && playwright install chromium"
+            )
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve))
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating return form PDF: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to generate PDF: {str(e)}"
+        )
+
+
+@router.post("/accountability-form/pdf")
+async def generate_accountability_form_pdf(
+    request: FormPDFRequest,
+    auth: dict = Depends(verify_auth)
+):
+    """Generate PDF from accountability form HTML or URL using Playwright"""
+    try:
+        user_id = auth.get("user", {}).get("id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        if not request.html and not request.url:
+            raise HTTPException(status_code=400, detail="HTML content or URL is required")
+        
+        # Support both single elementId and multiple elementIds
+        target_ids = request.elementIds or ([request.elementId] if request.elementId else [])
+        if len(target_ids) == 0:
+            raise HTTPException(status_code=400, detail="Element ID(s) required")
+        
+        try:
+            from utils.form_pdf_generator import generate_form_pdf
+            
+            pdf_data = await generate_form_pdf(
+                html=request.html,
+                url=request.url,
+                element_ids=target_ids,
+            )
+            
+            filename = "accountability-form-combined.pdf" if len(target_ids) > 1 else "accountability-form.pdf"
+            
+            return Response(
+                content=pdf_data,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Content-Length": str(len(pdf_data)),
+                }
+            )
+        
+        except ImportError as ie:
+            logger.error(f"Playwright not available: {ie}")
+            raise HTTPException(
+                status_code=500, 
+                detail="PDF generation not available. Please install playwright: pip install playwright && playwright install chromium"
+            )
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve))
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating accountability form PDF: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to generate PDF: {str(e)}"
+        )
+
+
 @router.get("/{asset_id}/checkout")
 async def get_asset_checkouts(
     asset_id: str = Path(..., description="Asset ID (UUID) or assetTagId"),
@@ -4981,3 +5108,4 @@ async def generate_asset_pdf(
     except Exception as e:
         logger.error(f"Error generating asset PDF: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
+

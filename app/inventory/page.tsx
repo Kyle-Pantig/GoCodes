@@ -878,7 +878,7 @@ function InventoryPageContent() {
 
   useEffect(() => {
     if (deleteMutation.isSuccess) {
-      toast.success('Inventory item deleted successfully')
+      toast.success('Inventory item deleted successfully. It will be permanently deleted after 30 days.')
       setIsDeleteDialogOpen(false)
       setSelectedItem(null)
       deleteMutation.reset()

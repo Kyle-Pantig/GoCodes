@@ -492,4 +492,3 @@ async def delete_form(
         if "p2025" in str(e).lower():
             raise HTTPException(status_code=404, detail="Form not found")
         raise HTTPException(status_code=500, detail="Failed to delete form")
-

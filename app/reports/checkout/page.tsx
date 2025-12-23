@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, Suspense } from 'react'
+import { useState, useMemo, useCallback, useEffect, Suspense } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -17,7 +17,16 @@ import {
   X,
   ArrowLeft,
   ArrowRight,
+  Filter,
 } from 'lucide-react'
+import { useMobileDock } from '@/components/mobile-dock-provider'
+import { useMobilePagination } from '@/components/mobile-pagination-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   Table,
   TableBody,
@@ -45,6 +54,7 @@ import {
 import { ExportDialog } from '@/components/dialogs/export-dialog'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase-client'
+import { cn } from '@/lib/utils'
 
 interface CheckoutReportData {
   summary: {
@@ -113,6 +123,10 @@ function CheckoutReportsPageContent() {
   const canViewAssets = hasPermission('canViewAssets')
   const canManageReports = hasPermission('canManageReports')
   
+  const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
+  const { setPaginationContent } = useMobilePagination()
+  
   // Get page and pageSize from URL
   const page = parseInt(searchParams.get('page') || '1', 10)
   const pageSize = parseInt(searchParams.get('pageSize') || '50', 10)
@@ -122,6 +136,7 @@ function CheckoutReportsPageContent() {
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [pendingExportFormat, setPendingExportFormat] = useState<'csv' | 'excel' | 'pdf' | null>(null)
   const [includeCheckoutList, setIncludeCheckoutList] = useState(false)
+  const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false)
   
   // Update URL with pagination
   const updateURL = useCallback((updates: { page?: number; pageSize?: number; resetPage?: boolean }) => {
@@ -230,13 +245,13 @@ function CheckoutReportsPageContent() {
   
   const pagination = reportData?.pagination
   
-  const handlePageSizeChange = (newPageSize: string) => {
+  const handlePageSizeChange = useCallback((newPageSize: string) => {
     updateURL({ pageSize: parseInt(newPageSize), page: 1 })
-  }
+  }, [updateURL])
 
-  const handlePageChange = (newPage: number) => {
+  const handlePageChange = useCallback((newPage: number) => {
     updateURL({ page: newPage })
-  }
+  }, [updateURL])
 
   const formatCurrency = (value: number | null | undefined) => {
     if (value === null || value === undefined || isNaN(value)) {
@@ -262,7 +277,7 @@ function CheckoutReportsPageContent() {
   }
 
   // Export handlers
-  const handleExportClick = (format: 'csv' | 'excel' | 'pdf') => {
+  const handleExportClick = useCallback((format: 'csv' | 'excel' | 'pdf') => {
     if (!canManageReports) {
       toast.error('You do not have permission to export reports. Please contact your administrator.')
       return
@@ -271,7 +286,7 @@ function CheckoutReportsPageContent() {
     // Reset includeCheckoutList when opening dialog
     setIncludeCheckoutList(false)
     setShowExportDialog(true)
-  }
+  }, [canManageReports])
 
   const handleConfirmExport = async () => {
     if (!pendingExportFormat) return
@@ -606,6 +621,170 @@ function CheckoutReportsPageContent() {
     `
   }
 
+  // Check if any filters are active
+  const hasActiveFilters = Object.values(filters).some((value) => value !== undefined && value !== '')
+
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile) {
+      setDockContent(
+        <>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => refetch()}
+              disabled={isLoading || isExporting}
+              className="h-10 w-10 rounded-full btn-glass-elevated"
+              title="Refresh"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading || isFetching ? 'animate-spin' : ''}`} />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={isExporting || isLoading}
+                  className="h-10 w-10 rounded-full btn-glass-elevated"
+                  title="Export"
+                >
+                  {isExporting ? (
+                    <Spinner className="h-4 w-4" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => handleExportClick('csv')} disabled={isExporting}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportClick('excel')} disabled={isExporting}>
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportClick('pdf')} disabled={isExporting}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <Popover open={isFilterPopoverOpen} onOpenChange={setIsFilterPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={isExporting}
+                className="h-10 w-10 rounded-full btn-glass-elevated relative"
+                title="Filters"
+              >
+                <Filter className="h-4 w-4" />
+                {hasActiveFilters && (
+                  <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary" />
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80" align="end" side="top">
+              <CheckoutReportFilters 
+                filters={filters} 
+                onFiltersChange={(newFilters) => {
+                  handleFiltersChange(newFilters)
+                  setIsFilterPopoverOpen(false)
+                }} 
+                disabled={isExporting}
+                isMobilePopover={true}
+              />
+            </PopoverContent>
+          </Popover>
+        </>
+      )
+    } else {
+      setDockContent(null)
+    }
+    
+    return () => {
+      setDockContent(null)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile, isLoading, isFetching, isExporting, hasActiveFilters, isFilterPopoverOpen])
+
+  // Set mobile pagination content
+  useEffect(() => {
+    if (isMobile && pagination && pagination.totalPages > 0) {
+      setPaginationContent(
+        <>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (page > 1) {
+                  handlePageChange(page - 1)
+                }
+              }}
+              disabled={page <= 1 || isLoading}
+              className="h-8 px-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-muted-foreground">Page</span>
+              <div className="px-1.5 py-1 rounded-md bg-primary/10 text-primary font-medium text-xs">
+                {isLoading ? '...' : (pagination?.page || page)}
+              </div>
+              <span className="text-muted-foreground">of</span>
+              <span className="text-muted-foreground">{isLoading ? '...' : (pagination?.totalPages || 1)}</span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (pagination && page < pagination.totalPages) {
+                  handlePageChange(page + 1)
+                }
+              }}
+              disabled={!pagination || page >= (pagination.totalPages || 1) || isLoading}
+              className="h-8 px-2"
+            >
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={pageSize.toString()} onValueChange={handlePageSizeChange} disabled={isLoading}>
+              <SelectTrigger className="h-8 w-auto min-w-[90px] text-xs border-primary/20 bg-primary/10 text-primary font-medium hover:bg-primary/20">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="25">25 rows</SelectItem>
+                <SelectItem value="50">50 rows</SelectItem>
+                <SelectItem value="100">100 rows</SelectItem>
+                <SelectItem value="200">200 rows</SelectItem>
+                <SelectItem value="500">500 rows</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="text-xs text-muted-foreground whitespace-nowrap">
+              {isLoading ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <span>{pagination?.total || 0}</span>
+              )}
+            </div>
+          </div>
+        </>
+      )
+    } else {
+      setPaginationContent(null)
+    }
+    
+    return () => {
+      setPaginationContent(null)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile, pagination?.page, pagination?.totalPages, pagination?.total, page, pageSize, isLoading])
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -628,55 +807,57 @@ function CheckoutReportsPageContent() {
             Track currently checked-out assets, overdue items, and checkout history
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <CheckoutReportFilters filters={filters} onFiltersChange={handleFiltersChange} disabled={isExporting} />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isLoading || isExporting}
-            className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
-          >
-            <RefreshCw className={`h-4 w-4 sm:mr-2 ${isLoading || isFetching ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                disabled={isExporting || isLoading}
-                className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
-              >
-                {isExporting ? (
-                  <>
-                    <Spinner className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">Exporting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">Export</span>
-                  </>
-                )}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => handleExportClick('csv')} disabled={isExporting}>
-                <FileText className="h-4 w-4 mr-2" />
-                Export as CSV
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleExportClick('excel')} disabled={isExporting}>
-                <FileSpreadsheet className="h-4 w-4 mr-2" />
-                Export as Excel
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleExportClick('pdf')} disabled={isExporting}>
-                <FileText className="h-4 w-4 mr-2" />
-                Export as PDF
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        {!isMobile && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <CheckoutReportFilters filters={filters} onFiltersChange={handleFiltersChange} disabled={isExporting} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isLoading || isExporting}
+              className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
+            >
+              <RefreshCw className={`h-4 w-4 sm:mr-2 ${isLoading || isFetching ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  disabled={isExporting || isLoading}
+                  className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
+                >
+                  {isExporting ? (
+                    <>
+                      <Spinner className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Exporting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Export</span>
+                    </>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExportClick('csv')} disabled={isExporting}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Export as CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportClick('excel')} disabled={isExporting}>
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Export as Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportClick('pdf')} disabled={isExporting}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Export as PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
       </motion.div>
 
       {/* Active Filter Badges */}
@@ -794,7 +975,7 @@ function CheckoutReportsPageContent() {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
           >
-            <Card className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
+            <Card>
               <CardContent className="pt-6">
                 <div className="text-center">
                   <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
@@ -830,7 +1011,7 @@ function CheckoutReportsPageContent() {
             className="space-y-6"
           >
             {/* Checkouts Table */}
-            <Card className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150 relative flex flex-col flex-1 min-h-0 pb-0 gap-0">
+            <Card className="pb-0 gap-0 relative">
               <CardHeader>
                 <CardTitle>Active Checkouts</CardTitle>
                 <CardDescription>
@@ -839,7 +1020,7 @@ function CheckoutReportsPageContent() {
               </CardHeader>
               <CardContent className="flex-1 px-0 relative">
                 {isFetching && reportData && reportData.checkouts.length > 0 && (
-                  <div className="absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/30 backdrop-blur-sm z-20 flex items-center justify-center rounded-b-2xl">
+                  <div className={cn("absolute left-0 right-[10px] top-[33px] bottom-0 bg-background/30 backdrop-blur-sm z-20 flex items-center justify-center rounded-b-2xl", isMobile && "right-0 rounded-b-2xl")}>
                     <Spinner variant="default" size={24} className="text-muted-foreground" />
                   </div>
                 )}
@@ -918,8 +1099,8 @@ function CheckoutReportsPageContent() {
                 ) : null}
               </CardContent>
               
-              {/* Pagination Bar - Fixed at Bottom */}
-              <div className="sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-b-2xl">
+              {/* Pagination Bar - Fixed at Bottom (hidden on mobile) */}
+              <div className={`sticky bottom-0 border-t bg-card z-10 shadow-sm mt-auto rounded-b-2xl ${isMobile ? 'hidden' : ''}`}>
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3">
                   {/* Left Side - Navigation */}
                   <div className="flex items-center justify-center sm:justify-start gap-2">

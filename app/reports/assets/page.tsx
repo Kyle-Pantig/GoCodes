@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useCategories } from '@/hooks/use-categories'
 import { usePermissions } from '@/hooks/use-permissions'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -20,9 +20,12 @@ import {
   Calendar,
   RefreshCw,
   FileSpreadsheet,
-  X
+  X,
+  Filter
 } from 'lucide-react'
 import Link from 'next/link'
+import { useMobileDock } from '@/components/mobile-dock-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
 import {
   Table,
   TableBody,
@@ -41,6 +44,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { ExportDialog } from '@/components/dialogs/export-dialog'
 import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
@@ -94,12 +102,16 @@ export default function AssetReportsPage() {
   const canViewAssets = hasPermission('canViewAssets')
   const canManageReports = hasPermission('canManageReports')
   
+  const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
+  
   const [reportType, setReportType] = useState<ReportType>('summary')
   const [filters, setFilters] = useState<ReportFilters>({})
   const [isExporting, setIsExporting] = useState(false)
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [pendingExportFormat, setPendingExportFormat] = useState<'csv' | 'excel' | 'pdf' | null>(null)
   const [includeAssetList, setIncludeAssetList] = useState(false)
+  const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false)
 
   // Fetch categories for name lookup
   const { data: categoriesData = [] } = useCategories(true)
@@ -690,6 +702,96 @@ export default function AssetReportsPage() {
     `
   }
 
+  // Check if any filters are active
+  const hasActiveFilters = Object.values(filters).some((value) => value !== undefined && value !== '')
+
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile) {
+      setDockContent(
+        <>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => refetch()}
+              disabled={isLoading || isExporting}
+              className="h-10 w-10 rounded-full btn-glass-elevated"
+              title="Refresh"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading || isFetching ? 'animate-spin' : ''}`} />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={isExporting || isLoading}
+                  className="h-10 w-10 rounded-full btn-glass-elevated"
+                  title="Export"
+                >
+                  {isExporting ? (
+                    <Spinner className="h-4 w-4" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => handleExportClick('csv')} disabled={isExporting}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportClick('excel')} disabled={isExporting}>
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportClick('pdf')} disabled={isExporting}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <Popover open={isFilterPopoverOpen} onOpenChange={setIsFilterPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={isExporting}
+                className="h-10 w-10 rounded-full btn-glass-elevated relative"
+                title="Filters"
+              >
+                <Filter className="h-4 w-4" />
+                {hasActiveFilters && (
+                  <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary" />
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80" align="end" side="top">
+              <ReportFilters 
+                filters={filters} 
+                onFiltersChange={(newFilters) => {
+                  setFilters(newFilters)
+                  setIsFilterPopoverOpen(false)
+                }} 
+                disabled={isExporting}
+                isMobilePopover={true}
+              />
+            </PopoverContent>
+          </Popover>
+        </>
+      )
+    } else {
+      setDockContent(null)
+    }
+    
+    return () => {
+      setDockContent(null)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile, isLoading, isFetching, isExporting, hasActiveFilters, isFilterPopoverOpen])
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -712,55 +814,57 @@ export default function AssetReportsPage() {
             Generate analytical and operational reports for decision-making
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <ReportFilters filters={filters} onFiltersChange={setFilters} disabled={isExporting} />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isLoading || isExporting}
-            className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
-          >
-            <RefreshCw className={`h-4 w-4 sm:mr-2 ${isLoading || isFetching ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                disabled={isExporting || isLoading}
-                className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
-              >
-                {isExporting ? (
-                  <>
-                    <Spinner className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">Exporting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">Export</span>
-                  </>
-                )}
-          </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => handleExportClick('csv')} disabled={isExporting}>
-                <FileText className="h-4 w-4 mr-2" />
-                Export as CSV
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleExportClick('excel')} disabled={isExporting}>
-                <FileSpreadsheet className="h-4 w-4 mr-2" />
-                Export as Excel
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleExportClick('pdf')} disabled={isExporting}>
-                <FileText className="h-4 w-4 mr-2" />
-                Export as PDF
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        {!isMobile && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <ReportFilters filters={filters} onFiltersChange={setFilters} disabled={isExporting} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isLoading || isExporting}
+              className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
+            >
+              <RefreshCw className={`h-4 w-4 sm:mr-2 ${isLoading || isFetching ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  disabled={isExporting || isLoading}
+                  className="bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
+                >
+                  {isExporting ? (
+                    <>
+                      <Spinner className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Exporting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Export</span>
+                    </>
+                  )}
+            </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExportClick('csv')} disabled={isExporting}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Export as CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportClick('excel')} disabled={isExporting}>
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Export as Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportClick('pdf')} disabled={isExporting}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Export as PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
       </motion.div>
 
       {/* Report Type Selector */}
@@ -1382,7 +1486,7 @@ export default function AssetReportsPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.4 }}
             >
-              <Card className="bg-white/10 dark:bg-white/5 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-sm backdrop-saturate-150">
+              <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Package className="h-5 w-5" />

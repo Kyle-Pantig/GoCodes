@@ -33,9 +33,10 @@ interface LeaseReportFiltersProps {
   }
   onFiltersChange: (filters: LeaseReportFiltersProps['filters']) => void
   disabled?: boolean
+  isMobilePopover?: boolean
 }
 
-export function LeaseReportFilters({ filters, onFiltersChange, disabled = false }: LeaseReportFiltersProps) {
+export function LeaseReportFilters({ filters, onFiltersChange, disabled = false, isMobilePopover = false }: LeaseReportFiltersProps) {
   const [open, setOpen] = useState(false)
   const [localFilters, setLocalFilters] = useState(filters)
 
@@ -74,6 +75,153 @@ export function LeaseReportFilters({ filters, onFiltersChange, disabled = false 
 
   const hasActiveFilters = Object.values(filters).some((value) => value !== undefined && value !== '')
 
+  const content = (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Category Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="category-filter">Category</Label>
+          <Select
+            value={localFilters.category || 'all'}
+            onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
+          >
+            <SelectTrigger id="category-filter" className="w-full truncate">
+              <SelectValue placeholder="All Categories" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {categories?.map((cat: { id: string; name: string }) => (
+                <SelectItem key={cat.id} value={cat.name} className="truncate">
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Lessee Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="lessee-filter">Lessee</Label>
+          <Input
+            id="lessee-filter"
+            placeholder="Search lessee..."
+            value={localFilters.lessee || ''}
+            onChange={(e) => handleFilterChange('lessee', e.target.value || undefined)}
+            className="w-full"
+          />
+        </div>
+
+        {/* Location Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="location-filter">Location</Label>
+          <Select
+            value={localFilters.location || 'all'}
+            onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
+          >
+            <SelectTrigger id="location-filter" className="w-full truncate">
+              <SelectValue placeholder="All Locations" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations?.map((loc: { id: string; name: string }) => (
+                <SelectItem key={loc.id} value={loc.name} className="truncate">
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Site Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="site-filter">Site</Label>
+          <Select
+            value={localFilters.site || 'all'}
+            onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
+          >
+            <SelectTrigger id="site-filter" className="w-full truncate">
+              <SelectValue placeholder="All Sites" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sites</SelectItem>
+              {sites?.map((site: { id: string; name: string }) => (
+                <SelectItem key={site.id} value={site.name} className="truncate">
+                  {site.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Status Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="status-filter">Lease Status</Label>
+          <Select
+            value={localFilters.status || 'all'}
+            onValueChange={(value) => handleFilterChange('status', value === 'all' ? undefined : value)}
+          >
+            <SelectTrigger id="status-filter" className="w-full truncate">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              {leaseStatuses.map((status) => (
+                <SelectItem key={status.value} value={status.value} className="truncate">
+                  {status.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Start Date Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="start-date-filter">Lease Start From</Label>
+          <Input
+            id="start-date-filter"
+            type="date"
+            value={localFilters.startDate || ''}
+            onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
+            className="w-full"
+          />
+        </div>
+
+        {/* End Date Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="end-date-filter">Lease Start To</Label>
+          <Input
+            id="end-date-filter"
+            type="date"
+            value={localFilters.endDate || ''}
+            onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
+            className="w-full"
+          />
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-0 pt-2 border-t">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleClearFilters}
+          disabled={!hasActiveFilters}
+          className="w-full sm:w-auto"
+        >
+          <X className="h-4 w-4 mr-2" />
+          Clear All
+        </Button>
+        <Button size="sm" onClick={handleApplyFilters} className="w-full sm:w-auto">
+          Apply Filters
+        </Button>
+      </div>
+    </div>
+  )
+
+  if (isMobilePopover) {
+    return content
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -91,146 +239,7 @@ export function LeaseReportFilters({ filters, onFiltersChange, disabled = false 
         </Button>
       </PopoverTrigger>
       <PopoverContent className="max-w-[500px] w-[calc(100vw-2rem)] sm:w-full" align="start">
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Category Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="category-filter">Category</Label>
-              <Select
-                value={localFilters.category || 'all'}
-                onValueChange={(value) => handleFilterChange('category', value === 'all' ? undefined : value)}
-              >
-                <SelectTrigger id="category-filter" className="w-full truncate">
-                  <SelectValue placeholder="All Categories" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {categories?.map((cat: { id: string; name: string }) => (
-                    <SelectItem key={cat.id} value={cat.name} className="truncate">
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Lessee Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="lessee-filter">Lessee</Label>
-              <Input
-                id="lessee-filter"
-                placeholder="Search lessee..."
-                value={localFilters.lessee || ''}
-                onChange={(e) => handleFilterChange('lessee', e.target.value || undefined)}
-                className="w-full"
-              />
-            </div>
-
-            {/* Location Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="location-filter">Location</Label>
-              <Select
-                value={localFilters.location || 'all'}
-                onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
-              >
-                <SelectTrigger id="location-filter" className="w-full truncate">
-                  <SelectValue placeholder="All Locations" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Locations</SelectItem>
-                  {locations?.map((loc: { id: string; name: string }) => (
-                    <SelectItem key={loc.id} value={loc.name} className="truncate">
-                      {loc.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Site Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="site-filter">Site</Label>
-              <Select
-                value={localFilters.site || 'all'}
-                onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
-              >
-                <SelectTrigger id="site-filter" className="w-full truncate">
-                  <SelectValue placeholder="All Sites" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Sites</SelectItem>
-                  {sites?.map((site: { id: string; name: string }) => (
-                    <SelectItem key={site.id} value={site.name} className="truncate">
-                      {site.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Status Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="status-filter">Lease Status</Label>
-              <Select
-                value={localFilters.status || 'all'}
-                onValueChange={(value) => handleFilterChange('status', value === 'all' ? undefined : value)}
-              >
-                <SelectTrigger id="status-filter" className="w-full truncate">
-                  <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  {leaseStatuses.map((status) => (
-                    <SelectItem key={status.value} value={status.value} className="truncate">
-                      {status.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Start Date Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="start-date-filter">Lease Start From</Label>
-              <Input
-                id="start-date-filter"
-                type="date"
-                value={localFilters.startDate || ''}
-                onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
-                className="w-full"
-              />
-            </div>
-
-            {/* End Date Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="end-date-filter">Lease Start To</Label>
-              <Input
-                id="end-date-filter"
-                type="date"
-                value={localFilters.endDate || ''}
-                onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
-                className="w-full"
-              />
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-0 pt-2 border-t">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleClearFilters}
-              disabled={!hasActiveFilters}
-              className="w-full sm:w-auto"
-            >
-              <X className="h-4 w-4 mr-2" />
-              Clear All
-            </Button>
-            <Button size="sm" onClick={handleApplyFilters} className="w-full sm:w-auto">
-              Apply Filters
-            </Button>
-          </div>
-        </div>
+        {content}
       </PopoverContent>
     </Popover>
   )

@@ -855,52 +855,67 @@ export default function ReturnFormPage() {
       
       // Use XMLHttpRequest to track download progress
       const xhr = new XMLHttpRequest()
-      let simulatedProgress = 35
-      let progressInterval: NodeJS.Timeout | null = null
+      let stepIndex = 0
+      let stepInterval: NodeJS.Timeout | null = null
       let hasStartedDownload = false
+      
+      // Step messages for PDF generation
+      const steps = [
+        'Preparing document...',
+        'Launching browser...',
+        'Rendering form...',
+        'Applying styles...',
+        'Generating PDF...',
+      ]
+      
+      // Get auth token before creating promise
+      const apiBaseUrl = getApiBaseUrl()
+      const token = await getAuthToken()
       
       return new Promise<void>((resolve, reject) => {
         try {
-          // Update progress: Sending request (35-40%)
-          toast.loading('Generating PDF... 35%', { id: 'pdf-generation' })
+          // Show initial step
+          toast.loading(steps[0], { id: 'pdf-generation' })
           
-          // Simulate progress during generation phase (35-70%)
-          progressInterval = setInterval(() => {
-            if (!hasStartedDownload && simulatedProgress < 70) {
-              simulatedProgress += 2
-              if (simulatedProgress > 70) simulatedProgress = 70
-              toast.loading(`Generating PDF... ${simulatedProgress}%`, { id: 'pdf-generation' })
+          // Cycle through steps during generation phase
+          stepInterval = setInterval(() => {
+            if (!hasStartedDownload && stepIndex < steps.length - 1) {
+              stepIndex++
+              toast.loading(steps[stepIndex], { id: 'pdf-generation' })
             }
-          }, 200) // Update every 200ms
+          }, 3000) // Change step every 3 seconds
 
-          xhr.open('POST', '/api/assets/return-form/pdf', true)
+          xhr.open('POST', `${apiBaseUrl}/api/assets/return-form/pdf`, true)
           xhr.setRequestHeader('Content-Type', 'application/json')
+          
+          // Add auth token for FastAPI
+          if (token) {
+            xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+          }
+          
           xhr.responseType = 'blob'
 
-          // Track real download progress (70-100%)
+          // Track real download progress
           xhr.addEventListener('progress', (event) => {
             hasStartedDownload = true
-            if (progressInterval) {
-              clearInterval(progressInterval)
-              progressInterval = null
+            if (stepInterval) {
+              clearInterval(stepInterval)
+              stepInterval = null
             }
             
             if (event.lengthComputable && event.total > 0) {
-              // Map download progress to 70-100% range
               const downloadPercent = Math.round((event.loaded / event.total) * 100)
-              const totalPercent = 70 + Math.round(downloadPercent * 0.3) // 70% + (download% * 30%)
-              toast.loading(`Generating PDF... ${totalPercent}%`, { id: 'pdf-generation' })
+              toast.loading(`Downloading... ${downloadPercent}%`, { id: 'pdf-generation' })
             } else if (event.loaded > 0) {
-              // If content length is unknown but we have loaded bytes, show progress
-              toast.loading('Generating PDF... 75%', { id: 'pdf-generation' })
+              toast.loading('Downloading...', { id: 'pdf-generation' })
             }
           })
 
           xhr.addEventListener('load', async () => {
-            // Clear progress interval if still running
-            if (progressInterval) {
-              clearInterval(progressInterval)
-              progressInterval = null
+            // Clear step interval if still running
+            if (stepInterval) {
+              clearInterval(stepInterval)
+              stepInterval = null
             }
             
             if (xhr.status >= 200 && xhr.status < 300) {
@@ -977,9 +992,9 @@ export default function ReturnFormPage() {
               }
             } else {
               // Try to parse error response
-              if (progressInterval) {
-                clearInterval(progressInterval)
-                progressInterval = null
+              if (stepInterval) {
+                clearInterval(stepInterval)
+                stepInterval = null
               }
               
               const reader = new FileReader()
@@ -1008,18 +1023,18 @@ export default function ReturnFormPage() {
           })
 
           xhr.addEventListener('error', () => {
-            if (progressInterval) {
-              clearInterval(progressInterval)
-              progressInterval = null
+            if (stepInterval) {
+              clearInterval(stepInterval)
+              stepInterval = null
             }
             toast.error('Network error while generating PDF', { id: 'pdf-generation' })
             reject(new Error('Network error'))
           })
 
           xhr.addEventListener('abort', () => {
-            if (progressInterval) {
-              clearInterval(progressInterval)
-              progressInterval = null
+            if (stepInterval) {
+              clearInterval(stepInterval)
+              stepInterval = null
             }
             toast.error('PDF generation cancelled', { id: 'pdf-generation' })
             reject(new Error('Cancelled'))
@@ -1030,9 +1045,9 @@ export default function ReturnFormPage() {
             elementIds: ['#return-form-it', '#return-form-admin'],
           }))
         } catch (error) {
-          if (progressInterval) {
-            clearInterval(progressInterval)
-            progressInterval = null
+          if (stepInterval) {
+            clearInterval(stepInterval)
+            stepInterval = null
           }
           console.error('Error generating PDF:', error)
           toast.error(error instanceof Error ? error.message : 'Failed to generate PDF', { id: 'pdf-generation' })
@@ -1548,8 +1563,7 @@ export default function ReturnFormPage() {
                   </div>
 
                 {/* Title */}
-                <h2 className="text-sm font-bold text-center mb-1 text-foreground print:text-black">RETURN OF ASSETS FORM</h2>
-                <p className="text-xs font-semibold text-center mb-2 text-green-600 dark:text-green-500 print:text-green-600">IT DEPARTMENT COPY</p>
+                <h2 className="text-sm font-bold text-center mb-2 text-foreground print:text-black">RETURN OF ASSETS FORM</h2>
 
                 {/* Employee Details Box */}
                 <div className="border-2 border-border dark:border-gray-600 print:border-black p-1.5 mb-2">
@@ -1938,8 +1952,7 @@ export default function ReturnFormPage() {
                   </div>
 
                 {/* Title */}
-                <h2 className="text-lg font-bold text-center mb-2 text-foreground print:text-black">RETURN OF ASSETS FORM</h2>
-                <p className="text-sm font-semibold text-center mb-6 text-green-600 dark:text-green-500 print:text-green-600">ADMIN COPY</p>
+                <h2 className="text-lg font-bold text-center mb-6 text-foreground print:text-black">RETURN OF ASSETS FORM</h2>
 
                 {/* Employee Details Box */}
                 <div className="border-2 border-border dark:border-gray-600 print:border-black p-1.5 mb-2">

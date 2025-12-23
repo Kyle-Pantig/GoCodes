@@ -28,6 +28,8 @@ class ReportPDF(FPDF):
         super().__init__(orientation='L', format='A4')
         self.report_name = report_name
         self.report_type = report_type
+        # Set explicit margins: left, top, right
+        self.set_margins(left=10, top=10, right=10)
         self.set_auto_page_break(auto=True, margin=15)
         self._header_printed = False
         # Store generated time in local timezone
@@ -44,7 +46,6 @@ class ReportPDF(FPDF):
             self.cell(0, 10, self.report_name, new_x='LMARGIN', new_y='NEXT', align='C')
             self.set_font('Helvetica', '', 10)
             self.set_text_color(128, 128, 128)
-            self.cell(0, 5, f'{self.report_type.title()} Report', new_x='LMARGIN', new_y='NEXT', align='C')
             self.cell(0, 5, f'Generated: {self._generated_time}', new_x='LMARGIN', new_y='NEXT', align='C')
             self.ln(10)
             self._header_printed = True
@@ -80,17 +81,37 @@ class ReportPDF(FPDF):
         self.set_font('Helvetica', '', font_size)
         # Get string width and calculate lines needed
         if not text:
-            return 5
+            return 6
+        
+        # Calculate available width (minus padding)
+        available_width = width - 2
+        if available_width <= 0:
+            return 6
+            
         text_width = self.get_string_width(text)
-        if text_width <= width - 2:  # -2 for padding
-            return 5
-        # Estimate lines needed
-        lines = int(text_width / (width - 2)) + 1
-        return max(5, lines * 4)
+        if text_width <= available_width:
+            return 6
+            
+        # Estimate lines needed more accurately
+        # Split by words and calculate actual wrapping
+        words = text.split()
+        lines = 1
+        current_line_width = 0
+        
+        for word in words:
+            word_width = self.get_string_width(word + ' ')
+            if current_line_width + word_width > available_width:
+                lines += 1
+                current_line_width = word_width
+            else:
+                current_line_width += word_width
+        
+        # Each line is approximately 4 units high, plus padding
+        return max(6, lines * 4 + 2)
 
     def _calculate_row_height(self, row: List[str], col_widths: List[int]) -> float:
-        """Calculate the maximum height needed for a row"""
-        max_height = 5
+        """Calculate the maximum height needed for a row based on text wrapping"""
+        max_height = 6  # Minimum height
         for i, cell in enumerate(row):
             w = col_widths[i] if i < len(col_widths) else col_widths[-1]
             text = str(cell) if cell is not None else ''
@@ -104,7 +125,8 @@ class ReportPDF(FPDF):
             return
             
         # Calculate column widths based on content if not provided
-        page_width = self.w - 2 * self.l_margin
+        # Account for left margin and right margin (r_margin defaults to l_margin if not set separately)
+        page_width = self.w - self.l_margin - self.r_margin
         num_cols = len(headers)
         
         if col_widths is None:
@@ -125,12 +147,18 @@ class ReportPDF(FPDF):
         self.set_text_color(51, 51, 51)
         row_fill = False
         
+        # Calculate page bottom margin (footer space + safety buffer)
+        page_bottom = self.h - 25  # 25mm from bottom to account for footer and buffer
+        
         for row in rows:
             # Calculate row height based on content
             row_height = self._calculate_row_height(row, col_widths)
             
-            # Check if we need a new page
-            if self.get_y() + row_height > self.h - 20:
+            # Add extra buffer for safety
+            row_height_with_buffer = row_height + 2
+            
+            # Check if we need a new page BEFORE drawing
+            if self.get_y() + row_height_with_buffer > page_bottom:
                 self.add_page()
                 self._draw_header_row(headers, col_widths)
                 self.set_font('Helvetica', '', 7)
@@ -141,121 +169,185 @@ class ReportPDF(FPDF):
             else:
                 self.set_fill_color(255, 255, 255)
             
-            # Draw cells with proper wrapping
-            start_x = self.get_x()
+            # Temporarily disable auto page break during row drawing
+            auto_pb = self.auto_page_break
+            self.set_auto_page_break(False)
+            
+            # Draw cells with text wrapping support
+            start_x = self.l_margin
             start_y = self.get_y()
             
+            # First pass: draw all cell backgrounds and borders
+            for i, cell in enumerate(row):
+                w = col_widths[i] if i < len(col_widths) else col_widths[-1]
+                cell_x = start_x + sum(col_widths[:i])
+                self.set_xy(cell_x, start_y)
+                self.cell(w, row_height, '', border=1, fill=True)
+            
+            # Second pass: draw text with wrapping
+            self.set_font('Helvetica', '', 7)
             for i, cell in enumerate(row):
                 w = col_widths[i] if i < len(col_widths) else col_widths[-1]
                 text = str(cell) if cell is not None else ''
                 
-                # Draw cell border and fill
-                self.set_xy(start_x + sum(col_widths[:i]), start_y)
-                self.cell(w, row_height, '', border=1, fill=True)
-                
-                # Draw text with wrapping
-                self.set_xy(start_x + sum(col_widths[:i]) + 1, start_y + 1)
+                cell_x = start_x + sum(col_widths[:i])
+                self.set_xy(cell_x + 1, start_y + 1)
+                # Use multi_cell for text wrapping, but limit to cell height
                 self.multi_cell(w - 2, 4, text, border=0, align='L')
             
+            # Move to next row
             self.set_xy(start_x, start_y + row_height)
+            
+            # Restore auto page break
+            self.set_auto_page_break(auto_pb, margin=15)
             row_fill = not row_fill
 
     def _draw_header_row(self, headers: List[str], col_widths: List[int]):
         """Draw the header row with text wrapping support"""
-        self.set_font('Helvetica', 'B', 8)
+        # Temporarily disable auto page break to prevent unwanted breaks during row drawing
+        auto_pb = self.auto_page_break
+        self.set_auto_page_break(False)
+        
+        self.set_font('Helvetica', 'B', 7)
         self.set_fill_color(102, 126, 234)
         self.set_text_color(255, 255, 255)
         
-        # Calculate header row height based on longest header
-        header_height = 7
+        # Calculate header height based on longest header
+        header_height = 8  # Minimum height
         for i, header in enumerate(headers):
             w = col_widths[i] if i < len(col_widths) else col_widths[-1]
-            # Calculate how many lines this header needs
-            text = str(header)
-            char_width = 2.5  # Approximate char width for bold 8pt
-            chars_per_line = max(1, int((w - 2) / char_width))
-            lines_needed = max(1, -(-len(text) // chars_per_line))  # Ceiling division
-            needed_height = lines_needed * 4 + 3
-            header_height = max(header_height, needed_height)
+            text = str(header) if header else ''
+            height = self._get_text_height(text, w, font_size=7)
+            header_height = max(header_height, height)
         
-        start_x = self.get_x()
+        start_x = self.l_margin
         start_y = self.get_y()
         
+        # First pass: draw all cell backgrounds and borders
         for i, header in enumerate(headers):
             w = col_widths[i] if i < len(col_widths) else col_widths[-1]
-            text = str(header)
-            
-            # Draw cell background and border
-            self.set_xy(start_x + sum(col_widths[:i]), start_y)
+            cell_x = start_x + sum(col_widths[:i])
+            self.set_xy(cell_x, start_y)
             self.cell(w, header_height, '', border=1, fill=True)
+        
+        # Second pass: draw text with wrapping
+        self.set_font('Helvetica', 'B', 7)
+        for i, header in enumerate(headers):
+            w = col_widths[i] if i < len(col_widths) else col_widths[-1]
+            text = str(header) if header else ''
             
-            # Draw text centered in cell
-            self.set_xy(start_x + sum(col_widths[:i]) + 1, start_y + 1)
+            cell_x = start_x + sum(col_widths[:i])
+            self.set_xy(cell_x + 1, start_y + 1)
             self.multi_cell(w - 2, 4, text, border=0, align='C')
         
+        # Move to next line after header
         self.set_xy(start_x, start_y + header_height)
+        
+        # Restore auto page break
+        self.set_auto_page_break(auto_pb, margin=15)
         
     def _calculate_smart_widths(self, headers: List[str], rows: List[List[str]], page_width: float) -> List[int]:
         """Calculate smart column widths based on content"""
         num_cols = len(headers)
         
-        # Define minimum and maximum widths
-        min_width = 15
-        max_width = 60
+        # For tables with many columns (like inventory with 16 columns), use compact widths
+        if num_cols >= 14:
+            # Very compact mode for many columns
+            min_width = 12
+            max_width = 35
+        elif num_cols >= 10:
+            # Compact mode
+            min_width = 14
+            max_width = 45
+        else:
+            # Normal mode
+            min_width = 15
+            max_width = 60
         
         # Calculate widths based on header length and sample content
         widths = []
         for i, header in enumerate(headers):
             header_lower = header.lower()
             
-            # Assign widths based on column type
-            if 'id' in header_lower and 'tag' not in header_lower:
-                widths.append(20)
+            # Assign widths based on column type - use compact values for many columns
+            if 'item code' in header_lower or 'itemcode' in header_lower:
+                widths.append(22 if num_cols < 14 else 18)
+            elif 'id' in header_lower and 'tag' not in header_lower:
+                widths.append(18 if num_cols < 14 else 15)
             elif 'tag' in header_lower:
-                widths.append(35)
+                widths.append(30 if num_cols < 14 else 22)
+            elif 'stock' in header_lower:
+                widths.append(14)  # Narrow column for stock numbers
+            elif 'unit' == header_lower or header_lower == 'unit':
+                widths.append(14)  # Narrow for unit
             elif 'date' in header_lower:
-                widths.append(25)
+                widths.append(22 if num_cols < 14 else 18)
             elif 'status' in header_lower:
-                widths.append(22)
+                widths.append(18 if num_cols < 14 else 15)
             elif 'cost' in header_lower or 'value' in header_lower or 'price' in header_lower:
-                widths.append(28)
+                widths.append(20 if num_cols < 14 else 16)
             elif '%' in header_lower or 'percent' in header_lower:
-                widths.append(22)
+                widths.append(16 if num_cols < 14 else 14)
             elif 'count' in header_lower:
-                widths.append(22)
-            elif 'description' in header_lower or 'notes' in header_lower:
-                widths.append(55)
+                widths.append(16 if num_cols < 14 else 14)
+            elif 'description' in header_lower:
+                widths.append(40 if num_cols < 14 else 28)
+            elif 'remarks' in header_lower or 'notes' in header_lower:
+                widths.append(35 if num_cols < 14 else 25)
             elif 'category' in header_lower:
-                widths.append(35)
-            elif 'location' in header_lower or 'site' in header_lower:
-                widths.append(30)
+                widths.append(28 if num_cols < 14 else 20)
+            elif 'location' in header_lower:
+                widths.append(22 if num_cols < 14 else 18)
+            elif 'site' in header_lower:
+                widths.append(20 if num_cols < 14 else 16)
             elif 'department' in header_lower:
-                widths.append(32)
-            elif 'name' in header_lower or 'employee' in header_lower:
-                widths.append(35)
+                widths.append(28 if num_cols < 14 else 20)
+            elif 'supplier' in header_lower:
+                widths.append(25 if num_cols < 14 else 18)
+            elif 'brand' in header_lower:
+                widths.append(20 if num_cols < 14 else 16)
+            elif 'model' in header_lower:
+                widths.append(20 if num_cols < 14 else 16)
+            elif 'sku' in header_lower:
+                widths.append(20 if num_cols < 14 else 16)
+            elif 'barcode' in header_lower:
+                widths.append(22 if num_cols < 14 else 18)
+            elif 'name' in header_lower:
+                widths.append(30 if num_cols < 14 else 22)
+            elif 'employee' in header_lower:
+                widths.append(30 if num_cols < 14 else 22)
             elif 'metric' in header_lower:
-                widths.append(40)
+                widths.append(35 if num_cols < 14 else 25)
             elif 'method' in header_lower:
-                widths.append(28)
+                widths.append(25 if num_cols < 14 else 20)
             elif 'accumulated' in header_lower:
-                widths.append(30)
+                widths.append(28 if num_cols < 14 else 22)
             elif 'remaining' in header_lower:
-                widths.append(25)
+                widths.append(22 if num_cols < 14 else 18)
             elif 'lessee' in header_lower:
-                widths.append(35)
+                widths.append(28 if num_cols < 14 else 22)
             else:
-                # Default based on header length
-                widths.append(max(min_width, min(max_width, len(header) * 3 + 10)))
+                # Default based on header length, but respect min/max for column count
+                default_width = max(min_width, min(max_width, len(header) * 2 + 8))
+                widths.append(default_width)
         
-        # Scale to fit page width
+        # Scale to fit page width exactly
         total = sum(widths)
-        if total > page_width:
+        if total != page_width:
             ratio = page_width / total
             widths = [max(min_width, int(w * ratio)) for w in widths]
-        elif total < page_width * 0.9:
-            # Expand to use more space
-            ratio = (page_width * 0.95) / total
-            widths = [int(w * ratio) for w in widths]
+            
+            # Adjust for rounding errors - distribute remainder to description/name columns
+            remaining = int(page_width) - sum(widths)
+            if remaining > 0:
+                # Add remaining pixels to wider columns
+                for i, header in enumerate(headers):
+                    if remaining <= 0:
+                        break
+                    header_lower = header.lower()
+                    if 'description' in header_lower or 'name' in header_lower or 'remarks' in header_lower:
+                        widths[i] += 1
+                        remaining -= 1
             
         return widths
 

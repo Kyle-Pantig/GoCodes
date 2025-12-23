@@ -171,14 +171,67 @@ async def get_employee(
     employee_id: str,
     auth: dict = Depends(verify_auth)
 ):
-    """Get a single employee by ID"""
+    """Get a single employee by ID with their active checkouts"""
     try:
         employee_data = await prisma.employeeuser.find_unique(
-            where={"id": employee_id}
+            where={"id": employee_id},
+            include={
+                "checkouts": {
+                    "include": {
+                        "asset": {
+                            "include": {
+                                "category": True,
+                                "subCategory": True
+                            }
+                        },
+                        "checkins": True
+                    }
+                }
+            }
         )
         
         if not employee_data:
             raise HTTPException(status_code=404, detail="Employee not found")
+        
+        # Filter checkouts to only include active ones (those without checkins)
+        # Also filter by asset status "Checked out"
+        active_checkouts = []
+        if employee_data.checkouts:
+            for checkout in employee_data.checkouts:
+                # Only include checkouts where asset status is "Checked out" and there are no checkins
+                if (checkout.asset and 
+                    checkout.asset.status == "Checked out" and 
+                    (not checkout.checkins or len(checkout.checkins) == 0)):
+                    
+                    asset_info = AssetInfoForCheckout(
+                        id=str(checkout.asset.id),
+                        assetTagId=str(checkout.asset.assetTagId),
+                        description=str(checkout.asset.description),
+                        status=checkout.asset.status if checkout.asset.status else None,
+                        category={"name": str(checkout.asset.category.name)} if checkout.asset.category else None,
+                        subCategory={"name": str(checkout.asset.subCategory.name)} if checkout.asset.subCategory else None,
+                        location=checkout.asset.location if checkout.asset.location else None,
+                        brand=checkout.asset.brand if checkout.asset.brand else None,
+                        model=checkout.asset.model if checkout.asset.model else None
+                    )
+                    
+                    # Convert datetime to date for checkoutDate and expectedReturnDate
+                    checkout_date = checkout.checkoutDate.date() if hasattr(checkout.checkoutDate, 'date') else checkout.checkoutDate
+                    expected_return_date = None
+                    if checkout.expectedReturnDate:
+                        expected_return_date = checkout.expectedReturnDate.date() if hasattr(checkout.expectedReturnDate, 'date') else checkout.expectedReturnDate
+                    
+                    checkout_info = CheckoutForEmployee(
+                        id=str(checkout.id),
+                        checkoutDate=checkout_date,
+                        expectedReturnDate=expected_return_date,
+                        asset=asset_info,
+                        checkins=[{"id": str(c.id)} for c in checkout.checkins] if checkout.checkins else []
+                    )
+                    active_checkouts.append(checkout_info)
+        
+        # Sort checkouts by checkoutDate descending
+        active_checkouts.sort(key=lambda x: x.checkoutDate, reverse=True)
         
         employee = Employee(
             id=str(employee_data.id),
@@ -186,7 +239,8 @@ async def get_employee(
             email=str(employee_data.email),
             department=employee_data.department if employee_data.department else None,
             createdAt=employee_data.createdAt,
-            updatedAt=employee_data.updatedAt
+            updatedAt=employee_data.updatedAt,
+            checkouts=active_checkouts
         )
         
         return EmployeeResponse(employee=employee)

@@ -922,7 +922,7 @@ function InventoryTrashPageContent() {
                 size="icon"
                 onClick={() => {
                   setIsManualRefresh(true)
-                  queryClient.invalidateQueries({ queryKey: ['deletedInventoryItems'] })
+                  queryClient.invalidateQueries({ queryKey: ['inventory'] })
                 }}
                 className="h-8 w-8 shrink-0 md:hidden"
                 title="Refresh table"
@@ -1014,7 +1014,7 @@ function InventoryTrashPageContent() {
                 size="icon"
                 onClick={() => {
                   setIsManualRefresh(true)
-                  queryClient.invalidateQueries({ queryKey: ['deletedInventoryItems'] })
+                  queryClient.invalidateQueries({ queryKey: ['inventory'] })
                 }}
                 className="h-8 w-8"
                 title="Refresh table"

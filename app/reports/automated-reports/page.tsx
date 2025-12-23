@@ -1,12 +1,15 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useForm, Controller, useWatch, type SubmitHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { automatedReportScheduleSchema, type AutomatedReportScheduleFormData } from '@/lib/validations/automated-reports'
+import { useMobileDock } from '@/components/mobile-dock-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { cn } from '@/lib/utils'
 
 /**
  * Parse a datetime string as local time (not UTC).
@@ -33,6 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
@@ -59,6 +63,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import { 
   Plus, 
   Edit, 
@@ -67,9 +72,8 @@ import {
   Clock, 
   FileText,
   Calendar,
-  ToggleLeft,
-  ToggleRight,
   X,
+  RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
@@ -155,6 +159,8 @@ function AutomatedReportsPageContent() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const canManageReports = hasPermission('canManageReports')
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState<AutomatedReportSchedule | null>(null)
   const [deleteScheduleId, setDeleteScheduleId] = useState<string | null>(null)
@@ -183,7 +189,7 @@ function AutomatedReportsPageContent() {
     }
   }
 
-  const { data: schedules, isLoading, error } = useQuery<{ schedules: AutomatedReportSchedule[] }>({
+  const { data: schedules, isLoading, isFetching, error, refetch } = useQuery<{ schedules: AutomatedReportSchedule[] }>({
     queryKey: ['automated-reports'],
     queryFn: async () => {
       const baseUrl = getApiBaseUrl()
@@ -465,6 +471,41 @@ function AutomatedReportsPageContent() {
     setValue('emailRecipients', updatedRecipients, { shouldValidate: true })
   }, [formEmailRecipients, setValue])
 
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile) {
+      setDockContent(
+        <>
+          <Button 
+            onClick={() => handleOpenDialog()} 
+            className="h-10 px-4 rounded-full btn-glass-elevated"
+            disabled={!canManageReports}
+            variant="outline"
+          >
+            Create Schedule
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => refetch()}
+            disabled={isLoading}
+            className="h-10 w-10 rounded-full btn-glass-elevated"
+            title="Refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading || isFetching ? 'animate-spin' : ''}`} />
+          </Button>
+        </>
+      )
+    } else {
+      setDockContent(null)
+    }
+    
+    return () => {
+      setDockContent(null)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile, isLoading, isFetching, canManageReports])
+
   return (
     <div className="space-y-6">
         {/* Header */}
@@ -480,20 +521,37 @@ function AutomatedReportsPageContent() {
               Schedule reports to be automatically generated and delivered via email
             </p>
           </div>
-          <motion.div
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <Button 
-              onClick={() => handleOpenDialog()} 
-              className="gap-2 bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
-              disabled={!canManageReports}
-              variant="outline"
+          <div className={cn("flex items-center gap-2", isMobile && "hidden")}>
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
             >
-              <Plus className="h-4 w-4" />
-              Create Schedule
-            </Button>
-          </motion.div>
+              <Button 
+                onClick={() => handleOpenDialog()} 
+                className="gap-2 bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
+                disabled={!canManageReports}
+                variant="outline"
+              >
+                <Plus className="h-4 w-4" />
+                Create Schedule
+              </Button>
+            </motion.div>
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => refetch()}
+                disabled={isLoading}
+                className="h-8 w-8 bg-gray-400 bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border shadow-sm"
+                title="Refresh table"
+              >
+                <RefreshCw className={`h-4 w-4 ${isLoading || isFetching ? 'animate-spin' : ''}`} />
+              </Button>
+            </motion.div>
+          </div>
         </motion.div>
 
         {/* Scheduled Reports Table */}
@@ -575,126 +633,242 @@ function AutomatedReportsPageContent() {
                       <p className="text-sm mt-2">Create your first schedule to get started.</p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Report Name</TableHead>
-                            <TableHead>Report Type</TableHead>
-                            <TableHead>Frequency</TableHead>
-                            <TableHead>Recipients</TableHead>
-                            <TableHead>Format</TableHead>
-                            <TableHead>Next Run</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {schedules?.schedules.map((schedule) => (
-                      <TableRow key={schedule.id}>
-                        <TableCell className="font-medium">{schedule.reportName}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {REPORT_TYPES.find(t => t.value === schedule.reportType)?.label || schedule.reportType}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm">
-                              {formatFrequencyDescription({
-                                frequency: schedule.frequency,
-                                frequencyDay: schedule.frequencyDay,
-                                frequencyMonth: schedule.frequencyMonth,
-                                scheduledTime: schedule.scheduledTime,
-                              })}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <button className="flex items-center gap-2 hover:text-primary transition-colors cursor-pointer">
-                                <Mail className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-sm">{schedule.emailRecipients.length} recipient(s)</span>
-                              </button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto max-w-[300px]" align="start">
-                              <div className="space-y-2">
-                                <h4 className="text-sm font-semibold">Email Recipients</h4>
-                                <div className="flex flex-col gap-1">
-                                  {schedule.emailRecipients.map((email, index) => (
-                                    <div key={index} className="text-sm text-muted-foreground">
-                                      {email}
+                    <>
+                      {/* Desktop Table View */}
+                      <div className={cn("", isMobile && "hidden")}>
+                        <ScrollArea className="w-full h-128">
+                          <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Report Name</TableHead>
+                              <TableHead>Report Type</TableHead>
+                              <TableHead>Frequency</TableHead>
+                              <TableHead>Recipients</TableHead>
+                              <TableHead>Format</TableHead>
+                              <TableHead>Next Run</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {schedules?.schedules.map((schedule) => (
+                              <TableRow key={schedule.id}>
+                                <TableCell className="font-medium">{schedule.reportName}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline">
+                                    {REPORT_TYPES.find(t => t.value === schedule.reportType)?.label || schedule.reportType}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <Clock className="h-4 w-4 text-muted-foreground" />
+                                    <span className="text-sm">
+                                      {formatFrequencyDescription({
+                                        frequency: schedule.frequency,
+                                        frequencyDay: schedule.frequencyDay,
+                                        frequencyMonth: schedule.frequencyMonth,
+                                        scheduledTime: schedule.scheduledTime,
+                                      })}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <button className="flex items-center gap-2 hover:text-primary transition-colors cursor-pointer">
+                                        <Mail className="h-4 w-4 text-muted-foreground" />
+                                        <span className="text-sm">{schedule.emailRecipients.length} recipient(s)</span>
+                                      </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto max-w-[300px]" align="start">
+                                      <div className="space-y-2">
+                                        <h4 className="text-sm font-semibold">Email Recipients</h4>
+                                        <div className="flex flex-col gap-1">
+                                          {schedule.emailRecipients.map((email, index) => (
+                                            <div key={index} className="text-sm text-muted-foreground">
+                                              {email}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="secondary">{schedule.format.toUpperCase()}</Badge>
+                                </TableCell>
+                                <TableCell>
+                                  {schedule.nextRunAt ? (
+                                    <div className="flex items-center gap-2">
+                                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                                      <span className="text-sm">
+                                        {format(parseAsLocalTime(schedule.nextRunAt), 'MMM d, yyyy h:mm a')}
+                                      </span>
                                     </div>
-                                  ))}
+                                  ) : (
+                                    <span className="text-sm text-muted-foreground">Not scheduled</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={schedule.isActive ? 'default' : 'destructive'}>
+                                    {schedule.isActive ? 'Active' : 'Inactive'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-3">
+                                    <Switch
+                                      checked={schedule.isActive}
+                                      onCheckedChange={(checked) => toggleActiveMutation.mutate({ id: schedule.id, isActive: checked })}
+                                      disabled={toggleActiveMutation.isPending}
+                                      loading={toggleActiveMutation.isPending}
+                                    />
+                                    <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleOpenDialog(schedule)}
+                                      >
+                                        <Edit className="h-4 w-4" />
+                                      </Button>
+                                    </motion.div>
+                                    <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setDeleteScheduleId(schedule.id)}
+                                      >
+                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                      </Button>
+                                    </motion.div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                          <ScrollBar orientation="horizontal" />
+                        </ScrollArea>
+                      </div>
+
+                      {/* Mobile Card View */}
+                      <div className={cn("hidden", isMobile && "flex flex-col gap-4")}>
+                        {schedules?.schedules.map((schedule) => (
+                          <Card key={schedule.id} className="bg-white/5 dark:bg-white/5 border border-white/20 dark:border-white/10">
+                            <CardContent className="p-4 space-y-3">
+                              {/* Header: Name and Switch */}
+                              <div className="flex items-center justify-between gap-2">
+                                <h3 className="font-semibold text-base truncate flex-1">{schedule.reportName}</h3>
+                                <Switch
+                                  checked={schedule.isActive}
+                                  onCheckedChange={(checked) => toggleActiveMutation.mutate({ id: schedule.id, isActive: checked })}
+                                  disabled={toggleActiveMutation.isPending}
+                                  loading={toggleActiveMutation.isPending}
+                                />
+                              </div>
+
+                              {/* Info Grid */}
+                              <div className="grid grid-cols-2 gap-3 text-sm">
+                                <div>
+                                  <span className="text-muted-foreground text-xs">Report Type</span>
+                                  <div className="mt-0.5">
+                                    <Badge variant="outline">
+                                      {REPORT_TYPES.find(t => t.value === schedule.reportType)?.label || schedule.reportType}
+                                    </Badge>
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground text-xs">Status</span>
+                                  <div className="mt-0.5">
+                                    <Badge variant={schedule.isActive ? 'default' : 'destructive'}>
+                                      {schedule.isActive ? 'Active' : 'Inactive'}
+                                    </Badge>
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground text-xs">Frequency</span>
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <span className="text-xs">
+                                      {formatFrequencyDescription({
+                                        frequency: schedule.frequency,
+                                        frequencyDay: schedule.frequencyDay,
+                                        frequencyMonth: schedule.frequencyMonth,
+                                        scheduledTime: schedule.scheduledTime,
+                                      })}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground text-xs">Format</span>
+                                  <div className="mt-0.5">
+                                    <Badge variant="secondary" className="text-xs">{schedule.format.toUpperCase()}</Badge>
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground text-xs">Recipients</span>
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <button className="flex items-center gap-1.5 mt-0.5 hover:text-primary transition-colors cursor-pointer">
+                                        <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                                        <span className="text-xs">{schedule.emailRecipients.length} recipient(s)</span>
+                                      </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto max-w-[280px]" align="start">
+                                      <div className="space-y-2">
+                                        <h4 className="text-sm font-semibold">Email Recipients</h4>
+                                        <div className="flex flex-col gap-1">
+                                          {schedule.emailRecipients.map((email, index) => (
+                                            <div key={index} className="text-sm text-muted-foreground break-all">
+                                              {email}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground text-xs">Next Run</span>
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    {schedule.nextRunAt ? (
+                                      <>
+                                        <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                                        <span className="text-xs">
+                                          {format(parseAsLocalTime(schedule.nextRunAt), 'MMM d, h:mm a')}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">Not scheduled</span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </PopoverContent>
-                          </Popover>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{schedule.format.toUpperCase()}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          {schedule.nextRunAt ? (
-                            <div className="flex items-center gap-2">
-                              <Calendar className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-sm">
-                                {format(parseAsLocalTime(schedule.nextRunAt), 'MMM d, yyyy h:mm a')}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">Not scheduled</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={schedule.isActive ? 'default' : 'destructive'}>
-                            {schedule.isActive ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => toggleActiveMutation.mutate({ id: schedule.id, isActive: !schedule.isActive })}
-                                disabled={toggleActiveMutation.isPending}
-                              >
-                                {schedule.isActive ? (
-                                  <ToggleRight className="h-4 w-4" />
-                                ) : (
-                                  <ToggleLeft className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </motion.div>
-                            <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenDialog(schedule)}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            </motion.div>
-                            <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setDeleteScheduleId(schedule.id)}
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </motion.div>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+
+                              {/* Actions */}
+                              <div className="flex items-center justify-end gap-1 pt-2 border-t border-white/10">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOpenDialog(schedule)}
+                                  className="h-8 px-2"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setDeleteScheduleId(schedule.id)}
+                                  className="h-8 px-2"
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </>
+                  )}
           </CardContent>
         </Card>
             </motion.div>
@@ -1015,8 +1189,11 @@ function AutomatedReportsPageContent() {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
-                  {(createMutation.isPending || updateMutation.isPending) && <Spinner className="mr-2" />}
-                  {editingSchedule ? 'Update' : 'Create'}
+                  {(createMutation.isPending || updateMutation.isPending) && <Spinner className="mr-2 h-4 w-4" />}
+                  {editingSchedule 
+                    ? (updateMutation.isPending ? 'Updating...' : 'Update')
+                    : (createMutation.isPending ? 'Creating...' : 'Create')
+                  }
                 </Button>
               </DialogFooter>
             </form>

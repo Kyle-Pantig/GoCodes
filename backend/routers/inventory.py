@@ -447,7 +447,7 @@ async def export_inventory(
                     ["Total Cost", format_number(total_cost)]
                 ]
                 pdf.add_table(["Metric", "Value"], summary_rows)
-                pdf.ln(10)
+                pdf.ln(4)
             
             # By Category section
             if includeByCategory and by_category:
@@ -456,7 +456,7 @@ async def export_inventory(
                 for cat, data in by_category.items():
                     cat_rows.append([cat, str(data['count']), str(int(data['totalStock'])), format_number(data['totalCost'])])
                 pdf.add_table(["Category", "Item Count", "Total Stock", "Total Cost"], cat_rows)
-                pdf.ln(10)
+                pdf.ln(4)
             
             # By Status section
             if includeByStatus and by_status:
@@ -465,13 +465,13 @@ async def export_inventory(
                 for status, data in by_status.items():
                     status_rows.append([status, str(data['count']), str(int(data['totalStock'])), format_number(data['totalCost'])])
                 pdf.add_table(["Status", "Item Count", "Total Stock", "Total Cost"], status_rows)
-                pdf.ln(10)
+                pdf.ln(4)
             
             # Total Cost section
             if includeTotalCost:
                 pdf.add_section_title("Total Cost")
                 pdf.add_table(["Description", "Amount"], [["Total Inventory Value", format_number(total_cost)]])
-                pdf.ln(10)
+                pdf.ln(4)
             
             # Low Stock Items section
             if includeLowStock and low_stock_items:
@@ -485,7 +485,7 @@ async def export_inventory(
                         str(int(float(item.minStockLevel))) if item.minStockLevel else ''
                     ])
                 pdf.add_table(["Item Code", "Name", "Current Stock", "Min Level"], low_stock_rows)
-                pdf.ln(10)
+                pdf.ln(4)
             
             # Item List section
             if includeItemList and itemFields:

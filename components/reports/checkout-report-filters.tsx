@@ -36,9 +36,10 @@ interface CheckoutReportFiltersProps {
   }
   onFiltersChange: (filters: CheckoutReportFiltersProps['filters']) => void
   disabled?: boolean
+  isMobilePopover?: boolean
 }
 
-export function CheckoutReportFilters({ filters, onFiltersChange, disabled = false }: CheckoutReportFiltersProps) {
+export function CheckoutReportFilters({ filters, onFiltersChange, disabled = false, isMobilePopover = false }: CheckoutReportFiltersProps) {
   const [open, setOpen] = useState(false)
   const [localFilters, setLocalFilters] = useState(filters)
 
@@ -81,6 +82,167 @@ export function CheckoutReportFilters({ filters, onFiltersChange, disabled = fal
 
   const hasActiveFilters = Object.values(filters).some((value) => value !== undefined && value !== '')
 
+  // Content that can be rendered standalone or inside a popover
+  const filterContent = (
+    <div className="space-y-4">
+      <div className={isMobilePopover ? "space-y-3" : "grid grid-cols-1 sm:grid-cols-2 gap-4"}>
+        {/* Employee Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="employee-filter">Employee</Label>
+          <Select
+            value={localFilters.employeeId || 'all'}
+            onValueChange={(value) => handleFilterChange('employeeId', value === 'all' ? undefined : value)}
+          >
+            <SelectTrigger id="employee-filter" className="w-full min-w-0">
+              <SelectValue placeholder="All employees" className="truncate" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All employees</SelectItem>
+              {employees?.map((employee: { id: string; name: string; email: string }) => (
+                <SelectItem key={employee.id} value={employee.id}>
+                  {employee.name} ({employee.email})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Due Date Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="due-date-filter">Due Date</Label>
+          <Input
+            id="due-date-filter"
+            type="date"
+            value={localFilters.dueDate || ''}
+            onChange={(e) => handleFilterChange('dueDate', e.target.value || undefined)}
+          />
+        </div>
+
+        {/* Past Due Filter */}
+        <div className="space-y-2 flex items-end">
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="past-due-filter"
+              checked={localFilters.isOverdue || false}
+              onCheckedChange={(checked) => handleFilterChange('isOverdue', checked === true)}
+            />
+            <Label htmlFor="past-due-filter" className="cursor-pointer">
+              Past Due Only
+            </Label>
+          </div>
+        </div>
+
+        {/* Location Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="location-filter">Location</Label>
+          <Select
+            value={localFilters.location || 'all'}
+            onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
+          >
+            <SelectTrigger id="location-filter" className="w-full min-w-0">
+              <SelectValue placeholder="All locations" className="truncate" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All locations</SelectItem>
+              {locations?.map((location: { id: string; name: string }) => (
+                <SelectItem key={location.id} value={location.name}>
+                  {location.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Site Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="site-filter">Site</Label>
+          <Select
+            value={localFilters.site || 'all'}
+            onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
+          >
+            <SelectTrigger id="site-filter" className="w-full min-w-0">
+              <SelectValue placeholder="All sites" className="truncate" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All sites</SelectItem>
+              {sites?.map((site: { id: string; name: string }) => (
+                <SelectItem key={site.id} value={site.name}>
+                  {site.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Department Filter */}
+        <div className="space-y-2">
+          <Label htmlFor="department-filter">Department</Label>
+          <Select
+            value={localFilters.department || 'all'}
+            onValueChange={(value) => handleFilterChange('department', value === 'all' ? undefined : value)}
+          >
+            <SelectTrigger id="department-filter" className="w-full min-w-0">
+              <SelectValue placeholder="All departments" className="truncate" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All departments</SelectItem>
+              {departments?.map((dept: { id: string; name: string }) => (
+                <SelectItem key={dept.id} value={dept.name}>
+                  {dept.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Checkout Start Date */}
+        <div className="space-y-2">
+          <Label htmlFor="start-date">Checkout From</Label>
+          <Input
+            id="start-date"
+            type="date"
+            value={localFilters.startDate || ''}
+            onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
+          />
+        </div>
+
+        {/* Checkout End Date */}
+        <div className="space-y-2">
+          <Label htmlFor="end-date">Checkout To</Label>
+          <Input
+            id="end-date"
+            type="date"
+            value={localFilters.endDate || ''}
+            onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
+          />
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-0 pt-2 border-t">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleClearFilters}
+          disabled={!hasActiveFilters}
+          className="w-full sm:w-auto"
+        >
+          <X className="h-4 w-4 mr-2" />
+          Clear All
+        </Button>
+        <Button size="sm" onClick={handleApplyFilters} className="w-full sm:w-auto">
+          Apply Filters
+        </Button>
+      </div>
+    </div>
+  )
+
+  // If used inside a mobile popover, just return the content
+  if (isMobilePopover) {
+    return filterContent
+  }
+
+  // Otherwise, wrap in a Popover
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -98,157 +260,7 @@ export function CheckoutReportFilters({ filters, onFiltersChange, disabled = fal
         </Button>
       </PopoverTrigger>
       <PopoverContent className="max-w-[500px] w-[calc(100vw-2rem)] sm:w-full" align="start">
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Employee Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="employee-filter">Employee</Label>
-              <Select
-                value={localFilters.employeeId || 'all'}
-                onValueChange={(value) => handleFilterChange('employeeId', value === 'all' ? undefined : value)}
-              >
-                <SelectTrigger id="employee-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All employees" className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All employees</SelectItem>
-                  {employees?.map((employee: { id: string; name: string; email: string }) => (
-                    <SelectItem key={employee.id} value={employee.id}>
-                      {employee.name} ({employee.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Due Date Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="due-date-filter">Due Date</Label>
-              <Input
-                id="due-date-filter"
-                type="date"
-                value={localFilters.dueDate || ''}
-                onChange={(e) => handleFilterChange('dueDate', e.target.value || undefined)}
-              />
-            </div>
-
-            {/* Past Due Filter */}
-            <div className="space-y-2 flex items-end">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="past-due-filter"
-                  checked={localFilters.isOverdue || false}
-                  onCheckedChange={(checked) => handleFilterChange('isOverdue', checked === true)}
-                />
-                <Label htmlFor="past-due-filter" className="cursor-pointer">
-                  Past Due Only
-                </Label>
-              </div>
-            </div>
-
-            {/* Location Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="location-filter">Location</Label>
-              <Select
-                value={localFilters.location || 'all'}
-                onValueChange={(value) => handleFilterChange('location', value === 'all' ? undefined : value)}
-              >
-                <SelectTrigger id="location-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All locations" className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All locations</SelectItem>
-                  {locations?.map((location: { id: string; name: string }) => (
-                    <SelectItem key={location.id} value={location.name}>
-                      {location.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Site Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="site-filter">Site</Label>
-              <Select
-                value={localFilters.site || 'all'}
-                onValueChange={(value) => handleFilterChange('site', value === 'all' ? undefined : value)}
-              >
-                <SelectTrigger id="site-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All sites" className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All sites</SelectItem>
-                  {sites?.map((site: { id: string; name: string }) => (
-                    <SelectItem key={site.id} value={site.name}>
-                      {site.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Department Filter */}
-            <div className="space-y-2">
-              <Label htmlFor="department-filter">Department</Label>
-              <Select
-                value={localFilters.department || 'all'}
-                onValueChange={(value) => handleFilterChange('department', value === 'all' ? undefined : value)}
-              >
-                <SelectTrigger id="department-filter" className="w-full min-w-0">
-                  <SelectValue placeholder="All departments" className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All departments</SelectItem>
-                  {departments?.map((dept: { id: string; name: string }) => (
-                    <SelectItem key={dept.id} value={dept.name}>
-                      {dept.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Checkout Start Date */}
-            <div className="space-y-2">
-              <Label htmlFor="start-date">Checkout From</Label>
-              <Input
-                id="start-date"
-                type="date"
-                value={localFilters.startDate || ''}
-                onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
-              />
-            </div>
-
-            {/* Checkout End Date */}
-            <div className="space-y-2">
-              <Label htmlFor="end-date">Checkout To</Label>
-              <Input
-                id="end-date"
-                type="date"
-                value={localFilters.endDate || ''}
-                onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
-              />
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-0 pt-2 border-t">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleClearFilters}
-              disabled={!hasActiveFilters}
-              className="w-full sm:w-auto"
-            >
-              <X className="h-4 w-4 mr-2" />
-              Clear All
-            </Button>
-            <Button size="sm" onClick={handleApplyFilters} className="w-full sm:w-auto">
-              Apply Filters
-            </Button>
-          </div>
-        </div>
+        {filterContent}
       </PopoverContent>
     </Popover>
   )
