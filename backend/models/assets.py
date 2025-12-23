@@ -1,8 +1,8 @@
 """
 Pydantic models for Assets API
 """
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
+from pydantic import BaseModel, ConfigDict, field_validator
+from typing import Optional, List, Union
 from datetime import datetime
 from decimal import Decimal
 
@@ -25,6 +25,11 @@ class EmployeeInfo(BaseModel):
     name: str
     email: str
 
+class CheckinInfo(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: str
+
 class CheckoutInfo(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     
@@ -32,6 +37,7 @@ class CheckoutInfo(BaseModel):
     checkoutDate: datetime
     expectedReturnDate: Optional[datetime] = None
     employeeUser: Optional[EmployeeInfo] = None
+    checkins: Optional[List["CheckinInfo"]] = None
 
 class LeaseInfo(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -48,6 +54,16 @@ class AuditHistoryInfo(BaseModel):
     auditDate: datetime
     auditType: Optional[str] = None
     auditor: Optional[str] = None
+
+class ReservationInfo(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: str
+    reservationType: Optional[str] = None
+    department: Optional[str] = None
+    purpose: Optional[str] = None
+    reservationDate: Optional[datetime] = None
+    employeeUser: Optional[EmployeeInfo] = None
 
 class Asset(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -94,6 +110,7 @@ class Asset(BaseModel):
     isDeleted: bool = False
     checkouts: Optional[List[CheckoutInfo]] = None
     leases: Optional[List[LeaseInfo]] = None
+    reservations: Optional[List[ReservationInfo]] = None
     auditHistory: Optional[List[AuditHistoryInfo]] = None
     imagesCount: Optional[int] = 0
 
@@ -103,7 +120,7 @@ class AssetCreate(BaseModel):
     purchasedFrom: Optional[str] = None
     purchaseDate: Optional[str] = None  # Will be parsed to datetime
     brand: Optional[str] = None
-    cost: Optional[float] = None
+    cost: Optional[Union[float, str]] = None
     model: Optional[str] = None
     serialNo: Optional[str] = None
     additionalInformation: Optional[str] = None
@@ -121,9 +138,9 @@ class AssetCreate(BaseModel):
     qr: Optional[str] = None
     oldAssetTag: Optional[str] = None
     depreciableAsset: Optional[bool] = False
-    depreciableCost: Optional[float] = None
-    salvageValue: Optional[float] = None
-    assetLifeMonths: Optional[int] = None
+    depreciableCost: Optional[Union[float, str]] = None
+    salvageValue: Optional[Union[float, str]] = None
+    assetLifeMonths: Optional[Union[int, str]] = None
     depreciationMethod: Optional[str] = None
     dateAcquired: Optional[str] = None  # Will be parsed to datetime
     categoryId: Optional[str] = None
@@ -132,6 +149,30 @@ class AssetCreate(BaseModel):
     site: Optional[str] = None
     location: Optional[str] = None
 
+    @field_validator('cost', 'depreciableCost', 'salvageValue', mode='before')
+    @classmethod
+    def parse_float_fields(cls, v):
+        if v is None or v == '':
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return None
+
+    @field_validator('assetLifeMonths', mode='before')
+    @classmethod
+    def parse_int_fields(cls, v):
+        if v is None or v == '':
+            return None
+        if isinstance(v, int):
+            return v
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            return None
+
 class AssetUpdate(BaseModel):
     """Model for updating an asset - all fields optional"""
     assetTagId: Optional[str] = None
@@ -139,7 +180,7 @@ class AssetUpdate(BaseModel):
     purchasedFrom: Optional[str] = None
     purchaseDate: Optional[str] = None  # Will be parsed to datetime
     brand: Optional[str] = None
-    cost: Optional[float] = None
+    cost: Optional[Union[float, str]] = None
     model: Optional[str] = None
     serialNo: Optional[str] = None
     additionalInformation: Optional[str] = None
@@ -157,9 +198,9 @@ class AssetUpdate(BaseModel):
     qr: Optional[str] = None
     oldAssetTag: Optional[str] = None
     depreciableAsset: Optional[bool] = None
-    depreciableCost: Optional[float] = None
-    salvageValue: Optional[float] = None
-    assetLifeMonths: Optional[int] = None
+    depreciableCost: Optional[Union[float, str]] = None
+    salvageValue: Optional[Union[float, str]] = None
+    assetLifeMonths: Optional[Union[int, str]] = None
     depreciationMethod: Optional[str] = None
     dateAcquired: Optional[str] = None  # Will be parsed to datetime
     categoryId: Optional[str] = None
@@ -167,6 +208,30 @@ class AssetUpdate(BaseModel):
     department: Optional[str] = None
     site: Optional[str] = None
     location: Optional[str] = None
+
+    @field_validator('cost', 'depreciableCost', 'salvageValue', mode='before')
+    @classmethod
+    def parse_float_fields(cls, v):
+        if v is None or v == '':
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return None
+
+    @field_validator('assetLifeMonths', mode='before')
+    @classmethod
+    def parse_int_fields(cls, v):
+        if v is None or v == '':
+            return None
+        if isinstance(v, int):
+            return v
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            return None
 
 class DeleteResponse(BaseModel):
     success: bool

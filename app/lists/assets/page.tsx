@@ -1275,16 +1275,16 @@ const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetF
   }
 
   const handleViewDetails = useCallback(() => {
-    router.push(`/assets/details/${asset.id}`)
-  }, [router, asset.id])
+    router.push(`/assets/details/${asset.assetTagId}`)
+  }, [router, asset.assetTagId])
 
   const handleEdit = useCallback(() => {
     if (!hasPermission('canEditAssets')) {
       toast.error('You do not have permission to edit assets')
       return
     }
-    router.push(`/assets/${asset.id}`)
-  }, [hasPermission, router, asset.id])
+    router.push(`/assets/${asset.assetTagId}`)
+  }, [hasPermission, router, asset.assetTagId])
 
   const handleAudit = useCallback(() => {
     if (!hasPermission('canAudit')) {
@@ -1307,7 +1307,7 @@ const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetF
       toast.error('You do not have permission to checkout assets')
       return
     }
-    router.push(`/assets/checkout?assetId=${asset.id}`)
+    router.push(`/assets/checkout?assetId=${asset.assetTagId}`)
   }, [hasPermission, router, asset.id])
 
   const handleDelete = useCallback(() => {
@@ -1323,7 +1323,7 @@ const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetF
       toast.error('You do not have permission to check in assets')
       return
     }
-    router.push(`/assets/checkin?assetId=${asset.id}`)
+    router.push(`/assets/checkin?assetId=${asset.assetTagId}`)
   }, [hasPermission, router, asset.id])
 
   const handleMove = useCallback(() => {
@@ -1331,7 +1331,7 @@ const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetF
       toast.error('You do not have permission to move assets')
       return
     }
-    router.push(`/assets/move?assetId=${asset.id}`)
+    router.push(`/assets/move?assetId=${asset.assetTagId}`)
   }, [hasPermission, router, asset.id])
 
   const handleReserve = useCallback(() => {
@@ -1339,7 +1339,7 @@ const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetF
       toast.error('You do not have permission to reserve assets')
       return
     }
-    router.push(`/assets/reserve?assetId=${asset.id}`)
+    router.push(`/assets/reserve?assetId=${asset.assetTagId}`)
   }, [hasPermission, router, asset.id])
 
   const handleLease = useCallback(() => {
@@ -1347,7 +1347,7 @@ const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetF
       toast.error('You do not have permission to lease assets')
       return
     }
-    router.push(`/assets/lease?assetId=${asset.id}`)
+    router.push(`/assets/lease?assetId=${asset.assetTagId}`)
   }, [hasPermission, router, asset.id])
 
   const handleLeaseReturn = useCallback(() => {
@@ -1355,7 +1355,7 @@ const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetF
       toast.error('You do not have permission to return leased assets')
       return
     }
-    router.push(`/assets/lease-return?assetId=${asset.id}`)
+    router.push(`/assets/lease-return?assetId=${asset.assetTagId}`)
   }, [hasPermission, router, asset.id])
 
   const handleDispose = useCallback((method: string) => {
@@ -1363,7 +1363,7 @@ const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetF
       toast.error('You do not have permission to dispose assets')
       return
     }
-    router.push(`/assets/dispose?assetId=${asset.id}&method=${method}`)
+    router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=${method}`)
   }, [hasPermission, router, asset.id])
 
   const handleMaintenance = useCallback((status: string) => {
@@ -1371,7 +1371,7 @@ const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetF
       toast.error('You do not have permission to manage maintenance')
       return
     }
-    router.push(`/assets/maintenance?assetId=${asset.id}&status=${status}`)
+    router.push(`/assets/maintenance?assetId=${asset.assetTagId}&status=${status}`)
   }, [hasPermission, router, asset.id])
 
 
@@ -1512,7 +1512,7 @@ const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetF
         title={`Audit History - ${asset.assetTagId}`}
         description="Manage audit records for this asset"
       >
-        <AuditHistoryManager assetId={asset.id} assetTagId={asset.assetTagId} />
+        <AuditHistoryManager assetId={asset.assetTagId} assetTagId={asset.assetTagId} />
       </ManagerDialog>
 
       {/* Checkout History Dialog */}
@@ -1522,7 +1522,7 @@ const AssetActions = React.memo(function AssetActions({ asset }: { asset: AssetF
         title={`Checkout History - ${asset.assetTagId}`}
         description="View and assign employees to checkout records"
       >
-        <CheckoutManager assetId={asset.id} assetTagId={asset.assetTagId} assetStatus={asset.status || undefined} invalidateQueryKey={['assets-list']} />
+        <CheckoutManager assetId={asset.assetTagId} assetTagId={asset.assetTagId} assetStatus={asset.status || undefined} invalidateQueryKey={['assets-list']} />
       </ManagerDialog>
     </>
   )

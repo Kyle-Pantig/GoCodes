@@ -5,12 +5,18 @@ from fastapi import APIRouter, HTTPException, Depends, Query, status
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import logging
+import re
 
 from models.schedule import ScheduleCreate, ScheduleUpdate, ScheduleResponse
 from auth import verify_auth
 from database import prisma
 
 logger = logging.getLogger(__name__)
+
+def is_uuid(value: str) -> bool:
+    """Check if a string is a UUID"""
+    uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+    return bool(uuid_pattern.match(value))
 
 router = APIRouter(prefix="/api/assets/schedules", tags=["schedules"])
 
@@ -41,7 +47,7 @@ def parse_date(date_str: Optional[str]) -> Optional[datetime]:
 
 @router.get("", response_model=ScheduleResponse)
 async def get_schedules(
-    assetId: Optional[str] = Query(None, description="Filter by asset ID"),
+    assetId: Optional[str] = Query(None, description="Filter by asset ID (UUID) or assetTagId"),
     startDate: Optional[str] = Query(None, description="Filter by start date"),
     endDate: Optional[str] = Query(None, description="Filter by end date"),
     scheduleType: Optional[str] = Query(None, description="Filter by schedule type"),
@@ -53,7 +59,17 @@ async def get_schedules(
         where: Dict[str, Any] = {}
         
         if assetId:
-            where["assetId"] = assetId
+            # Check if it's a UUID or assetTagId
+            if is_uuid(assetId):
+                where["assetId"] = assetId
+            else:
+                # Look up asset by assetTagId first
+                asset = await prisma.assets.find_first(where={"assetTagId": assetId, "isDeleted": False})
+                if asset:
+                    where["assetId"] = asset.id
+                else:
+                    # Return empty result if asset not found
+                    return ScheduleResponse(schedules=[])
         
         if startDate or endDate:
             where["scheduledDate"] = {}

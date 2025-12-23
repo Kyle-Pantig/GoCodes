@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, use, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ImageIcon, FileText, Edit, CheckCircle2, ArrowRight, Trash2, Move, Package, FileText as FileTextIcon, Wrench, ChevronDown, Download } from 'lucide-react'
+import { useState, use, useEffect, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, ImageIcon, FileText, Edit, CheckCircle2, ArrowRight, Trash2, Move, Package, FileText as FileTextIcon, Wrench, ChevronDown, ChevronLeft, Download, MoreHorizontal } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -18,6 +18,8 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu'
 import { usePermissions } from '@/hooks/use-permissions'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { useMobileDock } from '@/components/mobile-dock-provider'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Badge } from '@/components/ui/badge'
@@ -31,7 +33,9 @@ import {
 } from '@/components/ui/table'
 import { ImagePreviewDialog } from '@/components/dialogs/image-preview-dialog'
 import { DownloadConfirmationDialog } from '@/components/dialogs/download-confirmation-dialog'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 import { PdfSectionsDialog, type PdfSections } from '@/components/dialogs/pdf-sections-dialog'
+import { useDeleteAsset } from '@/hooks/use-assets'
 import { toast } from 'sonner'
 import Image from 'next/image'
 // Format utilities
@@ -524,14 +528,21 @@ function getStatusBadge(status: string | null | undefined) {
   return <Badge variant={statusVariant} className={statusColor}>{status}</Badge>
 }
 
-export default function AssetDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+export default function AssetDetailsPage({ params }: { params: Promise<{ assetTagId: string }> }) {
   const resolvedParams = use(params)
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { hasPermission } = usePermissions()
+  const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
   const [activeTab, setActiveTab] = useState<'details' | 'photos' | 'docs' | 'depreciation' | 'maintenance' | 'reserve' | 'audit' | 'history'>('details')
   const [isMoreActionsOpen, setIsMoreActionsOpen] = useState(false)
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   const [isPdfSectionsDialogOpen, setIsPdfSectionsDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  
+  // Delete asset mutation
+  const deleteAssetMutation = useDeleteAsset()
 
   const canEditAssets = hasPermission('canEditAssets')
   const canAudit = hasPermission('canAudit')
@@ -544,17 +555,18 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const canManageMaintenance = hasPermission('canManageMaintenance')
   const canDeleteAssets = hasPermission('canDeleteAssets')
 
-  const assetId = resolvedParams.id
+  // Use assetTagId from URL - backend now accepts both UUID and assetTagId
+  const assetId = resolvedParams.assetTagId
 
   const { data: assetData, isLoading: assetLoading, error: assetError, refetch, isFetching } = useQuery({
-    queryKey: ['asset-details', resolvedParams.id],
+    queryKey: ['asset-details', resolvedParams.assetTagId],
     queryFn: () => {
-      if (!resolvedParams.id) {
+      if (!resolvedParams.assetTagId) {
         throw new Error('Asset ID is missing')
       }
-      return fetchAsset(resolvedParams.id)
+      return fetchAsset(resolvedParams.assetTagId)
     },
-    enabled: !!resolvedParams.id && resolvedParams.id.trim().length > 0,
+    enabled: !!resolvedParams.assetTagId && resolvedParams.assetTagId.trim().length > 0,
     retry: 3, // Retry up to 3 times on failure
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
     refetchOnMount: 'always', // Always refetch when component mounts
@@ -624,22 +636,200 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     }
   }, [thumbnailImage?.imageUrl])
 
+  // Handle delete - opens confirmation dialog
+  const handleDelete = useCallback(() => {
+    if (!canDeleteAssets) {
+      toast.error('You do not have permission to delete assets')
+      return
+    }
+    setIsDeleteDialogOpen(true)
+  }, [canDeleteAssets])
+
+  // Confirm delete - calls the delete mutation
+  const confirmDelete = useCallback(() => {
+    if (!asset?.id) return
+    deleteAssetMutation.mutate(asset.id, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['assets'] })
+        queryClient.invalidateQueries({ queryKey: ['deletedAssets'] })
+        setIsDeleteDialogOpen(false)
+        toast.success('Asset deleted successfully. It will be permanently deleted after 30 days.')
+        router.push('/assets')
+      },
+      onError: () => {
+        toast.error('Failed to delete asset')
+      },
+    })
+  }, [deleteAssetMutation, asset?.id, queryClient, router])
+
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile && asset) {
+      setDockContent(
+        <>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => router.back()}
+            className="h-10 w-10 rounded-full btn-glass-elevated"
+            title="Go Back"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </Button>
+          {canEditAssets && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => router.push(`/assets/${asset.assetTagId}`)}
+              className="h-10 w-10 rounded-full btn-glass-elevated"
+              title="Edit Asset"
+            >
+              <Edit className="h-5 w-5" />
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setIsPdfSectionsDialogOpen(true)}
+            className="h-10 w-10 rounded-full btn-glass-elevated"
+            title="Download PDF"
+            disabled={isGeneratingPDF}
+          >
+            <Download className="h-5 w-5" />
+          </Button>
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-full btn-glass-elevated"
+                title="More Actions"
+                disabled={isGeneratingPDF}
+              >
+                <MoreHorizontal className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top" className="w-56 mb-2 z-[100]">
+              {canAudit && (
+                <DropdownMenuItem onSelect={() => router.push(`/tools/audit?assetId=${asset.assetTagId}`)}>
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  Manage Audits
+                </DropdownMenuItem>
+              )}
+              {canCheckout && (
+                <DropdownMenuItem onSelect={() => router.push(`/assets/checkout?assetId=${asset.assetTagId}`)}>
+                  <ArrowRight className="mr-2 h-4 w-4" />
+                  Checkout
+                </DropdownMenuItem>
+              )}
+              {canCheckin && (
+                <DropdownMenuItem onSelect={() => router.push(`/assets/checkin?assetId=${asset.assetTagId}`)}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Checkin
+                </DropdownMenuItem>
+              )}
+              {canMove && (
+                <DropdownMenuItem onSelect={() => router.push(`/assets/move?assetId=${asset.assetTagId}`)}>
+                  <Move className="mr-2 h-4 w-4" />
+                  Move
+                </DropdownMenuItem>
+              )}
+              {canReserve && (
+                <DropdownMenuItem onSelect={() => router.push(`/assets/reserve?assetId=${asset.assetTagId}`)}>
+                  <Package className="mr-2 h-4 w-4" />
+                  Reserve
+                </DropdownMenuItem>
+              )}
+              {canLease && (
+                <DropdownMenuItem onSelect={() => router.push(`/assets/lease?assetId=${asset.assetTagId}`)}>
+                  <FileTextIcon className="mr-2 h-4 w-4" />
+                  Lease
+                </DropdownMenuItem>
+              )}
+              {canLease && (
+                <DropdownMenuItem onSelect={() => router.push(`/assets/lease-return?assetId=${asset.assetTagId}`)}>
+                  <FileTextIcon className="mr-2 h-4 w-4" />
+                  Lease Return
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger disabled={isGeneratingPDF}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Dispose
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onSelect={() => router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Sold`)}>
+                    Sold
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Donated`)}>
+                    Donated
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Scrapped`)}>
+                    Scrapped
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Lost/Missing`)}>
+                    Lost/Missing
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Destroyed`)}>
+                    Destroyed
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger disabled={isGeneratingPDF}>
+                  <Wrench className="mr-2 h-4 w-4" />
+                  Maintenance
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onSelect={() => router.push(`/assets/maintenance?assetId=${asset.assetTagId}&status=Scheduled`)}>
+                    Scheduled
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => router.push(`/assets/maintenance?assetId=${asset.assetTagId}&status=In progress`)}>
+                    In Progress
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSeparator />
+              {canDeleteAssets && (
+                <DropdownMenuItem 
+                  onSelect={handleDelete}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Move to Trash
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>
+      )
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (isMobile) {
+        setDockContent(null)
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile, setDockContent, router, asset?.assetTagId, canEditAssets, canCheckout, canCheckin, canMove, canReserve, canLease, canManageMaintenance, canAudit, canDispose, canDeleteAssets, isGeneratingPDF, handleDelete])
+
   const { data: historyData, isLoading: isLoadingHistory } = useQuery({
-    queryKey: ['asset-history', resolvedParams.id],
-    queryFn: () => fetchHistoryLogs(resolvedParams.id),
-    enabled: !!resolvedParams.id && (activeTab === 'history' || activeTab === 'details'),
+    queryKey: ['asset-history', resolvedParams.assetTagId],
+    queryFn: () => fetchHistoryLogs(resolvedParams.assetTagId),
+    enabled: !!resolvedParams.assetTagId && (activeTab === 'history' || activeTab === 'details'),
   })
 
   const { data: maintenanceData, isLoading: isLoadingMaintenance } = useQuery({
-    queryKey: ['asset-maintenance', resolvedParams.id],
-    queryFn: () => fetchMaintenance(resolvedParams.id),
-    enabled: !!resolvedParams.id && activeTab === 'maintenance',
+    queryKey: ['asset-maintenance', resolvedParams.assetTagId],
+    queryFn: () => fetchMaintenance(resolvedParams.assetTagId),
+    enabled: !!resolvedParams.assetTagId && activeTab === 'maintenance',
   })
 
   const { data: reserveData, isLoading: isLoadingReserve } = useQuery({
-    queryKey: ['asset-reserve', resolvedParams.id],
-    queryFn: () => fetchReserve(resolvedParams.id),
-    enabled: !!resolvedParams.id && activeTab === 'reserve',
+    queryKey: ['asset-reserve', resolvedParams.assetTagId],
+    queryFn: () => fetchReserve(resolvedParams.assetTagId),
+    enabled: !!resolvedParams.assetTagId, // Always load reservations for "Assigned To" display
   })
 
   const historyLogs = historyData?.logs || []
@@ -707,11 +897,30 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     }
   )
 
-  // Assigned To: Current active checkout's employee (who currently has the asset)
-  // Only show if there's an active checkout with an employee name, otherwise show N/A (no fallback to issuedTo)
-  const assignedToUser = (activeCheckout?.employeeUser?.name && activeCheckout.employeeUser.name.trim()) 
-    ? activeCheckout.employeeUser.name 
-    : 'N/A'
+  // Get active reservation (first one since it's already sorted by date desc)
+  const activeReservation = reservations?.[0]
+  
+  // Determine assigned to display value - same pattern as edit page
+  const getAssignedToDisplay = () => {
+    // If there's an active checkout with employee, show the employee name
+    if (activeCheckout?.employeeUser?.name?.trim()) {
+      return activeCheckout.employeeUser.name
+    }
+    
+    // If asset is reserved and there's an active reservation
+    if (asset?.status?.toLowerCase() === 'reserved' && activeReservation) {
+      if (activeReservation.reservationType === 'Employee' && activeReservation.employeeUser?.name) {
+        return `Reserved for ${activeReservation.employeeUser.name}`
+      }
+      if (activeReservation.reservationType === 'Department' && activeReservation.department) {
+        return `Reserved for ${activeReservation.department}`
+      }
+    }
+    
+    return 'N/A'
+  }
+  
+  const assignedToUser = getAssignedToDisplay()
   
   // Issued To: Original issued to field from the asset (static field)
   const issuedToUser = asset.issuedTo || 'N/A'
@@ -725,11 +934,22 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const downloadPDFWithSections = async (sections: PdfSections) => {
     setIsGeneratingPDF(true)
     
+    // Get auth token for FastAPI
+    const { createClient } = await import('@/lib/supabase-client')
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    
     // Use XMLHttpRequest to track download progress
     const xhr = new XMLHttpRequest()
     let simulatedProgress = 0
     let progressInterval: NodeJS.Timeout | null = null
     let hasStartedDownload = false
+    
+    // Build URL with FastAPI base URL if enabled
+    const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
+      ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
+      : ''
+    const pdfUrl = `${baseUrl}/api/assets/${asset.assetTagId}/pdf`
     
     return new Promise<void>((resolve, reject) => {
       try {
@@ -739,18 +959,21 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         // This gives feedback while the server is generating the PDF
         progressInterval = setInterval(() => {
           if (!hasStartedDownload && simulatedProgress < 70) {
-            simulatedProgress += 2
+            simulatedProgress += 5  // Faster progress since FastAPI is much faster
             if (simulatedProgress > 70) simulatedProgress = 70
             toast.loading(`Generating PDF... ${simulatedProgress}%`, { id: 'pdf-generation' })
           }
-        }, 200) // Update every 200ms
+        }, 100) // Update every 100ms (faster since FastAPI is faster)
 
-        xhr.open('POST', `/api/assets/${asset.id}/pdf`, true)
+        xhr.open('POST', pdfUrl, true)
         xhr.setRequestHeader('Content-Type', 'application/json')
+        if (session?.access_token) {
+          xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`)
+        }
         xhr.responseType = 'blob'
         
         // Send sections in request body
-        xhr.send(JSON.stringify({ sections }))
+        xhr.send(JSON.stringify(sections))
 
         // Track real download progress (70-100%)
         xhr.addEventListener('progress', (event) => {
@@ -876,45 +1099,43 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
-      className="space-y-6 pb-16"
+      className="space-y-6"
     >
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl sm:text-3xl font-bold truncate">{asset.assetTagId}</h1>
-          <p className="text-muted-foreground truncate">
+          <p className="text-muted-foreground break-words">
             {asset.description}
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+        <div className="hidden md:grid md:grid-cols-2 lg:flex lg:flex-row lg:justify-end items-center gap-2 w-full xl:w-auto flex-shrink-0">
           <Button 
             variant="outline"
             onClick={handleDownloadPDF}
-            className="w-full sm:w-auto"
+            className="w-full lg:w-auto"
             disabled={isGeneratingPDF}
           >
             <Download className="mr-2 h-4 w-4" />
-            <span className="hidden sm:inline">Download</span>
-            <span className="sm:hidden">PDF</span>
+            Download
           </Button>
           {canEditAssets && (
             <Button 
               variant="default"
               onClick={() => {
-                router.push(`/assets/${asset.id}`)
+                router.push(`/assets/${asset.assetTagId}`)
               }}
-              className="w-full sm:w-auto"
+              className="w-full lg:w-auto"
               disabled={isGeneratingPDF}
             >
               <Edit className="mr-2 h-4 w-4" />
-              <span className="hidden sm:inline">Edit Asset</span>
-              <span className="sm:hidden">Edit</span>
+              Edit Asset
             </Button>
           )}
           <DropdownMenu open={isMoreActionsOpen} onOpenChange={setIsMoreActionsOpen}>
             <DropdownMenuTrigger asChild>
               <Button 
                 variant="outline" 
-                className="w-full sm:w-auto"
+                className="w-full lg:w-auto"
                 title="More Actions"
                 disabled={isGeneratingPDF}
               >
@@ -929,7 +1150,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                     toast.error('You do not have permission to edit assets')
                     return
                   }
-                    router.push(`/assets/${asset.id}`)
+                    router.push(`/assets/${asset.assetTagId}`)
                   }}
                   disabled={isGeneratingPDF}
                 >
@@ -942,7 +1163,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                     toast.error('You do not have permission to manage audits')
                     return
                   }
-                    router.push(`/tools/audit?assetId=${asset.id}`)
+                    router.push(`/tools/audit?assetId=${asset.assetTagId}`)
                   }}
                   disabled={isGeneratingPDF}
                 >
@@ -955,7 +1176,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                     toast.error('You do not have permission to checkout assets')
                     return
                   }
-                    router.push(`/assets/checkout?assetId=${asset.id}`)
+                    router.push(`/assets/checkout?assetId=${asset.assetTagId}`)
                   }}
                   disabled={isGeneratingPDF}
                 >
@@ -968,7 +1189,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                     toast.error('You do not have permission to checkin assets')
                     return
                   }
-                    router.push(`/assets/checkin?assetId=${asset.id}`)
+                    router.push(`/assets/checkin?assetId=${asset.assetTagId}`)
                   }}
                   disabled={isGeneratingPDF}
                 >
@@ -981,7 +1202,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                     toast.error('You do not have permission to move assets')
                     return
                   }
-                    router.push(`/assets/move?assetId=${asset.id}`)
+                    router.push(`/assets/move?assetId=${asset.assetTagId}`)
                   }}
                   disabled={isGeneratingPDF}
                 >
@@ -994,7 +1215,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                     toast.error('You do not have permission to reserve assets')
                     return
                   }
-                    router.push(`/assets/reserve?assetId=${asset.id}`)
+                    router.push(`/assets/reserve?assetId=${asset.assetTagId}`)
                   }}
                   disabled={isGeneratingPDF}
                 >
@@ -1007,7 +1228,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                     toast.error('You do not have permission to lease assets')
                     return
                   }
-                      router.push(`/assets/lease?assetId=${asset.id}`)
+                      router.push(`/assets/lease?assetId=${asset.assetTagId}`)
                     }}
                     disabled={isGeneratingPDF}
                   >
@@ -1020,7 +1241,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                     toast.error('You do not have permission to return leased assets')
                     return
                   }
-                      router.push(`/assets/lease-return?assetId=${asset.id}`)
+                      router.push(`/assets/lease-return?assetId=${asset.assetTagId}`)
                     }}
                     disabled={isGeneratingPDF}
                   >
@@ -1039,7 +1260,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                         toast.error('You do not have permission to dispose assets')
                         return
                       }
-                        router.push(`/assets/dispose?assetId=${asset.id}&method=Sold`)
+                        router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Sold`)
                       }}
                       disabled={isGeneratingPDF}
                     >
@@ -1051,7 +1272,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                         toast.error('You do not have permission to dispose assets')
                         return
                       }
-                        router.push(`/assets/dispose?assetId=${asset.id}&method=Donated`)
+                        router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Donated`)
                       }}
                       disabled={isGeneratingPDF}
                     >
@@ -1063,7 +1284,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                         toast.error('You do not have permission to dispose assets')
                         return
                       }
-                        router.push(`/assets/dispose?assetId=${asset.id}&method=Scrapped`)
+                        router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Scrapped`)
                       }}
                       disabled={isGeneratingPDF}
                     >
@@ -1075,7 +1296,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                         toast.error('You do not have permission to dispose assets')
                         return
                       }
-                        router.push(`/assets/dispose?assetId=${asset.id}&method=Lost/Missing`)
+                        router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Lost/Missing`)
                       }}
                       disabled={isGeneratingPDF}
                     >
@@ -1087,7 +1308,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                         toast.error('You do not have permission to dispose assets')
                         return
                       }
-                        router.push(`/assets/dispose?assetId=${asset.id}&method=Destroyed`)
+                        router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Destroyed`)
                       }}
                       disabled={isGeneratingPDF}
                     >
@@ -1107,7 +1328,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                         toast.error('You do not have permission to manage maintenance')
                         return
                       }
-                        router.push(`/assets/maintenance?assetId=${asset.id}&status=Scheduled`)
+                        router.push(`/assets/maintenance?assetId=${asset.assetTagId}&status=Scheduled`)
                       }}
                       disabled={isGeneratingPDF}
                     >
@@ -1119,7 +1340,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                         toast.error('You do not have permission to manage maintenance')
                         return
                       }
-                        router.push(`/assets/maintenance?assetId=${asset.id}&status=In progress`)
+                        router.push(`/assets/maintenance?assetId=${asset.assetTagId}&status=In progress`)
                       }}
                       disabled={isGeneratingPDF}
                     >
@@ -1129,13 +1350,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 </DropdownMenuSub>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={() => {
-                  if (!canDeleteAssets) {
-                    toast.error('You do not have permission to delete assets')
-                    return
-                  }
-                      router.push(`/assets?delete=${asset.id}`)
-                    }}
+                    onClick={handleDelete}
                     className="text-destructive focus:text-destructive"
                     disabled={isGeneratingPDF}
                   >
@@ -1144,11 +1359,10 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Link href="/assets" className="w-full sm:w-auto">
-            <Button variant="outline" className="w-full sm:w-auto" disabled={isGeneratingPDF}>
+          <Link href="/assets" className="w-full lg:w-auto">
+            <Button variant="outline" className="w-full lg:w-auto" disabled={isGeneratingPDF}>
               <ArrowLeft className="mr-2 h-4 w-4" />
-              <span className="hidden sm:inline">Back to Assets</span>
-              <span className="sm:hidden">Back</span>
+              Back to Assets
             </Button>
           </Link>
         </div>
@@ -1584,108 +1798,117 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   <p className="text-sm text-muted-foreground">Loading maintenance records...</p>
                 </div>
               </div>
-            ) : maintenances.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No maintenance records found.</p>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[20%]">Title</TableHead>
-                      <TableHead className="w-[15%]">Status</TableHead>
-                      <TableHead className="w-[12%]">Due Date</TableHead>
-                      <TableHead className="w-[12%]">Date Completed</TableHead>
-                      <TableHead className="w-[15%]">Maintenance By</TableHead>
-                      <TableHead className="w-[12%]">Cost</TableHead>
-                      <TableHead className="w-[14%]">Inventory Items</TableHead>
-                      <TableHead className="w-[14%]">Details</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {maintenances.map((maintenance: { 
-                      id: string
-                      title: string
-                      details?: string | null
-                      dueDate?: string | Date | null
-                      status?: string | null
-                      maintenanceBy?: string | null
-                      dateCompleted?: string | Date | null
-                      cost?: number | string | null
-                      inventoryItems?: {
-                        id: string
-                        quantity: number | string
-                        unitCost: number | null
-                        inventoryItem: {
+              <div className="min-w-full">
+                <ScrollArea className="h-[500px] relative border rounded-lg">
+                  <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
+                    <Table>
+                      <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0">
+                        <TableRow className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:bg-border after:z-30">
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[18%]">Title</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[13%]">Status</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[11%]">Due Date</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[11%]">Date Completed</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[13%]">Maintenance By</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[10%]">Cost</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[12%]">Inventory Items</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[12%]">Details</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {maintenances.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                              No maintenance records found.
+                            </TableCell>
+                          </TableRow>
+                        ) : maintenances.map((maintenance: { 
                           id: string
-                          itemCode: string
-                          name: string
-                          unit: string | null
-                        }
-                      }[]
-                    }) => (
-                      <TableRow key={maintenance.id}>
-                        <TableCell>
-                          <span className="text-sm font-medium">{maintenance.title || 'N/A'}</span>
-                        </TableCell>
-                        <TableCell>
-                          {maintenance.status ? (
-                            <span className={`px-2 py-1 text-xs font-medium rounded capitalize ${
-                              maintenance.status.toLowerCase() === 'completed' ? 'bg-green-500/10 text-green-500' :
-                              maintenance.status.toLowerCase() === 'in progress' ? 'bg-blue-500/10 text-blue-500' :
-                              maintenance.status.toLowerCase() === 'scheduled' ? 'bg-yellow-500/10 text-yellow-500' :
-                              maintenance.status.toLowerCase() === 'cancelled' ? 'bg-red-500/10 text-red-500' :
-                              'bg-gray-500/10 text-gray-500'
-                            }`}>
-                              {maintenance.status}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm">{formatDate(maintenance.dueDate || null)}</span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm">{formatDate(maintenance.dateCompleted || null)}</span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm">{maintenance.maintenanceBy || <span className="text-muted-foreground">-</span>}</span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm">{formatCurrency(maintenance.cost)}</span>
-                        </TableCell>
-                        <TableCell>
-                          {maintenance.inventoryItems && maintenance.inventoryItems.length > 0 ? (
-                            <div className="flex flex-col gap-1">
-                              <Badge variant="outline" className="text-xs w-fit">
-                                <Package className="h-3 w-3 mr-1" />
-                                {maintenance.inventoryItems.length} {maintenance.inventoryItems.length === 1 ? 'item' : 'items'}
-                              </Badge>
-                              <div className="text-xs text-muted-foreground">
-                                {maintenance.inventoryItems.slice(0, 2).map((item, idx) => (
-                                  <span key={item.id}>
-                                    {item.inventoryItem.itemCode} ({item.quantity} {item.inventoryItem.unit || ''})
-                                    {idx < Math.min(maintenance.inventoryItems!.length, 2) - 1 && ', '}
-                                  </span>
-                                ))}
-                                {maintenance.inventoryItems.length > 2 && ` +${maintenance.inventoryItems.length - 2} more`}
+                          title: string
+                          details?: string | null
+                          dueDate?: string | Date | null
+                          status?: string | null
+                          maintenanceBy?: string | null
+                          dateCompleted?: string | Date | null
+                          cost?: number | string | null
+                          inventoryItems?: {
+                            id: string
+                            quantity: number | string
+                            unitCost: number | null
+                            inventoryItem: {
+                              id: string
+                              itemCode: string
+                              name: string
+                              unit: string | null
+                            }
+                          }[]
+                        }) => (
+                          <TableRow key={maintenance.id}>
+                            <TableCell>
+                              <span className="text-sm font-medium">{maintenance.title || 'N/A'}</span>
+                            </TableCell>
+                            <TableCell>
+                              {maintenance.status ? (
+                                <span className={`px-2 py-1 text-xs font-medium rounded capitalize ${
+                                  maintenance.status.toLowerCase() === 'completed' ? 'bg-green-500/10 text-green-500' :
+                                  maintenance.status.toLowerCase() === 'in progress' ? 'bg-blue-500/10 text-blue-500' :
+                                  maintenance.status.toLowerCase() === 'scheduled' ? 'bg-yellow-500/10 text-yellow-500' :
+                                  maintenance.status.toLowerCase() === 'cancelled' ? 'bg-red-500/10 text-red-500' :
+                                  'bg-gray-500/10 text-gray-500'
+                                }`}>
+                                  {maintenance.status}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-sm">{formatDate(maintenance.dueDate || null)}</span>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-sm">{formatDate(maintenance.dateCompleted || null)}</span>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-sm">{maintenance.maintenanceBy || <span className="text-muted-foreground">-</span>}</span>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-sm">{formatCurrency(maintenance.cost)}</span>
+                            </TableCell>
+                            <TableCell>
+                              {maintenance.inventoryItems && maintenance.inventoryItems.length > 0 ? (
+                                <div className="flex flex-col gap-1">
+                                  <Badge variant="outline" className="text-xs w-fit">
+                                    <Package className="h-3 w-3 mr-1" />
+                                    {maintenance.inventoryItems.length} {maintenance.inventoryItems.length === 1 ? 'item' : 'items'}
+                                  </Badge>
+                                  <div className="text-xs text-muted-foreground">
+                                    {maintenance.inventoryItems.slice(0, 2).map((item, idx) => (
+                                      <span key={item.id}>
+                                        {item.inventoryItem.itemCode} ({item.quantity} {item.inventoryItem.unit || ''})
+                                        {idx < Math.min(maintenance.inventoryItems!.length, 2) - 1 && ', '}
+                                      </span>
+                                    ))}
+                                    {maintenance.inventoryItems.length > 2 && ` +${maintenance.inventoryItems.length - 2} more`}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-sm text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="max-w-[200px]">
+                                <p className="text-sm wrap-break-word">
+                                  {maintenance.details || <span className="text-muted-foreground">-</span>}
+                                </p>
                               </div>
-                            </div>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="max-w-[200px]">
-                            <p className="text-sm wrap-break-word">
-                              {maintenance.details || <span className="text-muted-foreground">-</span>}
-                            </p>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  <ScrollBar orientation="horizontal" />
+                  <ScrollBar orientation="vertical" className="z-50" />
+                </ScrollArea>
               </div>
             )}
           </div>
@@ -1711,75 +1934,84 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   <p className="text-sm text-muted-foreground">Loading reservations...</p>
                 </div>
               </div>
-            ) : reservations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No reservations found.</p>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[15%]">Asset ID</TableHead>
-                      <TableHead className="w-[18%]">Description</TableHead>
-                      <TableHead className="w-[12%]">Type</TableHead>
-                      <TableHead className="w-[15%]">Reserved For</TableHead>
-                      <TableHead className="w-[15%]">Purpose</TableHead>
-                      <TableHead className="w-[12%]">Reservation Date</TableHead>
-                      <TableHead className="w-[13%]">Time Ago</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {reservations.map((reservation: { 
-                      id: string
-                      reservationType: string
-                      purpose?: string | null
-                      reservationDate: string | Date
-                      employeeUser?: { name: string } | null
-                      department?: string | null
-                      asset?: { assetTagId: string; description: string } | null
-                    }) => {
-                      const reservationDate = reservation.reservationDate ? new Date(reservation.reservationDate) : null
-                      const timeAgo = reservationDate ? getTimeAgo(reservationDate) : '-'
-                      
-                      return (
-                        <TableRow key={reservation.id}>
-                          <TableCell>
-                            {reservation.asset?.assetTagId ? (
-                              <Badge variant="outline" className="font-medium">
-                                {reservation.asset.assetTagId}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm">{reservation.asset?.description || asset?.description || 'N/A'}</span>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm capitalize">{reservation.reservationType || 'N/A'}</span>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm">
-                              {reservation.reservationType === 'Employee' && reservation.employeeUser
-                                ? reservation.employeeUser.name
-                                : reservation.reservationType === 'Department' && reservation.department
-                                ? reservation.department
-                                : <span className="text-muted-foreground">-</span>}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm">{reservation.purpose || <span className="text-muted-foreground">-</span>}</span>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm">{formatDate(reservation.reservationDate)}</span>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm text-muted-foreground">{timeAgo}</span>
-                          </TableCell>
+              <div className="min-w-full">
+                <ScrollArea className="h-[500px] relative border rounded-lg">
+                  <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
+                    <Table>
+                      <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0">
+                        <TableRow className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:bg-border after:z-30">
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[14%]">Asset ID</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[20%]">Description</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[10%]">Type</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[14%]">Reserved For</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[14%]">Purpose</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[14%]">Reservation Date</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[14%]">Time Ago</TableHead>
                         </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {reservations.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                              No reservations found.
+                            </TableCell>
+                          </TableRow>
+                        ) : reservations.map((reservation: { 
+                          id: string
+                          reservationType: string
+                          purpose?: string | null
+                          reservationDate: string | Date
+                          employeeUser?: { name: string } | null
+                          department?: string | null
+                          asset?: { assetTagId: string; description: string } | null
+                        }) => {
+                          const reservationDate = reservation.reservationDate ? new Date(reservation.reservationDate) : null
+                          const timeAgo = reservationDate ? getTimeAgo(reservationDate) : '-'
+                          
+                          return (
+                            <TableRow key={reservation.id}>
+                              <TableCell>
+                                {reservation.asset?.assetTagId ? (
+                                  <Badge variant="outline" className="font-medium">
+                                    {reservation.asset.assetTagId}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-sm">{reservation.asset?.description || asset?.description || 'N/A'}</span>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-sm capitalize">{reservation.reservationType || 'N/A'}</span>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-sm">
+                                  {reservation.reservationType === 'Employee' && reservation.employeeUser
+                                    ? reservation.employeeUser.name
+                                    : reservation.reservationType === 'Department' && reservation.department
+                                    ? reservation.department
+                                    : <span className="text-muted-foreground">-</span>}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-sm">{reservation.purpose || <span className="text-muted-foreground">-</span>}</span>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-sm">{formatDate(reservation.reservationDate)}</span>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-sm text-muted-foreground">{timeAgo}</span>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  <ScrollBar orientation="horizontal" />
+                  <ScrollBar orientation="vertical" className="z-50" />
+                </ScrollArea>
               </div>
             )}
           </div>
@@ -1805,55 +2037,64 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   <p className="text-sm text-muted-foreground">Loading audit records...</p>
                 </div>
               </div>
-            ) : !asset?.auditHistory || asset.auditHistory.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No audit records found.</p>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[12%]">Date</TableHead>
-                      <TableHead className="w-[18%]">Audit Type</TableHead>
-                      <TableHead className="w-[12%]">Status</TableHead>
-                      <TableHead className="w-[18%]">Auditor</TableHead>
-                      <TableHead className="w-[40%]">Notes</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {asset.auditHistory.map((audit: { id: string; auditType: string; auditDate: string | Date; auditor: string | null; status: string | null; notes: string | null }) => (
-                      <TableRow key={audit.id}>
-                        <TableCell className="font-medium">
-                          {formatDate(audit.auditDate || null)}
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm font-medium">{audit.auditType || 'N/A'}</span>
-                        </TableCell>
-                        <TableCell>
-                          {audit.status ? (
-                            <span className={`px-2 py-1 text-xs font-medium rounded ${
-                              audit.status.toLowerCase() === 'completed' ? 'bg-green-500/10 text-green-500' :
-                              audit.status.toLowerCase() === 'pending' ? 'bg-yellow-500/10 text-yellow-500' :
-                              audit.status.toLowerCase() === 'failed' ? 'bg-red-500/10 text-red-500' :
-                              'bg-gray-500/10 text-gray-500'
-                            }`}>
-                              {audit.status}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm">{audit.auditor || <span className="text-muted-foreground">-</span>}</span>
-                        </TableCell>
-                        <TableCell>
-                          <p className="text-sm wrap-break-word">
-                            {audit.notes || <span className="text-muted-foreground">-</span>}
-                          </p>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+              <div className="min-w-full">
+                <ScrollArea className="h-[500px] relative border rounded-lg">
+                  <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
+                    <Table>
+                      <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0">
+                        <TableRow className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:bg-border after:z-30">
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[12%]">Date</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[18%]">Audit Type</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[12%]">Status</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[18%]">Auditor</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[40%]">Notes</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {!asset?.auditHistory || asset.auditHistory.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
+                              No audit records found.
+                            </TableCell>
+                          </TableRow>
+                        ) : asset.auditHistory.map((audit: { id: string; auditType: string; auditDate: string | Date; auditor: string | null; status: string | null; notes: string | null }) => (
+                          <TableRow key={audit.id}>
+                            <TableCell className="font-medium">
+                              {formatDate(audit.auditDate || null)}
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-sm font-medium">{audit.auditType || 'N/A'}</span>
+                            </TableCell>
+                            <TableCell>
+                              {audit.status ? (
+                                <span className={`px-2 py-1 text-xs font-medium rounded ${
+                                  audit.status.toLowerCase() === 'completed' ? 'bg-green-500/10 text-green-500' :
+                                  audit.status.toLowerCase() === 'pending' ? 'bg-yellow-500/10 text-yellow-500' :
+                                  audit.status.toLowerCase() === 'failed' ? 'bg-red-500/10 text-red-500' :
+                                  'bg-gray-500/10 text-gray-500'
+                                }`}>
+                                  {audit.status}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-sm">{audit.auditor || <span className="text-muted-foreground">-</span>}</span>
+                            </TableCell>
+                            <TableCell>
+                              <p className="text-sm wrap-break-word">
+                                {audit.notes || <span className="text-muted-foreground">-</span>}
+                              </p>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  <ScrollBar orientation="horizontal" />
+                  <ScrollBar orientation="vertical" className="z-50" />
+                </ScrollArea>
               </div>
             )}
           </div>
@@ -1879,70 +2120,79 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   <p className="text-sm text-muted-foreground">Loading history logs...</p>
                 </div>
               </div>
-            ) : historyLogs.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No history logs found.</p>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[150px]">Date</TableHead>
-                      <TableHead className="w-[120px]">Event</TableHead>
-                      <TableHead className="w-[150px]">Field</TableHead>
-                      <TableHead>Changed from</TableHead>
-                      <TableHead>Changed to</TableHead>
-                      <TableHead className="w-[180px]">Action by</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {historyLogs.map((log: { id: string; eventType: string; eventDate: string; field?: string; changeFrom?: string; changeTo?: string; actionBy: string }) => {
-                      const eventLabel = log.eventType === 'added' ? 'Asset added' : 
-                                        log.eventType === 'edited' ? 'Asset edit' : 
-                                        'Asset deleted'
-                      
-                      return (
-                        <TableRow key={log.id}>
-                          <TableCell className="font-medium">
-                            {formatDateTime(log.eventDate)}
-                          </TableCell>
-                          <TableCell>
-                            <span className={`px-2 py-1 text-xs font-medium rounded ${
-                              log.eventType === 'added' ? 'bg-green-500/10 text-green-500' :
-                              log.eventType === 'edited' ? 'bg-blue-500/10 text-blue-500' :
-                              'bg-red-500/10 text-red-500'
-                            }`}>
-                              {eventLabel}
-                            </span>
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            {log.field ? (
-                              <span className="capitalize">{log.field}</span>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="max-w-[300px]">
-                              <p className="text-sm wrap-break-word">
-                                {log.changeFrom || <span className="text-muted-foreground">(empty)</span>}
-                              </p>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="max-w-[300px]">
-                              <p className="text-sm wrap-break-word">
-                                {log.changeTo || <span className="text-muted-foreground">(empty)</span>}
-                              </p>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm">{log.actionBy}</span>
-                          </TableCell>
+              <div className="min-w-full">
+                <ScrollArea className="h-[500px] relative border rounded-lg">
+                  <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
+                    <Table>
+                      <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0">
+                        <TableRow className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:bg-border after:z-30">
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[130px]">Date</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[110px]">Event</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[130px]">Field</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left">Changed from</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left">Changed to</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[150px]">Action by</TableHead>
                         </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {historyLogs.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                              No history logs found.
+                            </TableCell>
+                          </TableRow>
+                        ) : historyLogs.map((log: { id: string; eventType: string; eventDate: string; field?: string; changeFrom?: string; changeTo?: string; actionBy: string }) => {
+                          const eventLabel = log.eventType === 'added' ? 'Asset added' : 
+                                            log.eventType === 'edited' ? 'Asset edit' : 
+                                            'Asset deleted'
+                          
+                          return (
+                            <TableRow key={log.id}>
+                              <TableCell className="font-medium">
+                                {formatDateTime(log.eventDate)}
+                              </TableCell>
+                              <TableCell>
+                                <span className={`px-2 py-1 text-xs font-medium rounded ${
+                                  log.eventType === 'added' ? 'bg-green-500/10 text-green-500' :
+                                  log.eventType === 'edited' ? 'bg-blue-500/10 text-blue-500' :
+                                  'bg-red-500/10 text-red-500'
+                                }`}>
+                                  {eventLabel}
+                                </span>
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                {log.field ? (
+                                  <span className="capitalize">{log.field}</span>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <div className="max-w-[300px]">
+                                  <p className="text-sm wrap-break-word">
+                                    {log.changeFrom || <span className="text-muted-foreground">(empty)</span>}
+                                  </p>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="max-w-[300px]">
+                                  <p className="text-sm wrap-break-word">
+                                    {log.changeTo || <span className="text-muted-foreground">(empty)</span>}
+                                  </p>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-sm">{log.actionBy}</span>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  <ScrollBar orientation="horizontal" />
+                  <ScrollBar orientation="vertical" className="z-50" />
+                </ScrollArea>
               </div>
             )}
           </div>
@@ -1956,6 +2206,18 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         open={isPdfSectionsDialogOpen}
         onOpenChange={setIsPdfSectionsDialogOpen}
         onConfirm={downloadPDFWithSections}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        onConfirm={confirmDelete}
+        itemName={asset.assetTagId}
+        isLoading={deleteAssetMutation.isPending}
+        title={`Move ${asset.assetTagId} to Trash?`}
+        description="This asset will be moved to Trash and can be restored later if needed."
+        confirmLabel="Move to Trash"
       />
     </motion.div>
   )

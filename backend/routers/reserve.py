@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, status, Query
 from typing import Dict, Any, Optional
 from datetime import datetime
 import logging
+import re
 
 from models.reserve import ReserveCreate, ReserveResponse, ReserveStatsResponse
 from auth import verify_auth
@@ -12,11 +13,16 @@ from database import prisma
 
 logger = logging.getLogger(__name__)
 
+def is_uuid(value: str) -> bool:
+    """Check if a string is a UUID"""
+    uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+    return bool(uuid_pattern.match(value))
+
 router = APIRouter(prefix="/api/assets/reserve", tags=["reserve"])
 
 @router.get("")
 async def get_reservations(
-    assetId: Optional[str] = Query(None, description="Filter by asset ID"),
+    assetId: Optional[str] = Query(None, description="Filter by asset ID (UUID) or assetTagId"),
     auth: dict = Depends(verify_auth)
 ):
     """Get reservations, optionally filtered by asset ID"""
@@ -24,17 +30,21 @@ async def get_reservations(
         if not assetId:
             raise HTTPException(status_code=400, detail="Asset ID is required")
         
+        # Check if it's a UUID or assetTagId
+        is_id_uuid = is_uuid(assetId)
+        
         # Verify asset exists
-        asset = await prisma.assets.find_unique(
-            where={"id": assetId}
-        )
+        if is_id_uuid:
+            asset = await prisma.assets.find_unique(where={"id": assetId})
+        else:
+            asset = await prisma.assets.find_first(where={"assetTagId": assetId, "isDeleted": False})
         
         if not asset:
             raise HTTPException(status_code=404, detail="Asset not found")
         
-        # Get reservations for this asset
+        # Get reservations for this asset (use actual asset.id)
         reservations_data = await prisma.assetsreserve.find_many(
-            where={"assetId": assetId},
+            where={"assetId": asset.id},
             include={
                 "employeeUser": True,
                 "asset": True

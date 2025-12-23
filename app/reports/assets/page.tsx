@@ -1414,7 +1414,7 @@ export default function AssetReportsPage() {
                             >
                               <TableCell className="font-medium">
                                 <Link
-                                  href={`/assets/details/${asset.id}`}
+                                  href={`/assets/details/${asset.assetTagId}`}
                                   className="text-primary hover:underline font-semibold"
                                 >
                                   {asset.assetTagId}

@@ -5,12 +5,18 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from typing import Dict, Any
 from datetime import datetime
 import logging
+import re
 
 from models.lease_return import LeaseReturnCreate, LeaseReturnResponse, LeaseReturnStatsResponse, LeaseReturnAssetUpdate
 from auth import verify_auth
 from database import prisma
 
 logger = logging.getLogger(__name__)
+
+def is_uuid(value: str) -> bool:
+    """Check if a string is a UUID"""
+    uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+    return bool(uuid_pattern.match(value))
 
 router = APIRouter(prefix="/api/assets/lease-return", tags=["lease-return"])
 
@@ -45,10 +51,11 @@ async def create_lease_return(
         
         async with prisma.tx() as transaction:
             for asset_id in return_data.assetIds:
-                # First get the asset to show proper tag ID in error messages
-                asset = await transaction.assets.find_unique(
-                    where={"id": asset_id}
-                )
+                # First get the asset (support both UUID and assetTagId)
+                if is_uuid(asset_id):
+                    asset = await transaction.assets.find_unique(where={"id": asset_id})
+                else:
+                    asset = await transaction.assets.find_first(where={"assetTagId": asset_id, "isDeleted": False})
 
                 if not asset:
                     raise HTTPException(
@@ -56,13 +63,15 @@ async def create_lease_return(
                         detail=f"Asset not found: {asset_id}"
                     )
 
+                # Use actual UUID for database operations
+                actual_asset_id = asset.id
                 asset_tag_id = asset.assetTagId or asset_id
 
                 # Find the most recent unreturned lease for this asset
                 # We don't filter by leaseEndDate because late returns are allowed
                 active_lease = await transaction.assetslease.find_first(
                     where={
-                        "assetId": asset_id,
+                        "assetId": actual_asset_id,
                         "returns": {
                             "none": {}  # Exclude leases that have already been returned
                         }
@@ -76,13 +85,15 @@ async def create_lease_return(
                         detail=f"No active lease found for asset {asset_tag_id}"
                     )
 
-                # Get update data for this asset (condition, notes)
-                asset_update = return_data.updates.get(asset_id) if return_data.updates else None
+                # Get update data for this asset (condition, notes) - try both original ID and actual UUID
+                asset_update = None
+                if return_data.updates:
+                    asset_update = return_data.updates.get(asset_id) or return_data.updates.get(actual_asset_id)
 
                 # Create lease return record
                 lease_return = await transaction.assetsleasereturn.create(
                     data={
-                        "assetId": asset_id,
+                        "assetId": actual_asset_id,
                         "leaseId": active_lease.id,
                         "returnDate": return_date,
                         "condition": asset_update.condition if asset_update and asset_update.condition else None,
@@ -96,7 +107,7 @@ async def create_lease_return(
 
                 # Update asset status back to Available
                 await transaction.assets.update(
-                    where={"id": asset_id},
+                    where={"id": actual_asset_id},
                     data={"status": "Available"}
                 )
 

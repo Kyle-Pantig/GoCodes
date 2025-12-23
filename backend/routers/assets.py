@@ -1,13 +1,14 @@
 """
 Assets API router
 """
-from fastapi import APIRouter, HTTPException, Query, Depends, UploadFile, File, Form, Request
+from fastapi import APIRouter, HTTPException, Query, Depends, UploadFile, File, Form, Request, Path
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 from decimal import Decimal
 import logging
 import asyncio
 import os
+import re
 from supabase import create_client, Client
 
 from models.assets import (
@@ -28,14 +29,21 @@ from models.assets import (
     CategoryInfo,
     SubCategoryInfo,
     EmployeeInfo,
+    CheckinInfo,
     CheckoutInfo,
     LeaseInfo,
+    ReservationInfo,
     AuditHistoryInfo
 )
 from auth import verify_auth, SUPABASE_URL, SUPABASE_ANON_KEY
 from database import prisma
 
 logger = logging.getLogger(__name__)
+
+def is_uuid(value: str) -> bool:
+    """Check if a string is a UUID"""
+    uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+    return bool(uuid_pattern.match(value))
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
@@ -538,22 +546,26 @@ async def get_assets(
 
 @router.get("/{asset_id}/checkout")
 async def get_asset_checkouts(
-    asset_id: str,
+    asset_id: str = Path(..., description="Asset ID (UUID) or assetTagId"),
     auth: dict = Depends(verify_auth)
 ):
     """Get all checkout records for a specific asset"""
     try:
+        # Check if it's a UUID or assetTagId
+        is_id_uuid = is_uuid(asset_id)
+        
         # Verify asset exists
-        asset = await prisma.assets.find_unique(
-            where={"id": asset_id}
-        )
+        if is_id_uuid:
+            asset = await prisma.assets.find_unique(where={"id": asset_id})
+        else:
+            asset = await prisma.assets.find_first(where={"assetTagId": asset_id, "isDeleted": False})
         
         if not asset:
             raise HTTPException(status_code=404, detail="Asset not found")
         
-        # Get all checkouts for this asset
+        # Get all checkouts for this asset (use the actual asset.id)
         checkouts_data = await prisma.assetscheckout.find_many(
-            where={"assetId": asset_id},
+            where={"assetId": asset.id},
             include={
                 "employeeUser": True,
                 "checkins": True
@@ -604,22 +616,26 @@ async def get_asset_checkouts(
 
 @router.get("/{asset_id}/history")
 async def get_asset_history(
-    asset_id: str,
+    asset_id: str = Path(..., description="Asset ID (UUID) or assetTagId"),
     auth: dict = Depends(verify_auth)
 ):
     """Get all history logs for a specific asset"""
     try:
+        # Check if it's a UUID or assetTagId
+        is_id_uuid = is_uuid(asset_id)
+        
         # Verify asset exists
-        asset = await prisma.assets.find_unique(
-            where={"id": asset_id}
-        )
+        if is_id_uuid:
+            asset = await prisma.assets.find_unique(where={"id": asset_id})
+        else:
+            asset = await prisma.assets.find_first(where={"assetTagId": asset_id, "isDeleted": False})
         
         if not asset:
             raise HTTPException(status_code=404, detail="Asset not found")
         
-        # Get all history logs for this asset
+        # Get all history logs for this asset (use the actual asset.id)
         logs_data = await prisma.assetshistorylogs.find_many(
-            where={"assetId": asset_id},
+            where={"assetId": asset.id},
             order={"eventDate": "desc"}
         )
         
@@ -3386,31 +3402,51 @@ async def upload_image_to_asset(
 
 @router.get("/{asset_id}", response_model=AssetResponse)
 async def get_asset(
-    asset_id: str,
+    asset_id: str = Path(..., description="Asset ID (UUID) or assetTagId"),
     auth: dict = Depends(verify_auth)
 ):
-    """Get a single asset by ID"""
+    """Get a single asset by ID or assetTagId"""
     try:
-        # Find the asset
-        asset_data = await prisma.assets.find_unique(
-            where={"id": asset_id},
-            include={
-                "category": True,
-                "subCategory": True,
-                "checkouts": {
-                    "include": {
-                        "employeeUser": True,
-                        "checkins": True
-                    }
+        # Check if it's a UUID or assetTagId
+        is_id_uuid = is_uuid(asset_id)
+        
+        include_options = {
+            "category": True,
+            "subCategory": True,
+            "checkouts": {
+                "include": {
+                    "employeeUser": True,
+                    "checkins": True
+                }
+            },
+            "leases": {
+                "include": {
+                    "returns": True
+                }
+            },
+            "reservations": {
+                "include": {
+                    "employeeUser": True
                 },
-                "leases": {
-                    "include": {
-                        "returns": True
-                    }
-                },
-                "auditHistory": True
-            }
-        )
+                "order_by": {
+                    "reservationDate": "desc"
+                }
+            },
+            "auditHistory": True
+        }
+        
+        # Find the asset by UUID or assetTagId
+        if is_id_uuid:
+            asset_data = await prisma.assets.find_unique(
+                where={"id": asset_id},
+                include=include_options
+            )
+        else:
+            # Look up by assetTagId
+            asset_data = await prisma.assets.find_first(
+                where={"assetTagId": asset_id, "isDeleted": False},
+                include=include_options
+            )
         
         if not asset_data:
             raise HTTPException(status_code=404, detail=f"Asset with ID {asset_id} not found")
@@ -3456,11 +3492,18 @@ async def get_asset(
                         department=checkout.employeeUser.department
                     )
                 
+                # Format checkins
+                checkins_list = []
+                if checkout.checkins:
+                    for checkin in checkout.checkins:
+                        checkins_list.append(CheckinInfo(id=str(checkin.id)))
+                
                 checkouts_list.append(CheckoutInfo(
                     id=str(checkout.id),
                     checkoutDate=checkout.checkoutDate,
                     expectedReturnDate=checkout.expectedReturnDate,
-                    employeeUser=employee_info
+                    employeeUser=employee_info,
+                    checkins=checkins_list if checkins_list else None
                 ))
         
         # Format leases
@@ -3472,6 +3515,27 @@ async def get_asset(
                     leaseStartDate=lease.leaseStartDate,
                     leaseEndDate=lease.leaseEndDate,
                     lessee=lease.lessee
+                ))
+        
+        # Format reservations
+        reservations_list = []
+        if asset_data.reservations:
+            for reservation in asset_data.reservations:
+                employee_info = None
+                if reservation.employeeUser:
+                    employee_info = EmployeeInfo(
+                        id=str(reservation.employeeUser.id),
+                        name=str(reservation.employeeUser.name),
+                        email=str(reservation.employeeUser.email),
+                        department=reservation.employeeUser.department
+                    )
+                reservations_list.append(ReservationInfo(
+                    id=str(reservation.id),
+                    reservationType=reservation.reservationType,
+                    department=reservation.department,
+                    purpose=reservation.purpose,
+                    reservationDate=reservation.reservationDate,
+                    employeeUser=employee_info
                 ))
         
         # Format audit history
@@ -3534,6 +3598,7 @@ async def get_asset(
             isDeleted=asset_data.isDeleted,
             checkouts=checkouts_list if checkouts_list else None,
             leases=leases_list if leases_list else None,
+            reservations=reservations_list if reservations_list else None,
             auditHistory=audit_history_list if audit_history_list else None,
             imagesCount=image_counts.get(asset_data.assetTagId, 0)
         )
@@ -3719,8 +3784,8 @@ async def create_asset(
 
 @router.put("/{asset_id}", response_model=AssetResponse)
 async def update_asset(
-    asset_id: str,
-    asset_data: AssetUpdate,
+    asset_id: str = Path(..., description="Asset ID (UUID) or assetTagId"),
+    asset_data: AssetUpdate = None,
     auth: dict = Depends(verify_auth)
 ):
     """Update an existing asset"""
@@ -3734,20 +3799,27 @@ async def update_asset(
             auth.get("user_id", "system")
         )
         
+        # Check if it's a UUID or assetTagId
+        is_id_uuid = is_uuid(asset_id)
+        
         # Check if asset exists
-        current_asset = await prisma.assets.find_unique(
-            where={"id": asset_id}
-        )
+        if is_id_uuid:
+            current_asset = await prisma.assets.find_unique(where={"id": asset_id})
+        else:
+            current_asset = await prisma.assets.find_first(where={"assetTagId": asset_id, "isDeleted": False})
         
         if not current_asset:
             raise HTTPException(status_code=404, detail="Asset not found")
+        
+        # Use the actual UUID for subsequent operations
+        actual_asset_id = current_asset.id
         
         # Check if assetTagId is being changed and if it already exists
         if asset_data.assetTagId and asset_data.assetTagId != current_asset.assetTagId:
             existing_asset = await prisma.assets.find_first(
                 where={
                     "assetTagId": asset_data.assetTagId,
-                    "id": {"not": asset_id}
+                    "id": {"not": actual_asset_id}
                 }
             )
             if existing_asset:
@@ -3843,7 +3915,7 @@ async def update_asset(
             # Update asset
             # Note: Prisma Python doesn't support 'order' inside 'include', so we'll sort in Python
             updated_asset_data = await transaction.assets.update(
-                where={"id": asset_id},
+                where={"id": actual_asset_id},
                 data=update_data,
                 include={
                     "category": True,
@@ -3860,7 +3932,7 @@ async def update_asset(
             for log in history_logs:
                 await transaction.assetshistorylogs.create(
                     data={
-                        "assetId": asset_id,
+                        "assetId": actual_asset_id,
                         "eventType": "edited",
                         "field": log["field"],
                         "changeFrom": log["changeFrom"],
@@ -3968,7 +4040,7 @@ async def update_asset(
 
 @router.delete("/{asset_id}", response_model=DeleteResponse)
 async def delete_asset(
-    asset_id: str,
+    asset_id: str = Path(..., description="Asset ID (UUID) or assetTagId"),
     permanent: bool = Query(False, description="Permanently delete the asset"),
     auth: dict = Depends(verify_auth)
 ):
@@ -3983,13 +4055,20 @@ async def delete_asset(
             auth.get("user_id", "system")
         )
         
+        # Check if it's a UUID or assetTagId
+        is_id_uuid = is_uuid(asset_id)
+        
         # Check if asset exists
-        existing_asset = await prisma.assets.find_unique(
-            where={"id": asset_id}
-        )
+        if is_id_uuid:
+            existing_asset = await prisma.assets.find_unique(where={"id": asset_id})
+        else:
+            existing_asset = await prisma.assets.find_first(where={"assetTagId": asset_id, "isDeleted": False})
         
         if not existing_asset:
             raise HTTPException(status_code=404, detail="Asset not found")
+        
+        # Use the actual UUID for operations
+        actual_asset_id = existing_asset.id
         
         if permanent:
             # Permanent delete (hard delete)
@@ -3997,7 +4076,7 @@ async def delete_asset(
                 # Log history before deleting
                 await transaction.assetshistorylogs.create(
                     data={
-                        "assetId": asset_id,
+                        "assetId": actual_asset_id,
                         "eventType": "deleted",
                         "actionBy": user_name
                     }
@@ -4005,7 +4084,7 @@ async def delete_asset(
                 
                 # Delete the asset
                 await transaction.assets.delete(
-                    where={"id": asset_id}
+                    where={"id": actual_asset_id}
                 )
             
             return DeleteResponse(
@@ -4018,7 +4097,7 @@ async def delete_asset(
                 # Log history
                 await transaction.assetshistorylogs.create(
                     data={
-                        "assetId": asset_id,
+                        "assetId": actual_asset_id,
                         "eventType": "deleted",
                         "actionBy": user_name
                     }
@@ -4026,7 +4105,7 @@ async def delete_asset(
                 
                 # Soft delete - set isDeleted and deletedAt
                 await transaction.assets.update(
-                    where={"id": asset_id},
+                    where={"id": actual_asset_id},
                     data={
                         "deletedAt": datetime.now(),
                         "isDeleted": True
@@ -4076,25 +4155,29 @@ async def delete_history_log(
 
 @router.patch("/{asset_id}/restore")
 async def restore_asset(
-    asset_id: str,
+    asset_id: str = Path(..., description="Asset ID (UUID) or assetTagId"),
     auth: dict = Depends(verify_auth)
 ):
     """Restore a soft-deleted asset"""
     try:
+        # Check if it's a UUID or assetTagId
+        is_id_uuid = is_uuid(asset_id)
+        
         # Check if asset exists and is soft-deleted
-        asset = await prisma.assets.find_first(
-            where={
-                "id": asset_id,
-                "isDeleted": True
-            }
-        )
+        if is_id_uuid:
+            asset = await prisma.assets.find_first(where={"id": asset_id, "isDeleted": True})
+        else:
+            asset = await prisma.assets.find_first(where={"assetTagId": asset_id, "isDeleted": True})
         
         if not asset:
             raise HTTPException(status_code=404, detail="Asset not found or not deleted")
         
+        # Use the actual UUID for operations
+        actual_asset_id = asset.id
+        
         # Restore asset
         await prisma.assets.update(
-            where={"id": asset_id},
+            where={"id": actual_asset_id},
             data={
                 "deletedAt": None,
                 "isDeleted": False
@@ -4249,3 +4332,652 @@ async def bulk_delete_assets(
     except Exception as e:
         logger.error(f"Error bulk deleting assets: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete assets")
+
+
+# ==================== ASSET PDF GENERATION ====================
+
+from fastapi.responses import Response
+from pydantic import BaseModel
+
+class PDFSections(BaseModel):
+    """Sections to include in the PDF"""
+    basicDetails: bool = True
+    checkout: bool = True
+    creation: bool = True
+    auditHistory: bool = True
+    maintenance: bool = True
+    reservations: bool = True
+    historyLogs: bool = True
+    photos: bool = True
+    documents: bool = True
+
+
+def format_date_pdf(date_val) -> str:
+    """Format date for PDF"""
+    if not date_val:
+        return 'N/A'
+    try:
+        if isinstance(date_val, str):
+            date_val = datetime.fromisoformat(date_val.replace('Z', '+00:00'))
+        return date_val.strftime('%b %d, %Y')
+    except:
+        return 'N/A'
+
+
+def format_datetime_pdf(date_val) -> str:
+    """Format datetime for PDF"""
+    if not date_val:
+        return 'N/A'
+    try:
+        if isinstance(date_val, str):
+            date_val = datetime.fromisoformat(date_val.replace('Z', '+00:00'))
+        return date_val.strftime('%b %d, %Y %I:%M %p')
+    except:
+        return 'N/A'
+
+
+def format_currency_pdf(value) -> str:
+    """Format currency for PDF (using PHP instead of ₱ for font compatibility)"""
+    if value is None:
+        return 'N/A'
+    try:
+        return f"PHP {float(value):,.2f}"
+    except:
+        return 'N/A'
+
+
+@router.post("/{asset_id}/pdf")
+async def generate_asset_pdf(
+    asset_id: str = Path(..., description="Asset ID (UUID) or assetTagId"),
+    sections: PDFSections = None,
+    auth: dict = Depends(verify_auth)
+):
+    """Generate PDF for a single asset with all its details"""
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        raise HTTPException(status_code=500, detail="PDF generation not available - fpdf2 not installed")
+    
+    if sections is None:
+        sections = PDFSections()
+    
+    try:
+        # Check if it's a UUID or assetTagId
+        is_id_uuid = is_uuid(asset_id)
+        
+        # Fetch asset with related data
+        if is_id_uuid:
+            asset = await prisma.assets.find_first(
+                where={"id": asset_id, "isDeleted": False},
+                include={
+                    "category": True,
+                    "subCategory": True,
+                    "checkouts": {
+                        "include": {
+                            "employeeUser": True,
+                            "checkins": True
+                        }
+                    },
+                    "auditHistory": True
+                }
+            )
+        else:
+            asset = await prisma.assets.find_first(
+                where={"assetTagId": asset_id, "isDeleted": False},
+                include={
+                    "category": True,
+                    "subCategory": True,
+                    "checkouts": {
+                        "include": {
+                            "employeeUser": True,
+                            "checkins": True
+                        }
+                    },
+                    "auditHistory": True
+                }
+            )
+        
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        
+        # Sort checkouts and audit history
+        if asset.checkouts:
+            asset.checkouts = sorted(asset.checkouts, key=lambda x: x.checkoutDate if x.checkoutDate else datetime.min, reverse=True)[:10]
+        if asset.auditHistory:
+            asset.auditHistory = sorted(asset.auditHistory, key=lambda x: x.auditDate if x.auditDate else datetime.min, reverse=True)
+        
+        # Fetch additional related data
+        maintenances = await prisma.assetsmaintenance.find_many(
+            where={"assetId": asset.id}
+        )
+        maintenances = sorted(maintenances, key=lambda x: x.createdAt if x.createdAt else datetime.min, reverse=True)
+        
+        reservations = await prisma.assetsreserve.find_many(
+            where={"assetId": asset.id},
+            include={"employeeUser": True}
+        )
+        reservations = sorted(reservations, key=lambda x: x.reservationDate if x.reservationDate else datetime.min, reverse=True)
+        
+        history_logs = await prisma.assetshistorylogs.find_many(
+            where={"assetId": asset.id}
+        )
+        history_logs = sorted(history_logs, key=lambda x: x.eventDate if x.eventDate else datetime.min, reverse=True)
+        
+        images = await prisma.assetsimage.find_many(
+            where={"assetTagId": asset.assetTagId}
+        )
+        images = sorted(images, key=lambda x: x.createdAt if x.createdAt else datetime.min, reverse=True)
+        
+        documents = await prisma.assetsdocument.find_many(
+            where={"assetTagId": asset.assetTagId}
+        )
+        documents = sorted(documents, key=lambda x: x.createdAt if x.createdAt else datetime.min, reverse=True)
+        
+        # Find active checkout
+        active_checkout = None
+        if asset.checkouts:
+            for checkout in asset.checkouts:
+                if not checkout.checkins or len(checkout.checkins) == 0:
+                    active_checkout = checkout
+                    break
+        
+        assigned_to = active_checkout.employeeUser.name if active_checkout and active_checkout.employeeUser else 'N/A'
+        issued_to = asset.issuedTo or 'N/A'
+        
+        # Find creator from history logs
+        creation_log = next((log for log in history_logs if log.eventType == 'added'), None)
+        created_by = creation_log.actionBy if creation_log else 'N/A'
+        
+        # Create PDF
+        class AssetPDF(FPDF):
+            def __init__(self):
+                super().__init__(orientation='P', format='A4')
+                self.set_auto_page_break(auto=True, margin=15)
+                
+            def header(self):
+                pass  # Custom header in body
+                
+            def footer(self):
+                self.set_y(-15)
+                self.set_font('Helvetica', 'I', 8)
+                self.set_text_color(128, 128, 128)
+                self.cell(0, 10, f'Page {self.page_no()}', align='C')
+        
+        pdf = AssetPDF()
+        pdf.add_page()
+        
+        # Title
+        pdf.set_font('Helvetica', 'B', 18)
+        pdf.set_text_color(102, 126, 234)
+        pdf.cell(0, 10, f'Asset Details: {asset.assetTagId}', new_x='LMARGIN', new_y='NEXT', align='C')
+        
+        pdf.set_font('Helvetica', '', 10)
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(0, 6, f'Description: {asset.description or "N/A"}', new_x='LMARGIN', new_y='NEXT', align='C')
+        pdf.cell(0, 6, f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}', new_x='LMARGIN', new_y='NEXT', align='C')
+        pdf.ln(10)
+        
+        def add_section_title(title: str):
+            pdf.set_font('Helvetica', 'B', 12)
+            pdf.set_text_color(51, 51, 51)
+            pdf.set_fill_color(240, 240, 240)
+            pdf.cell(0, 8, title, new_x='LMARGIN', new_y='NEXT', fill=True)
+            pdf.ln(2)
+        
+        def add_key_value_row(key: str, value: str, wrap: bool = False):
+            value_str = str(value) if value else 'N/A'
+            key_width = 70
+            value_width = pdf.w - pdf.l_margin - pdf.r_margin - key_width
+            
+            if wrap and len(value_str) > 50:
+                # For long text, use multi_cell with proper row height
+                # Calculate needed height
+                pdf.set_font('Helvetica', '', 9)
+                chars_per_line = int(value_width / 2.2)  # Approximate chars per line
+                lines_needed = max(1, -(-len(value_str) // chars_per_line))  # Ceiling division
+                row_height = max(6, lines_needed * 5)
+                
+                start_x = pdf.get_x()
+                start_y = pdf.get_y()
+                
+                # Draw key cell
+                pdf.set_font('Helvetica', 'B', 9)
+                pdf.set_text_color(80, 80, 80)
+                pdf.cell(key_width, row_height, key, border=1)
+                
+                # Draw value cell border
+                pdf.cell(value_width, row_height, '', border=1)
+                
+                # Fill value with multi_cell
+                pdf.set_xy(start_x + key_width + 1, start_y + 1)
+                pdf.set_font('Helvetica', '', 9)
+                pdf.set_text_color(51, 51, 51)
+                pdf.multi_cell(value_width - 2, 5, value_str, border=0, align='L')
+                
+                pdf.set_xy(start_x, start_y + row_height)
+            else:
+                # Standard single-line row
+                pdf.set_font('Helvetica', 'B', 9)
+                pdf.set_text_color(80, 80, 80)
+                pdf.cell(key_width, 6, key, border=1)
+                pdf.set_font('Helvetica', '', 9)
+                pdf.set_text_color(51, 51, 51)
+                pdf.cell(value_width, 6, value_str[:60], border=1, new_x='LMARGIN', new_y='NEXT')
+        
+        def add_table(headers: list, rows: list):
+            if not rows:
+                pdf.set_font('Helvetica', 'I', 9)
+                pdf.cell(0, 6, 'No records found', new_x='LMARGIN', new_y='NEXT')
+                return
+            
+            num_cols = len(headers)
+            col_width = (pdf.w - 20) / num_cols
+            
+            # Header
+            pdf.set_font('Helvetica', 'B', 8)
+            pdf.set_fill_color(102, 126, 234)
+            pdf.set_text_color(255, 255, 255)
+            for header in headers:
+                pdf.cell(col_width, 7, str(header)[:15], border=1, fill=True, align='C')
+            pdf.ln()
+            
+            # Rows
+            pdf.set_font('Helvetica', '', 7)
+            pdf.set_text_color(51, 51, 51)
+            fill = False
+            for row in rows:
+                if pdf.get_y() > 260:
+                    pdf.add_page()
+                    # Re-add header
+                    pdf.set_font('Helvetica', 'B', 8)
+                    pdf.set_fill_color(102, 126, 234)
+                    pdf.set_text_color(255, 255, 255)
+                    for header in headers:
+                        pdf.cell(col_width, 7, str(header)[:15], border=1, fill=True, align='C')
+                    pdf.ln()
+                    pdf.set_font('Helvetica', '', 7)
+                    pdf.set_text_color(51, 51, 51)
+                
+                pdf.set_fill_color(248, 248, 248) if fill else pdf.set_fill_color(255, 255, 255)
+                for cell in row:
+                    pdf.cell(col_width, 6, str(cell)[:20] if cell else '-', border=1, fill=fill)
+                pdf.ln()
+                fill = not fill
+        
+        # Basic Details Section
+        if sections.basicDetails:
+            add_section_title('Basic Details')
+            add_key_value_row('Asset Tag ID', asset.assetTagId)
+            add_key_value_row('Purchase Date', format_date_pdf(asset.purchaseDate))
+            add_key_value_row('Cost', format_currency_pdf(asset.cost))
+            add_key_value_row('Brand', asset.brand or 'N/A')
+            add_key_value_row('Model', asset.model or 'N/A', wrap=True)
+            add_key_value_row('Serial No', asset.serialNo or 'N/A')
+            add_key_value_row('Site', asset.site or 'N/A')
+            add_key_value_row('Location', asset.location or 'N/A')
+            add_key_value_row('Category', asset.category.name if asset.category else 'N/A')
+            add_key_value_row('Sub-Category', asset.subCategory.name if asset.subCategory else 'N/A')
+            add_key_value_row('Department', asset.department or 'N/A')
+            add_key_value_row('Assigned To', assigned_to)
+            add_key_value_row('Issued To', issued_to)
+            add_key_value_row('Status', asset.status or 'N/A')
+            add_key_value_row('Owner', asset.owner or 'N/A')
+            add_key_value_row('PO Number', asset.poNumber or 'N/A')
+            add_key_value_row('Purchased From', asset.purchasedFrom or 'N/A')
+            add_key_value_row('Xero Asset No', asset.xeroAssetNo or 'N/A')
+            add_key_value_row('PBI Number', asset.pbiNumber or 'N/A')
+            add_key_value_row('Payment Voucher', asset.paymentVoucherNumber or 'N/A')
+            add_key_value_row('Asset Type', asset.assetType or 'N/A')
+            add_key_value_row('Delivery Date', format_date_pdf(asset.deliveryDate))
+            add_key_value_row('Old Asset Tag', asset.oldAssetTag or 'N/A')
+            add_key_value_row('QR Code', asset.qr or 'N/A')
+            add_key_value_row('Additional Info', asset.additionalInformation or 'N/A', wrap=True)
+            add_key_value_row('Remarks', asset.remarks or 'N/A', wrap=True)
+            add_key_value_row('Unaccounted Inventory', asset.unaccountedInventory or 'N/A')
+            add_key_value_row('Description', asset.description or 'N/A', wrap=True)
+            pdf.ln(5)
+        
+        # Checkout Section
+        if sections.checkout and active_checkout:
+            add_section_title('Current Checkout')
+            add_key_value_row('Checkout Date', format_date_pdf(active_checkout.checkoutDate))
+            add_key_value_row('Expected Return', format_date_pdf(active_checkout.expectedReturnDate))
+            if active_checkout.employeeUser:
+                add_key_value_row('Assigned To', active_checkout.employeeUser.name or 'N/A')
+                add_key_value_row('Employee Email', active_checkout.employeeUser.email or 'N/A')
+            pdf.ln(5)
+        
+        # Creation Section
+        if sections.creation:
+            add_section_title('Creation Info')
+            add_key_value_row('Created By', created_by)
+            add_key_value_row('Created At', format_datetime_pdf(asset.createdAt))
+            add_key_value_row('Updated At', format_datetime_pdf(asset.updatedAt))
+            pdf.ln(5)
+        
+        # Audit History Section
+        if sections.auditHistory:
+            add_section_title('Audit History')
+            if asset.auditHistory and len(asset.auditHistory) > 0:
+                headers = ['Date', 'Type', 'Status', 'Auditor', 'Notes']
+                rows = [
+                    [
+                        format_date_pdf(a.auditDate),
+                        a.auditType or 'N/A',
+                        a.status or 'N/A',
+                        a.auditor or 'N/A',
+                        a.notes or '-'
+                    ]
+                    for a in asset.auditHistory[:20]  # Limit to 20
+                ]
+                add_table(headers, rows)
+            else:
+                pdf.set_font('Helvetica', 'I', 9)
+                pdf.set_text_color(128, 128, 128)
+                pdf.cell(0, 8, 'No audit records found.', new_x='LMARGIN', new_y='NEXT')
+                pdf.set_text_color(51, 51, 51)
+            pdf.ln(5)
+        
+        # Maintenance Section
+        if sections.maintenance:
+            add_section_title('Maintenance Records')
+            if maintenances and len(maintenances) > 0:
+                headers = ['Title', 'Status', 'Due Date', 'Completed', 'Cost']
+                rows = [
+                    [
+                        m.title or 'N/A',
+                        m.status or 'N/A',
+                        format_date_pdf(m.dueDate),
+                        format_date_pdf(m.dateCompleted),
+                        format_currency_pdf(m.cost)
+                    ]
+                    for m in maintenances[:20]
+                ]
+                add_table(headers, rows)
+            else:
+                pdf.set_font('Helvetica', 'I', 9)
+                pdf.set_text_color(128, 128, 128)
+                pdf.cell(0, 8, 'No maintenance records found.', new_x='LMARGIN', new_y='NEXT')
+                pdf.set_text_color(51, 51, 51)
+            pdf.ln(5)
+        
+        # Reservation Records Section
+        if sections.reservations:
+            add_section_title('Reservation Records')
+            if reservations and len(reservations) > 0:
+                headers = ['Type', 'Reserved For', 'Purpose', 'Date']
+                rows = [
+                    [
+                        r.reservationType or 'N/A',
+                        r.employeeUser.name if r.employeeUser else (r.department or 'N/A'),
+                        r.purpose or '-',
+                        format_date_pdf(r.reservationDate)
+                    ]
+                    for r in reservations[:20]
+                ]
+                add_table(headers, rows)
+            else:
+                pdf.set_font('Helvetica', 'I', 9)
+                pdf.set_text_color(128, 128, 128)
+                pdf.cell(0, 8, 'No reservation records found.', new_x='LMARGIN', new_y='NEXT')
+                pdf.set_text_color(51, 51, 51)
+            pdf.ln(5)
+        
+        # History Logs Section
+        if sections.historyLogs:
+            add_section_title('History Logs')
+            if history_logs and len(history_logs) > 0:
+                headers = ['Date', 'Event', 'Field', 'From', 'To', 'By']
+                rows = [
+                    [
+                        format_date_pdf(log.eventDate),
+                        log.eventType or 'N/A',
+                        (log.field or '-').capitalize(),
+                        log.changeFrom or '-',
+                        log.changeTo or '-',
+                        log.actionBy or 'N/A'
+                    ]
+                    for log in history_logs[:30]
+                ]
+                add_table(headers, rows)
+            else:
+                pdf.set_font('Helvetica', 'I', 9)
+                pdf.set_text_color(128, 128, 128)
+                pdf.cell(0, 8, 'No history logs found.', new_x='LMARGIN', new_y='NEXT')
+                pdf.set_text_color(51, 51, 51)
+            pdf.ln(5)
+        
+        # Photos Section - table with embedded images
+        if sections.photos:
+            add_section_title('Photos')
+            if images and len(images) > 0:
+                import httpx
+                import tempfile
+                import os as os_module
+                
+                # Table header
+                col_widths = [70, 40, 35, 45]  # Image, Type, Size, Uploaded
+                row_height = 50  # Taller rows to fit images
+                
+                pdf.set_font('Helvetica', 'B', 8)
+                pdf.set_fill_color(102, 126, 234)  # Blue header
+                pdf.set_text_color(255, 255, 255)  # White text
+                pdf.cell(col_widths[0], 7, 'Image', border=1, fill=True, align='C')
+                pdf.cell(col_widths[1], 7, 'Type', border=1, fill=True, align='C')
+                pdf.cell(col_widths[2], 7, 'Size', border=1, fill=True, align='C')
+                pdf.cell(col_widths[3], 7, 'Uploaded', border=1, fill=True, align='C')
+                pdf.ln()
+                
+                for img in images[:10]:  # Limit to 10 images
+                    # Check if need new page
+                    if pdf.get_y() + row_height > 270:
+                        pdf.add_page()
+                        add_section_title('Photos (continued)')
+                        # Re-add header
+                        pdf.set_font('Helvetica', 'B', 8)
+                        pdf.set_fill_color(102, 126, 234)  # Blue header
+                        pdf.set_text_color(255, 255, 255)  # White text
+                        pdf.cell(col_widths[0], 7, 'Image', border=1, fill=True, align='C')
+                        pdf.cell(col_widths[1], 7, 'Type', border=1, fill=True, align='C')
+                        pdf.cell(col_widths[2], 7, 'Size', border=1, fill=True, align='C')
+                        pdf.cell(col_widths[3], 7, 'Uploaded', border=1, fill=True, align='C')
+                        pdf.ln()
+                    
+                    start_x = pdf.get_x()
+                    start_y = pdf.get_y()
+                    
+                    # Draw row cells first (borders)
+                    pdf.cell(col_widths[0], row_height, '', border=1)
+                    pdf.cell(col_widths[1], row_height, '', border=1)
+                    pdf.cell(col_widths[2], row_height, '', border=1)
+                    pdf.cell(col_widths[3], row_height, '', border=1)
+                    
+                    # Try to embed actual image in first cell
+                    img_embedded = False
+                    if img.imageUrl:
+                        try:
+                            with httpx.Client(timeout=10.0) as client:
+                                response = client.get(img.imageUrl)
+                                if response.status_code == 200:
+                                    img_ext = img.imageType.split('/')[-1] if img.imageType else 'jpg'
+                                    if img_ext not in ['jpg', 'jpeg', 'png', 'gif']:
+                                        img_ext = 'jpg'
+                                    
+                                    with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{img_ext}') as tmp_file:
+                                        tmp_file.write(response.content)
+                                        tmp_path = tmp_file.name
+                                    
+                                    # Get image dimensions to maintain aspect ratio
+                                    from PIL import Image as PILImage
+                                    with PILImage.open(tmp_path) as pil_img:
+                                        orig_w, orig_h = pil_img.size
+                                    
+                                    # Calculate scaled dimensions to fit in cell while maintaining aspect ratio
+                                    max_w = col_widths[0] - 4
+                                    max_h = row_height - 4
+                                    
+                                    # Calculate scale factor
+                                    scale_w = max_w / orig_w
+                                    scale_h = max_h / orig_h
+                                    scale = min(scale_w, scale_h)  # Use smaller scale to fit
+                                    
+                                    img_w = orig_w * scale
+                                    img_h = orig_h * scale
+                                    
+                                    # Center image in cell
+                                    img_x = start_x + 2 + (max_w - img_w) / 2
+                                    img_y = start_y + 2 + (max_h - img_h) / 2
+                                    
+                                    pdf.image(tmp_path, x=img_x, y=img_y, w=img_w, h=img_h)
+                                    img_embedded = True
+                                    os_module.unlink(tmp_path)
+                        except Exception as img_error:
+                            logger.warning(f"Failed to embed image: {img_error}")
+                    
+                    if not img_embedded:
+                        pdf.set_xy(start_x + 2, start_y + row_height/2 - 3)
+                        pdf.set_font('Helvetica', 'I', 7)
+                        pdf.set_text_color(150, 150, 150)
+                        pdf.cell(col_widths[0] - 4, 6, 'Image unavailable', align='C')
+                    
+                    # Fill in other columns
+                    pdf.set_font('Helvetica', '', 8)
+                    pdf.set_text_color(51, 51, 51)
+                    
+                    # Type column
+                    pdf.set_xy(start_x + col_widths[0] + 2, start_y + row_height/2 - 3)
+                    pdf.cell(col_widths[1] - 4, 6, img.imageType or 'N/A', align='C')
+                    
+                    # Size column
+                    pdf.set_xy(start_x + col_widths[0] + col_widths[1] + 2, start_y + row_height/2 - 3)
+                    size_kb = f"{(img.imageSize or 0) / 1024:.2f} KB" if img.imageSize else 'N/A'
+                    pdf.cell(col_widths[2] - 4, 6, size_kb, align='C')
+                    
+                    # Uploaded column
+                    pdf.set_xy(start_x + col_widths[0] + col_widths[1] + col_widths[2] + 2, start_y + row_height/2 - 3)
+                    pdf.cell(col_widths[3] - 4, 6, format_date_pdf(img.createdAt), align='C')
+                    
+                    pdf.set_xy(start_x, start_y + row_height)
+                
+                pdf.ln(5)
+            else:
+                pdf.set_font('Helvetica', 'I', 9)
+                pdf.set_text_color(128, 128, 128)
+                pdf.cell(0, 8, 'No photos found.', new_x='LMARGIN', new_y='NEXT')
+                pdf.set_text_color(51, 51, 51)
+                pdf.ln(5)
+        
+        # Documents Section - table format
+        if sections.documents:
+            add_section_title('Documents')
+            if documents and len(documents) > 0:
+                # Table header - File Name, Type, Size, URL, Uploaded
+                doc_col_widths = [35, 20, 20, 85, 30]  # Total ~190
+                
+                pdf.set_font('Helvetica', 'B', 8)
+                pdf.set_fill_color(102, 126, 234)  # Blue header
+                pdf.set_text_color(255, 255, 255)  # White text
+                pdf.cell(doc_col_widths[0], 7, 'File Name', border=1, fill=True, align='C')
+                pdf.cell(doc_col_widths[1], 7, 'Type', border=1, fill=True, align='C')
+                pdf.cell(doc_col_widths[2], 7, 'Size', border=1, fill=True, align='C')
+                pdf.cell(doc_col_widths[3], 7, 'URL', border=1, fill=True, align='C')
+                pdf.cell(doc_col_widths[4], 7, 'Uploaded', border=1, fill=True, align='C')
+                pdf.ln()
+                
+                pdf.set_font('Helvetica', '', 7)
+                pdf.set_text_color(51, 51, 51)
+                
+                for doc in documents[:15]:  # Limit to 15 documents
+                    # Check if need new page
+                    if pdf.get_y() > 265:
+                        pdf.add_page()
+                        add_section_title('Documents (continued)')
+                        # Re-add header
+                        pdf.set_font('Helvetica', 'B', 8)
+                        pdf.set_fill_color(102, 126, 234)  # Blue header
+                        pdf.set_text_color(255, 255, 255)  # White text
+                        pdf.cell(doc_col_widths[0], 7, 'File Name', border=1, fill=True, align='C')
+                        pdf.cell(doc_col_widths[1], 7, 'Type', border=1, fill=True, align='C')
+                        pdf.cell(doc_col_widths[2], 7, 'Size', border=1, fill=True, align='C')
+                        pdf.cell(doc_col_widths[3], 7, 'URL', border=1, fill=True, align='C')
+                        pdf.cell(doc_col_widths[4], 7, 'Uploaded', border=1, fill=True, align='C')
+                        pdf.ln()
+                        pdf.set_font('Helvetica', '', 7)
+                        pdf.set_text_color(51, 51, 51)
+                    
+                    # Calculate row height based on URL length
+                    url = doc.documentUrl or ''
+                    # Estimate characters per line in URL column
+                    chars_per_line = int(doc_col_widths[3] / 1.8)
+                    url_lines = max(1, -(-len(url) // chars_per_line)) if url else 1  # Ceiling division
+                    doc_row_height = max(8, url_lines * 4 + 2)
+                    
+                    start_x = pdf.get_x()
+                    start_y = pdf.get_y()
+                    
+                    # Draw cell borders
+                    pdf.cell(doc_col_widths[0], doc_row_height, '', border=1)
+                    pdf.cell(doc_col_widths[1], doc_row_height, '', border=1)
+                    pdf.cell(doc_col_widths[2], doc_row_height, '', border=1)
+                    pdf.cell(doc_col_widths[3], doc_row_height, '', border=1)
+                    pdf.cell(doc_col_widths[4], doc_row_height, '', border=1)
+                    
+                    # Fill in content
+                    # File Name
+                    pdf.set_xy(start_x + 1, start_y + 1)
+                    file_name = doc.fileName or 'N/A'
+                    if len(file_name) > 15:
+                        # Split into two lines
+                        pdf.multi_cell(doc_col_widths[0] - 2, 4, file_name[:30], align='L')
+                    else:
+                        pdf.set_xy(start_x + 1, start_y + doc_row_height/2 - 2)
+                        pdf.cell(doc_col_widths[0] - 2, 4, file_name, align='L')
+                    
+                    # Type
+                    mime_type = getattr(doc, 'mimeType', None)
+                    doc_type = doc.documentType or (mime_type.split('/')[-1].upper() if mime_type else 'N/A')
+                    pdf.set_xy(start_x + doc_col_widths[0] + 1, start_y + doc_row_height/2 - 2)
+                    pdf.cell(doc_col_widths[1] - 2, 4, doc_type[:10], align='C')
+                    
+                    # Size
+                    size_kb = f"{(doc.documentSize or 0) / 1024:.2f} KB" if doc.documentSize else 'N/A'
+                    pdf.set_xy(start_x + doc_col_widths[0] + doc_col_widths[1] + 1, start_y + doc_row_height/2 - 2)
+                    pdf.cell(doc_col_widths[2] - 2, 4, size_kb, align='C')
+                    
+                    # URL (with word wrap)
+                    pdf.set_xy(start_x + doc_col_widths[0] + doc_col_widths[1] + doc_col_widths[2] + 1, start_y + 1)
+                    pdf.set_text_color(102, 126, 234)
+                    pdf.set_font('Helvetica', '', 6)
+                    pdf.multi_cell(doc_col_widths[3] - 2, 3, url or 'N/A', align='L')
+                    pdf.set_text_color(51, 51, 51)
+                    pdf.set_font('Helvetica', '', 7)
+                    
+                    # Uploaded
+                    pdf.set_xy(start_x + doc_col_widths[0] + doc_col_widths[1] + doc_col_widths[2] + doc_col_widths[3] + 1, start_y + doc_row_height/2 - 2)
+                    pdf.cell(doc_col_widths[4] - 2, 4, format_date_pdf(doc.createdAt), align='C')
+                    
+                    pdf.set_xy(start_x, start_y + doc_row_height)
+            else:
+                pdf.set_font('Helvetica', 'I', 9)
+                pdf.set_text_color(128, 128, 128)
+                pdf.cell(0, 8, 'No documents found.', new_x='LMARGIN', new_y='NEXT')
+                pdf.set_text_color(51, 51, 51)
+        
+        # Generate PDF bytes
+        pdf_content = bytes(pdf.output())
+        
+        filename = f"asset-details-{asset.assetTagId}-{datetime.now().strftime('%Y-%m-%d')}.pdf"
+        
+        return Response(
+            content=pdf_content,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating asset PDF: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")

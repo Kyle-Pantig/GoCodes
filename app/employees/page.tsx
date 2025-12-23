@@ -1270,7 +1270,7 @@ function EmployeesPageContent() {
                                         toast.error('You do not have permission to view assets')
                                         return
                                       }
-                                      router.push(`/assets/details/${checkout.asset.id}`)
+                                      router.push(`/assets/details/${checkout.asset.assetTagId}`)
                                       setIsCheckoutsDialogOpen(false)
                                     }}
                                   >
@@ -1291,7 +1291,7 @@ function EmployeesPageContent() {
                                             toast.error('You do not have permission to check in assets')
                                             return
                                           }
-                                          router.push(`/assets/checkin?assetId=${checkout.asset.id}`)
+                                          router.push(`/assets/checkin?assetId=${checkout.asset.assetTagId}`)
                                           setIsCheckoutsDialogOpen(false)
                                         }}
                                       >
@@ -1305,7 +1305,7 @@ function EmployeesPageContent() {
                                             toast.error('You do not have permission to move assets')
                                             return
                                           }
-                                          router.push(`/assets/move?assetId=${checkout.asset.id}`)
+                                          router.push(`/assets/move?assetId=${checkout.asset.assetTagId}`)
                                           setIsCheckoutsDialogOpen(false)
                                         }}
                                       >
@@ -1325,7 +1325,7 @@ function EmployeesPageContent() {
                                                 toast.error('You do not have permission to dispose assets')
                                                 return
                                               }
-                                              router.push(`/assets/dispose?assetId=${checkout.asset.id}&method=Sold`)
+                                              router.push(`/assets/dispose?assetId=${checkout.asset.assetTagId}&method=Sold`)
                                               setIsCheckoutsDialogOpen(false)
                                             }}
                                           >
@@ -1338,7 +1338,7 @@ function EmployeesPageContent() {
                                                 toast.error('You do not have permission to dispose assets')
                                                 return
                                               }
-                                              router.push(`/assets/dispose?assetId=${checkout.asset.id}&method=Donated`)
+                                              router.push(`/assets/dispose?assetId=${checkout.asset.assetTagId}&method=Donated`)
                                               setIsCheckoutsDialogOpen(false)
                                             }}
                                           >
@@ -1351,7 +1351,7 @@ function EmployeesPageContent() {
                                                 toast.error('You do not have permission to dispose assets')
                                                 return
                                               }
-                                              router.push(`/assets/dispose?assetId=${checkout.asset.id}&method=Scrapped`)
+                                              router.push(`/assets/dispose?assetId=${checkout.asset.assetTagId}&method=Scrapped`)
                                               setIsCheckoutsDialogOpen(false)
                                             }}
                                           >
@@ -1364,7 +1364,7 @@ function EmployeesPageContent() {
                                                 toast.error('You do not have permission to dispose assets')
                                                 return
                                               }
-                                              router.push(`/assets/dispose?assetId=${checkout.asset.id}&method=Lost/Missing`)
+                                              router.push(`/assets/dispose?assetId=${checkout.asset.assetTagId}&method=Lost/Missing`)
                                               setIsCheckoutsDialogOpen(false)
                                             }}
                                           >
@@ -1377,7 +1377,7 @@ function EmployeesPageContent() {
                                                 toast.error('You do not have permission to dispose assets')
                                                 return
                                               }
-                                              router.push(`/assets/dispose?assetId=${checkout.asset.id}&method=Destroyed`)
+                                              router.push(`/assets/dispose?assetId=${checkout.asset.assetTagId}&method=Destroyed`)
                                               setIsCheckoutsDialogOpen(false)
                                             }}
                                           >
@@ -1398,7 +1398,7 @@ function EmployeesPageContent() {
                                                 toast.error('You do not have permission to manage maintenance')
                                                 return
                                               }
-                                              router.push(`/assets/maintenance?assetId=${checkout.asset.id}&status=Scheduled`)
+                                              router.push(`/assets/maintenance?assetId=${checkout.asset.assetTagId}&status=Scheduled`)
                                               setIsCheckoutsDialogOpen(false)
                                             }}
                                           >
@@ -1411,7 +1411,7 @@ function EmployeesPageContent() {
                                                 toast.error('You do not have permission to manage maintenance')
                                                 return
                                               }
-                                              router.push(`/assets/maintenance?assetId=${checkout.asset.id}&status=In progress`)
+                                              router.push(`/assets/maintenance?assetId=${checkout.asset.assetTagId}&status=In progress`)
                                               setIsCheckoutsDialogOpen(false)
                                             }}
                                           >

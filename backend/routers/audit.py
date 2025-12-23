@@ -5,12 +5,18 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from typing import Dict, Any
 from datetime import datetime
 import logging
+import re
 
 from models.audit import AuditCreate, AuditUpdate, AuditsListResponse, AuditDetailResponse, AuditStatsResponse
 from auth import verify_auth
 from database import prisma
 
 logger = logging.getLogger(__name__)
+
+def is_uuid(value: str) -> bool:
+    """Check if a string is a UUID"""
+    uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+    return bool(uuid_pattern.match(value))
 
 router = APIRouter(prefix="/api/assets", tags=["audit"])
 
@@ -31,17 +37,21 @@ async def get_asset_audits(
 ):
     """Get all audit records for a specific asset"""
     try:
+        # Check if it's a UUID or assetTagId
+        is_id_uuid = is_uuid(asset_id)
+        
         # Verify asset exists
-        asset = await prisma.assets.find_unique(
-            where={"id": asset_id}
-        )
+        if is_id_uuid:
+            asset = await prisma.assets.find_unique(where={"id": asset_id})
+        else:
+            asset = await prisma.assets.find_first(where={"assetTagId": asset_id, "isDeleted": False})
         
         if not asset:
             raise HTTPException(status_code=404, detail="Asset not found")
         
-        # Get all audit records for this asset
+        # Get all audit records for this asset (use the actual asset.id)
         audits_data = await prisma.assetsaudithistory.find_many(
-            where={"assetId": asset_id},
+            where={"assetId": asset.id},
             order={"auditDate": "desc"}
         )
         
@@ -78,10 +88,14 @@ async def create_audit(
 ):
     """Create a new audit record for an asset"""
     try:
+        # Check if it's a UUID or assetTagId
+        is_id_uuid = is_uuid(asset_id)
+        
         # Verify asset exists
-        asset = await prisma.assets.find_unique(
-            where={"id": asset_id}
-        )
+        if is_id_uuid:
+            asset = await prisma.assets.find_unique(where={"id": asset_id})
+        else:
+            asset = await prisma.assets.find_first(where={"assetTagId": asset_id, "isDeleted": False})
         
         if not asset:
             raise HTTPException(status_code=404, detail="Asset not found")
@@ -89,10 +103,10 @@ async def create_audit(
         # Parse audit date
         audit_date = parse_date(audit_data.auditDate)
         
-        # Create audit record
+        # Create audit record (use the actual asset.id)
         audit = await prisma.assetsaudithistory.create(
             data={
-                "assetId": asset_id,
+                "assetId": asset.id,
                 "auditType": audit_data.auditType,
                 "auditDate": audit_date,
                 "notes": audit_data.notes,

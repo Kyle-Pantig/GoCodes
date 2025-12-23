@@ -43,11 +43,13 @@ import {
   DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ScrollArea, ScrollBar } from "./ui/scroll-area"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { CheckoutManager } from "@/components/checkout-manager"
 import { AuditHistoryManager } from "@/components/audit-history-manager"
 import { ImagePreviewDialog } from "@/components/dialogs/image-preview-dialog"
 import { DownloadConfirmationDialog } from "@/components/dialogs/download-confirmation-dialog"
+import { DeleteConfirmationDialog } from "@/components/dialogs/delete-confirmation-dialog"
+import { useDeleteAsset } from "@/hooks/use-assets"
 import Image from "next/image"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -106,11 +108,12 @@ function generateBreadcrumbs(pathname: string) {
     // Handle dynamic routes
     let label = routeLabels[currentPath]
     if (!label) {
-      // Check if this is an asset edit page (/assets/[id])
+      // Check if this is an asset edit page (/assets/[assetTagId])
+      // Asset tag IDs are like "SA-001", "SA-002", etc. - not a known subpath
+      const knownAssetSubpaths = ['add', 'checkout', 'checkin', 'move', 'reserve', 'lease', 'lease-return', 'dispose', 'maintenance', 'details']
       if (currentPath.startsWith('/assets/') && paths.length === 2 && paths[0] === 'assets' && isLast) {
-        // Check if segment looks like a UUID (basic check)
-        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-        if (uuidPattern.test(segment)) {
+        if (!knownAssetSubpaths.includes(segment.toLowerCase())) {
+          // This is likely an asset tag ID - show as Edit Asset
           label = 'Edit Asset'
         } else {
           label = segment.charAt(0).toUpperCase() + segment.slice(1)
@@ -538,17 +541,55 @@ export function AppHeader() {
   const [isLoadingAsset, setIsLoadingAsset] = useState(false)
   const [scanMode, setScanMode] = useState<'camera' | 'upload'>('camera')
   const [activeTab, setActiveTab] = useState<'details' | 'media' | 'checkout' | 'audit'>('details')
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  
+  const queryClient = useQueryClient()
+  const deleteAssetMutation = useDeleteAsset()
   const qrScanContainerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const lastScannedCodeRef = useRef<string | null>(null)
   const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  // Extract asset tag ID from path if on edit asset page
+  // Now the URL uses assetTagId directly (e.g., /assets/SA-001) instead of UUID
+  const editAssetTagId = React.useMemo(() => {
+    if (!pathname) return null
+    // Match /assets/[assetTagId] but exclude other asset paths like /assets/checkout, /assets/details, etc.
+    const assetEditPattern = /^\/assets\/([^/]+)$/i
+    const match = pathname.match(assetEditPattern)
+    if (!match) return null
+    
+    // Exclude known subpaths (add, checkout, checkin, etc.)
+    const knownSubpaths = ['add', 'checkout', 'checkin', 'move', 'reserve', 'lease', 'lease-return', 'dispose', 'maintenance', 'details']
+    if (knownSubpaths.includes(match[1].toLowerCase())) return null
+    
+    return match[1]
+  }, [pathname])
   
   // Don't show header on login page
   if (!pathname || pathname === '/login') {
     return null
   }
 
-  const breadcrumbs = generateBreadcrumbs(pathname)
+  // Generate breadcrumbs with asset tag ID if available
+  const crumbs = generateBreadcrumbs(pathname)
+  
+  // If we have an editAssetTagId and we're on the edit asset page, add it as a third level
+  // Now the assetTagId is directly in the URL, so we can show it immediately without fetching
+  if (editAssetTagId) {
+    const lastCrumb = crumbs[crumbs.length - 1]
+    if (lastCrumb && lastCrumb.label === 'Edit Asset') {
+      // Keep "Edit Asset" as non-last item
+      lastCrumb.isLast = false
+      // Add the asset tag ID as the final breadcrumb
+      crumbs.push({
+        label: editAssetTagId,
+        href: `/assets/${editAssetTagId}`,
+        isLast: true,
+      })
+    }
+  }
+
+const breadcrumbs = crumbs
 
   // Find asset by assetTagId
   const findAssetById = async (assetTagId: string): Promise<Asset | null> => {
@@ -591,6 +632,33 @@ export function AppHeader() {
       console.error('Error looking up asset:', error)
       return null
     }
+  }
+
+  // Handle delete - opens confirmation dialog
+  const handleDelete = () => {
+    if (!canDeleteAssets) {
+      toast.error('You do not have permission to delete assets')
+      return
+    }
+    setIsDeleteDialogOpen(true)
+  }
+
+  // Confirm delete - calls the delete mutation
+  const confirmDelete = () => {
+    if (!scannedAsset?.id) return
+    deleteAssetMutation.mutate(scannedAsset.id, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['assets'] })
+        queryClient.invalidateQueries({ queryKey: ['deletedAssets'] })
+        setIsDeleteDialogOpen(false)
+        setQrDialogOpen(false)
+        setScannedAsset(null)
+        toast.success('Asset deleted successfully. It will be permanently deleted after 30 days.')
+      },
+      onError: () => {
+        toast.error('Failed to delete asset')
+      },
+    })
   }
 
   // Handle QR code scan result
@@ -723,7 +791,7 @@ export function AppHeader() {
         <Breadcrumb>
           <BreadcrumbList>
             {breadcrumbs.map((crumb, index) => (
-              <React.Fragment key={crumb.href}>
+              <React.Fragment key={`${crumb.href}-${index}`}>
                 <BreadcrumbItem>
                   {crumb.isLast ? (
                     <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
@@ -950,7 +1018,7 @@ export function AppHeader() {
                             toast.error('You do not have permission to edit assets')
                             return
                           }
-                            router.push(`/assets/${scannedAsset.id}`)
+                            router.push(`/assets/${scannedAsset.assetTagId}`)
                             setQrDialogOpen(false)
                           }}
                         >
@@ -963,7 +1031,7 @@ export function AppHeader() {
                             toast.error('You do not have permission to manage audits')
                             return
                           }
-                            router.push(`/tools/audit?assetId=${scannedAsset.id}`)
+                            router.push(`/tools/audit?assetId=${scannedAsset.assetTagId}`)
                             setQrDialogOpen(false)
                           }}
                         >
@@ -976,7 +1044,7 @@ export function AppHeader() {
                             toast.error('You do not have permission to checkout assets')
                             return
                           }
-                            router.push(`/assets/checkout?assetId=${scannedAsset.id}`)
+                            router.push(`/assets/checkout?assetId=${scannedAsset.assetTagId}`)
                             setQrDialogOpen(false)
                           }}
                         >
@@ -989,7 +1057,7 @@ export function AppHeader() {
                             toast.error('You do not have permission to checkin assets')
                             return
                           }
-                            router.push(`/assets/checkin?assetId=${scannedAsset.id}`)
+                            router.push(`/assets/checkin?assetId=${scannedAsset.assetTagId}`)
                             setQrDialogOpen(false)
                           }}
                         >
@@ -1002,7 +1070,7 @@ export function AppHeader() {
                             toast.error('You do not have permission to move assets')
                             return
                           }
-                            router.push(`/assets/move?assetId=${scannedAsset.id}`)
+                            router.push(`/assets/move?assetId=${scannedAsset.assetTagId}`)
                             setQrDialogOpen(false)
                           }}
                         >
@@ -1015,7 +1083,7 @@ export function AppHeader() {
                             toast.error('You do not have permission to reserve assets')
                             return
                           }
-                            router.push(`/assets/reserve?assetId=${scannedAsset.id}`)
+                            router.push(`/assets/reserve?assetId=${scannedAsset.assetTagId}`)
                             setQrDialogOpen(false)
                           }}
                         >
@@ -1028,7 +1096,7 @@ export function AppHeader() {
                             toast.error('You do not have permission to lease assets')
                             return
                           }
-                              router.push(`/assets/lease?assetId=${scannedAsset.id}`)
+                              router.push(`/assets/lease?assetId=${scannedAsset.assetTagId}`)
                               setQrDialogOpen(false)
                             }}
                           >
@@ -1041,7 +1109,7 @@ export function AppHeader() {
                             toast.error('You do not have permission to return leased assets')
                             return
                           }
-                              router.push(`/assets/lease-return?assetId=${scannedAsset.id}`)
+                              router.push(`/assets/lease-return?assetId=${scannedAsset.assetTagId}`)
                               setQrDialogOpen(false)
                             }}
                           >
@@ -1060,7 +1128,7 @@ export function AppHeader() {
                                 toast.error('You do not have permission to dispose assets')
                                 return
                               }
-                                router.push(`/assets/dispose?assetId=${scannedAsset.id}&method=Sold`)
+                                router.push(`/assets/dispose?assetId=${scannedAsset.assetTagId}&method=Sold`)
                                 setQrDialogOpen(false)
                               }}
                             >
@@ -1072,7 +1140,7 @@ export function AppHeader() {
                                 toast.error('You do not have permission to dispose assets')
                                 return
                               }
-                                router.push(`/assets/dispose?assetId=${scannedAsset.id}&method=Donated`)
+                                router.push(`/assets/dispose?assetId=${scannedAsset.assetTagId}&method=Donated`)
                                 setQrDialogOpen(false)
                               }}
                             >
@@ -1084,7 +1152,7 @@ export function AppHeader() {
                                 toast.error('You do not have permission to dispose assets')
                                 return
                               }
-                                router.push(`/assets/dispose?assetId=${scannedAsset.id}&method=Scrapped`)
+                                router.push(`/assets/dispose?assetId=${scannedAsset.assetTagId}&method=Scrapped`)
                                 setQrDialogOpen(false)
                               }}
                             >
@@ -1096,7 +1164,7 @@ export function AppHeader() {
                                 toast.error('You do not have permission to dispose assets')
                                 return
                               }
-                                router.push(`/assets/dispose?assetId=${scannedAsset.id}&method=Lost/Missing`)
+                                router.push(`/assets/dispose?assetId=${scannedAsset.assetTagId}&method=Lost/Missing`)
                                 setQrDialogOpen(false)
                               }}
                             >
@@ -1108,7 +1176,7 @@ export function AppHeader() {
                                 toast.error('You do not have permission to dispose assets')
                                 return
                               }
-                                router.push(`/assets/dispose?assetId=${scannedAsset.id}&method=Destroyed`)
+                                router.push(`/assets/dispose?assetId=${scannedAsset.assetTagId}&method=Destroyed`)
                                 setQrDialogOpen(false)
                               }}
                             >
@@ -1128,7 +1196,7 @@ export function AppHeader() {
                                 toast.error('You do not have permission to manage maintenance')
                                 return
                               }
-                                router.push(`/assets/maintenance?assetId=${scannedAsset.id}&status=Scheduled`)
+                                router.push(`/assets/maintenance?assetId=${scannedAsset.assetTagId}&status=Scheduled`)
                                 setQrDialogOpen(false)
                               }}
                             >
@@ -1140,7 +1208,7 @@ export function AppHeader() {
                                 toast.error('You do not have permission to manage maintenance')
                                 return
                               }
-                                router.push(`/assets/maintenance?assetId=${scannedAsset.id}&status=In progress`)
+                                router.push(`/assets/maintenance?assetId=${scannedAsset.assetTagId}&status=In progress`)
                                 setQrDialogOpen(false)
                               }}
                             >
@@ -1150,14 +1218,7 @@ export function AppHeader() {
                         </DropdownMenuSub>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
-                            onClick={() => {
-                          if (!canDeleteAssets) {
-                            toast.error('You do not have permission to delete assets')
-                            return
-                          }
-                              router.push(`/assets?delete=${scannedAsset.id}`)
-                              setQrDialogOpen(false)
-                            }}
+                            onClick={handleDelete}
                             className="text-destructive focus:text-destructive"
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
@@ -1309,7 +1370,7 @@ export function AppHeader() {
                   {activeTab === 'checkout' && scannedAsset && (
                     <div className="h-[300px]">
                       <CheckoutManager 
-                        assetId={scannedAsset.id} 
+                        assetId={scannedAsset.assetTagId} 
                         assetTagId={scannedAsset.assetTagId}
                         invalidateQueryKey={[]}
                         readOnly={true}
@@ -1320,7 +1381,7 @@ export function AppHeader() {
                   {activeTab === 'audit' && scannedAsset && (
                     <div className="h-[300px]">
                       <AuditHistoryManager 
-                        assetId={scannedAsset.id} 
+                        assetId={scannedAsset.assetTagId} 
                         assetTagId={scannedAsset.assetTagId}
                         readOnly={true}
                       />
@@ -1362,6 +1423,18 @@ export function AppHeader() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        onConfirm={confirmDelete}
+        itemName={scannedAsset?.assetTagId || ''}
+        isLoading={deleteAssetMutation.isPending}
+        title={`Move ${scannedAsset?.assetTagId || 'Asset'} to Trash?`}
+        description="This asset will be moved to Trash and can be restored later if needed."
+        confirmLabel="Move to Trash"
+      />
     </>
   )
 }

@@ -47,6 +47,15 @@ export interface AuditHistoryInfo {
   notes: string | null
 }
 
+export interface ReservationInfo {
+  id: string
+  reservationType: string | null
+  department: string | null
+  purpose: string | null
+  reservationDate: Date | null
+  employeeUser: EmployeeInfo | null
+}
+
 export interface Asset {
   id: string
   assetTagId: string
@@ -90,6 +99,7 @@ export interface Asset {
   isDeleted: boolean
   checkouts: CheckoutInfo[] | null
   leases: LeaseInfo[] | null
+  reservations: ReservationInfo[] | null
   auditHistory: AuditHistoryInfo[] | null
   imagesCount: number
 }
@@ -240,6 +250,14 @@ interface AssetApiResponse {
     leaseEndDate: string | null
     lessee: string | null
   }>
+  reservations?: Array<{
+    id: string
+    reservationType: string | null
+    department: string | null
+    purpose: string | null
+    reservationDate: string | null
+    employeeUser: EmployeeInfo | null
+  }>
   auditHistory?: Array<{
     id: string
     auditDate: string
@@ -271,6 +289,10 @@ function convertAssetDates(asset: AssetApiResponse): Asset {
       ...lease,
       leaseStartDate: new Date(lease.leaseStartDate),
       leaseEndDate: lease.leaseEndDate ? new Date(lease.leaseEndDate) : null,
+    })) || null,
+    reservations: asset.reservations?.map((reservation) => ({
+      ...reservation,
+      reservationDate: reservation.reservationDate ? new Date(reservation.reservationDate) : null,
     })) || null,
     auditHistory: asset.auditHistory?.map((audit) => ({
       ...audit,

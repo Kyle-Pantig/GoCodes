@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 from decimal import Decimal
 import logging
+import re
 
 from models.maintenance import MaintenanceCreate, MaintenanceUpdate, MaintenanceResponse, MaintenancesListResponse, MaintenanceDeleteResponse, MaintenanceStatsResponse, MaintenanceInventoryItem
 from auth import verify_auth
@@ -13,12 +14,17 @@ from database import prisma
 
 logger = logging.getLogger(__name__)
 
+def is_uuid(value: str) -> bool:
+    """Check if a string is a UUID"""
+    uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+    return bool(uuid_pattern.match(value))
+
 router = APIRouter(prefix="/api/assets/maintenance", tags=["maintenance"])
 
 
 @router.get("", response_model=MaintenancesListResponse)
 async def list_maintenances(
-    assetId: Optional[str] = Query(None, description="Filter by asset ID"),
+    assetId: Optional[str] = Query(None, description="Filter by asset ID (UUID) or assetTagId"),
     status: Optional[str] = Query(None, description="Filter by status"),
     search: Optional[str] = Query(None, description="Search in title, details, maintenanceBy"),
     searchFields: Optional[str] = Query(None, description="Comma-separated list of fields to search in"),
@@ -33,7 +39,20 @@ async def list_maintenances(
         # Build where clause
         where: Dict[str, Any] = {}
         if assetId:
-            where["assetId"] = assetId
+            # Check if it's a UUID or assetTagId
+            if is_uuid(assetId):
+                where["assetId"] = assetId
+            else:
+                # Look up asset by assetTagId first
+                asset = await prisma.assets.find_first(where={"assetTagId": assetId, "isDeleted": False})
+                if asset:
+                    where["assetId"] = asset.id
+                else:
+                    # Return empty result if asset not found
+                    return MaintenancesListResponse(
+                        maintenances=[],
+                        pagination={"page": page, "pageSize": pageSize, "total": 0, "totalPages": 0}
+                    )
         if status:
             where["status"] = status
         if search:
@@ -484,10 +503,17 @@ async def create_maintenance(
         if maintenance_data.status == 'Cancelled' and not maintenance_data.dateCancelled:
             raise HTTPException(status_code=400, detail="Date cancelled is required when status is Cancelled")
         
-        # Check if asset exists
-        asset = await prisma.assets.find_unique(where={"id": maintenance_data.assetId})
+        # Check if asset exists (support both UUID and assetTagId)
+        if is_uuid(maintenance_data.assetId):
+            asset = await prisma.assets.find_unique(where={"id": maintenance_data.assetId})
+        else:
+            asset = await prisma.assets.find_first(where={"assetTagId": maintenance_data.assetId, "isDeleted": False})
+        
         if not asset:
             raise HTTPException(status_code=404, detail="Asset not found")
+        
+        # Use actual asset.id for database operations
+        actual_asset_id = asset.id
         
         # Validate inventory items if provided
         if maintenance_data.inventoryItems and len(maintenance_data.inventoryItems) > 0:
@@ -522,7 +548,7 @@ async def create_maintenance(
             # Create maintenance record
             maintenance = await transaction.assetsmaintenance.create(
                 data={
-                    "assetId": maintenance_data.assetId,
+                    "assetId": actual_asset_id,
                     "title": maintenance_data.title,
                     "details": maintenance_data.details,
                     "dueDate": parse_date(maintenance_data.dueDate) if maintenance_data.dueDate else None,

@@ -1,7 +1,7 @@
 """
 Cron job endpoints for scheduled tasks
 """
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Query
 from typing import Dict, Any, List, Optional
 import logging
 import os
@@ -12,6 +12,9 @@ import httpx
 from database import prisma
 from utils.report_schedule import calculate_next_run_at, TIMEZONE_OFFSET_HOURS, LOCAL_TIMEZONE
 from utils.pdf_generator import generate_pdf_from_excel_data, is_pdf_available
+
+# Default retention period for soft-deleted items (in days)
+DEFAULT_RETENTION_DAYS = 30
 
 # Try to import Resend for email sending
 try:
@@ -351,5 +354,155 @@ async def send_scheduled_reports(request: Request):
     
     except Exception as e:
         logger.error(f"Cron job error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/cleanup-deleted-assets")
+async def cleanup_deleted_assets(
+    request: Request,
+    retention_days: int = Query(DEFAULT_RETENTION_DAYS, description="Number of days to retain deleted assets before permanent deletion")
+):
+    """
+    Cron job endpoint for permanently deleting expired soft-deleted assets.
+    
+    Assets that have been in the trash for longer than the retention period
+    (default 30 days) will be permanently deleted.
+    
+    Configure Railway/external cron to call this endpoint daily at midnight.
+    Set CRON_SECRET environment variable for security.
+    
+    Example cron schedule: Every day at midnight -> 0 0 * * *
+    """
+    # Verify cron secret for security
+    auth_header = request.headers.get("authorization")
+    cron_secret = os.getenv("CRON_SECRET")
+    
+    if cron_secret and auth_header != f"Bearer {cron_secret}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    try:
+        # Calculate the cutoff date
+        now = datetime.now()
+        cutoff_date = now - timedelta(days=retention_days)
+        
+        logger.info(f"Cleaning up deleted assets older than {cutoff_date} ({retention_days} days retention)")
+        
+        # Find all soft-deleted assets that are older than the retention period
+        expired_assets = await prisma.assets.find_many(
+            where={
+                "isDeleted": True,
+                "deletedAt": {"lte": cutoff_date}
+            }
+        )
+        
+        if not expired_assets:
+            logger.info("No expired deleted assets found for cleanup")
+            return {
+                "success": True,
+                "message": "No expired deleted assets to clean up",
+                "deletedCount": 0,
+                "retentionDays": retention_days,
+                "cutoffDate": cutoff_date.isoformat()
+            }
+        
+        # Get the IDs of assets to delete
+        asset_ids = [asset.id for asset in expired_assets]
+        asset_tag_ids = [asset.assetTagId for asset in expired_assets]
+        
+        logger.info(f"Found {len(asset_ids)} expired deleted assets to permanently delete: {asset_tag_ids}")
+        
+        # Permanently delete the expired assets
+        result = await prisma.assets.delete_many(
+            where={"id": {"in": asset_ids}}
+        )
+        
+        logger.info(f"Successfully permanently deleted {result} expired assets")
+        
+        return {
+            "success": True,
+            "message": f"Permanently deleted {result} expired asset(s)",
+            "deletedCount": result,
+            "deletedAssetTagIds": asset_tag_ids,
+            "retentionDays": retention_days,
+            "cutoffDate": cutoff_date.isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Error cleaning up deleted assets: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/cleanup-deleted-inventory")
+async def cleanup_deleted_inventory(
+    request: Request,
+    retention_days: int = Query(DEFAULT_RETENTION_DAYS, description="Number of days to retain deleted inventory items before permanent deletion")
+):
+    """
+    Cron job endpoint for permanently deleting expired soft-deleted inventory items.
+    
+    Inventory items that have been in the trash for longer than the retention period
+    (default 30 days) will be permanently deleted.
+    
+    Configure Railway/external cron to call this endpoint daily at midnight.
+    Set CRON_SECRET environment variable for security.
+    
+    Example cron schedule: Every day at midnight -> 0 0 * * *
+    """
+    # Verify cron secret for security
+    auth_header = request.headers.get("authorization")
+    cron_secret = os.getenv("CRON_SECRET")
+    
+    if cron_secret and auth_header != f"Bearer {cron_secret}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    try:
+        # Calculate the cutoff date
+        now = datetime.now()
+        cutoff_date = now - timedelta(days=retention_days)
+        
+        logger.info(f"Cleaning up deleted inventory items older than {cutoff_date} ({retention_days} days retention)")
+        
+        # Find all soft-deleted inventory items that are older than the retention period
+        expired_items = await prisma.inventoryitem.find_many(
+            where={
+                "isDeleted": True,
+                "deletedAt": {"lte": cutoff_date}
+            }
+        )
+        
+        if not expired_items:
+            logger.info("No expired deleted inventory items found for cleanup")
+            return {
+                "success": True,
+                "message": "No expired deleted inventory items to clean up",
+                "deletedCount": 0,
+                "retentionDays": retention_days,
+                "cutoffDate": cutoff_date.isoformat()
+            }
+        
+        # Get the IDs of items to delete
+        item_ids = [item.id for item in expired_items]
+        item_codes = [item.itemCode for item in expired_items]
+        
+        logger.info(f"Found {len(item_ids)} expired deleted inventory items to permanently delete: {item_codes}")
+        
+        # Permanently delete the expired inventory items
+        result = await prisma.inventoryitem.delete_many(
+            where={"id": {"in": item_ids}}
+        )
+        
+        logger.info(f"Successfully permanently deleted {result} expired inventory items")
+        
+        return {
+            "success": True,
+            "message": f"Permanently deleted {result} expired inventory item(s)",
+            "deletedCount": result,
+            "deletedItemCodes": item_codes,
+            "retentionDays": retention_days,
+            "cutoffDate": cutoff_date.isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Error cleaning up deleted inventory items: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 

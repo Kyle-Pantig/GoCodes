@@ -6,12 +6,13 @@ import { use } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { ArrowLeft, Sparkles, ImageIcon, Upload, FileText, PlusIcon, Eye, X, Trash2, Package } from "lucide-react"
+import { ArrowLeft, Sparkles, ImageIcon, Upload, FileText, PlusIcon, Eye, X, Trash2, Package, RefreshCw, ChevronLeft } from "lucide-react"
 import Image from "next/image"
 import { motion, AnimatePresence } from "framer-motion"
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useMobileDock } from '@/components/mobile-dock-provider'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { toast } from 'sonner'
 import { useCategories, useSubCategories, useCreateCategory, useCreateSubCategory } from "@/hooks/use-categories"
@@ -141,7 +142,7 @@ async function fetchReserve(assetId: string) {
 
 // Removed updateAsset - now using useUpdateAsset hook from use-assets.ts
 
-export default function EditAssetPage({ params }: { params: Promise<{ id: string }> }) {
+export default function EditAssetPage({ params }: { params: Promise<{ assetTagId: string }> }) {
   const resolvedParams = use(params)
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -149,12 +150,13 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
   const canEditAssets = hasPermission('canEditAssets')
   const canManageSetup = hasPermission('canManageSetup')
   const [, startTransition] = useTransition()
   
-  // Fetch asset data using FastAPI hook
-  const { data: asset, isLoading: assetLoading, error: assetError } = useAsset(resolvedParams.id, !!resolvedParams.id)
+  // Fetch asset data using FastAPI hook - now using assetTagId from URL
+  const { data: asset, isLoading: assetLoading, error: assetError } = useAsset(resolvedParams.assetTagId, !!resolvedParams.assetTagId)
   
   // Update asset mutation using FastAPI hook
   const updateAssetMutation = useUpdateAsset()
@@ -306,10 +308,10 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
       }
 
       startTransition(() => {
-        router.replace(`/assets/${resolvedParams.id}?${params.toString()}`, { scroll: false })
+        router.replace(`/assets/${resolvedParams.assetTagId}?${params.toString()}`, { scroll: false })
       })
     },
-    [searchParams, router, resolvedParams.id, startTransition]
+    [searchParams, router, resolvedParams.assetTagId, startTransition]
   )
 
   const handleTabChange = (tab: 'details' | 'photos' | 'docs' | 'depreciation' | 'maintenance' | 'reserve' | 'audit' | 'history') => {
@@ -318,24 +320,24 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
 
   // Fetch history logs, maintenance, and reserve data for read-only tabs
   const { data: historyData, isLoading: isLoadingHistory } = useQuery({
-    queryKey: ['asset-history', resolvedParams.id],
-    queryFn: () => fetchHistoryLogs(resolvedParams.id),
-    enabled: !!resolvedParams.id && activeTab === 'history',
+    queryKey: ['asset-history', resolvedParams.assetTagId],
+    queryFn: () => fetchHistoryLogs(resolvedParams.assetTagId),
+    enabled: !!resolvedParams.assetTagId && activeTab === 'history',
   })
 
   // Fetch maintenance records using FastAPI hook
   const { data: maintenanceData, isLoading: isLoadingMaintenance } = useAssetMaintenances(
-    resolvedParams.id,
-    !!resolvedParams.id && activeTab === 'maintenance'
+    resolvedParams.assetTagId,
+    !!resolvedParams.assetTagId && activeTab === 'maintenance'
   )
   
   // Delete maintenance mutation using FastAPI hook
   const deleteMaintenanceMutation = useDeleteMaintenance()
 
   const { data: reserveData, isLoading: isLoadingReserve } = useQuery({
-    queryKey: ['asset-reserve', resolvedParams.id],
-    queryFn: () => fetchReserve(resolvedParams.id),
-    enabled: !!resolvedParams.id && activeTab === 'reserve',
+    queryKey: ['asset-reserve', resolvedParams.assetTagId],
+    queryFn: () => fetchReserve(resolvedParams.assetTagId),
+    enabled: !!resolvedParams.assetTagId && activeTab === 'reserve',
   })
 
   const historyLogs = historyData?.logs || []
@@ -367,8 +369,8 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
     
     // Invalidate specific asset and history queries
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['asset', resolvedParams.id], refetchType: 'active' }),
-      queryClient.invalidateQueries({ queryKey: ['asset-history', resolvedParams.id], refetchType: 'active' }),
+      queryClient.invalidateQueries({ queryKey: ['asset', resolvedParams.assetTagId], refetchType: 'active' }),
+      queryClient.invalidateQueries({ queryKey: ['asset-history', resolvedParams.assetTagId], refetchType: 'active' }),
     ])
     
     // If assetTagId changed, also invalidate queries for the old assetTagId
@@ -392,8 +394,8 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
     }
     
     // Refetch the current asset data to update the form
-    await queryClient.refetchQueries({ queryKey: ['asset', resolvedParams.id] })
-  }, [asset?.assetTagId, queryClient, resolvedParams.id])
+    await queryClient.refetchQueries({ queryKey: ['asset', resolvedParams.assetTagId] })
+  }, [asset?.assetTagId, queryClient, resolvedParams.assetTagId])
 
   const loading = updateAssetMutation.isPending
   const [selectedImages, setSelectedImages] = useState<File[]>([])
@@ -434,6 +436,53 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   const imageInputRef = useRef<HTMLInputElement>(null)
   const documentInputRef = useRef<HTMLInputElement>(null)
   const assetTagIdInputRef = useRef<HTMLInputElement>(null)
+
+  // Handle refresh
+  const handleRefresh = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['asset', resolvedParams.assetTagId] })
+    queryClient.invalidateQueries({ queryKey: ['asset-thumbnail', asset?.assetTagId] })
+    queryClient.invalidateQueries({ queryKey: ['assets', 'images', asset?.assetTagId] })
+    queryClient.invalidateQueries({ queryKey: ['assets', 'documents', asset?.assetTagId] })
+    queryClient.invalidateQueries({ queryKey: ['asset-history', resolvedParams.assetTagId] })
+    queryClient.invalidateQueries({ queryKey: ['asset-maintenances', resolvedParams.assetTagId] })
+    queryClient.invalidateQueries({ queryKey: ['asset-reservations', resolvedParams.assetTagId] })
+    toast.success('Asset refreshed')
+  }, [queryClient, resolvedParams.assetTagId, asset?.assetTagId])
+
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile) {
+      setDockContent(
+        <>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => router.back()}
+            className="h-10 w-10 rounded-full btn-glass-elevated"
+            title="Go Back"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleRefresh}
+            className="h-10 w-10 rounded-full btn-glass-elevated"
+            title="Refresh"
+          >
+            <RefreshCw className="h-5 w-5" />
+          </Button>
+        </>
+      )
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (isMobile) {
+        setDockContent(null)
+      }
+    }
+  }, [isMobile, setDockContent, router, handleRefresh])
 
   // Format asset tag as user types
   const formatAssetTag = (value: string): string => {
@@ -518,9 +567,9 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
           setIsGeneratingTag(false)
           return
         }
-        form.setValue("assetTagId", retryTag, { shouldValidate: true })
+        form.setValue("assetTagId", retryTag, { shouldValidate: true, shouldDirty: true })
       } else {
-        form.setValue("assetTagId", generatedTag, { shouldValidate: true })
+        form.setValue("assetTagId", generatedTag, { shouldValidate: true, shouldDirty: true })
       }
 
       // Focus the input
@@ -1003,7 +1052,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
     setIsDeletingMaintenance(true)
     try {
       await deleteMaintenanceMutation.mutateAsync(maintenanceToDelete)
-      queryClient.invalidateQueries({ queryKey: ['asset-maintenance', resolvedParams.id] })
+      queryClient.invalidateQueries({ queryKey: ['asset-maintenance', resolvedParams.assetTagId] })
       toast.success('Maintenance record deleted successfully')
       setIsDeleteMaintenanceDialogOpen(false)
       setMaintenanceToDelete(null)
@@ -1043,7 +1092,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
         headers,
       })
       if (response.ok) {
-        queryClient.invalidateQueries({ queryKey: ['asset-reserve', resolvedParams.id] })
+        queryClient.invalidateQueries({ queryKey: ['asset-reserve', resolvedParams.assetTagId] })
         toast.success('Reservation deleted successfully')
         setIsDeleteReservationDialogOpen(false)
         setReservationToDelete(null)
@@ -1089,8 +1138,8 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
         headers,
       })
       if (response.ok) {
-        queryClient.invalidateQueries({ queryKey: ['asset', resolvedParams.id] })
-        queryClient.invalidateQueries({ queryKey: ['asset-details', resolvedParams.id] })
+        queryClient.invalidateQueries({ queryKey: ['asset', resolvedParams.assetTagId] })
+        queryClient.invalidateQueries({ queryKey: ['asset-details', resolvedParams.assetTagId] })
         toast.success('Audit record deleted successfully')
         setIsDeleteAuditDialogOpen(false)
         setAuditToDelete(null)
@@ -1136,7 +1185,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
         headers,
       })
       if (response.ok) {
-        queryClient.invalidateQueries({ queryKey: ['asset-history', resolvedParams.id] })
+        queryClient.invalidateQueries({ queryKey: ['asset-history', resolvedParams.assetTagId] })
         toast.success('History log deleted successfully')
         setIsDeleteHistoryDialogOpen(false)
         setHistoryLogToDelete(null)
@@ -1174,7 +1223,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
       })
       if (!response.ok) return false
       const data = await response.json()
-      return data.assets?.some((a: { assetTagId: string; id: string }) => a.assetTagId === assetTag && a.id !== resolvedParams.id) || false
+      return data.assets?.some((a: { assetTagId: string; id: string }) => a.assetTagId === assetTag && a.id !== resolvedParams.assetTagId) || false
     } catch {
       return false
     }
@@ -1238,7 +1287,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const updatedAsset = await updateAssetMutation.mutateAsync({ id: resolvedParams.id, ...updateData as any })
+      const updatedAsset = await updateAssetMutation.mutateAsync({ id: resolvedParams.assetTagId, ...updateData as any })
       // Trigger additional cache invalidation for images/documents
       await handleUpdateSuccess(updatedAsset)
 
@@ -1375,9 +1424,51 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
     return formIsDirty || hasPendingFiles
   }, [form.formState.isDirty, asset, selectedImages.length, selectedDocuments.length, selectedExistingImages.length, selectedExistingDocuments.length])
 
-  // Clear form function
+  // Clear form function - reset to original asset values
   const clearForm = () => {
-    router.back()
+    if (asset) {
+      const resetData = {
+        assetTagId: asset.assetTagId || "",
+        description: asset.description || "",
+        brand: asset.brand || "",
+        model: asset.model || "",
+        serialNo: asset.serialNo || "",
+        cost: asset.cost?.toString() || "",
+        assetType: asset.assetType || "",
+        location: asset.location || "",
+        department: asset.department || "",
+        site: asset.site || "",
+        owner: asset.owner || "",
+        issuedTo: asset.issuedTo || "",
+        purchasedFrom: asset.purchasedFrom || "",
+        purchaseDate: asset.purchaseDate ? new Date(asset.purchaseDate).toISOString().split('T')[0] : "",
+        poNumber: asset.poNumber || "",
+        xeroAssetNo: asset.xeroAssetNo || "",
+        remarks: asset.remarks || "",
+        additionalInformation: asset.additionalInformation || "",
+        categoryId: asset.categoryId || "",
+        subCategoryId: asset.subCategoryId || "",
+        qr: asset.qr ? (asset.qr.trim().toUpperCase() === "YES" ? "YES" : asset.qr.trim().toUpperCase() === "NO" ? "NO" : "") : "",
+        oldAssetTag: asset.oldAssetTag || "",
+        deliveryDate: asset.deliveryDate ? new Date(asset.deliveryDate).toISOString().split('T')[0] : "",
+        pbiNumber: asset.pbiNumber || "",
+        paymentVoucherNumber: asset.paymentVoucherNumber || "",
+        depreciableAsset: asset.depreciableAsset || false,
+        depreciableCost: asset.depreciableCost?.toString() || "",
+        salvageValue: asset.salvageValue?.toString() || "",
+        assetLifeMonths: asset.assetLifeMonths?.toString() || "",
+        depreciationMethod: asset.depreciationMethod || "",
+        dateAcquired: asset.dateAcquired ? new Date(asset.dateAcquired).toISOString().split('T')[0] : "",
+        unaccountedInventory: asset.unaccountedInventory || false,
+      }
+      form.reset(resetData)
+      
+      // Clear any pending file selections
+      setSelectedImages([])
+      setSelectedDocuments([])
+      setSelectedExistingImages([])
+      setSelectedExistingDocuments([])
+    }
   }
 
   // Show loading state while permissions or asset are being fetched
@@ -1404,7 +1495,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
               The asset you&apos;re looking for doesn&apos;t exist or has been deleted.
             </p>
           </div>
-          <Link href="/assets">
+          <Link href="/assets" className="hidden md:block">
             <Button variant="outline">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Assets
@@ -1429,7 +1520,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
               You do not have permission to edit assets. Please contact your administrator if you need access.
             </p>
           </div>
-          <Link href="/assets">
+          <Link href="/assets" className="hidden md:block">
             <Button variant="outline">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Assets
@@ -1494,16 +1585,38 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
     return `${diffInYears} ${diffInYears === 1 ? 'year' : 'years'} ago`
   }
 
-  // Get assigned to user from active checkout
+  // Get assigned to user from active checkout or active reservation
   const activeCheckout = asset?.checkouts?.find(
     (checkout) => {
       const checkinsCount = checkout.checkins?.length ?? 0
       return checkinsCount === 0
     }
   )
-  const assignedToUser = (activeCheckout?.employeeUser?.name && activeCheckout.employeeUser.name.trim()) 
-    ? activeCheckout.employeeUser.name 
-    : 'N/A'
+  
+  // Get active reservation (first one since it's already sorted by date desc and filtered by status=Active)
+  const activeReservation = asset?.reservations?.[0]
+  
+  // Determine assigned to display value
+  const getAssignedToDisplay = () => {
+    // If there's an active checkout with employee, show the employee name
+    if (activeCheckout?.employeeUser?.name?.trim()) {
+      return activeCheckout.employeeUser.name
+    }
+    
+    // If asset is reserved and there's an active reservation
+    if (asset?.status?.toLowerCase() === 'reserved' && activeReservation) {
+      if (activeReservation.reservationType === 'Employee' && activeReservation.employeeUser?.name) {
+        return `Reserved for ${activeReservation.employeeUser.name}`
+      }
+      if (activeReservation.reservationType === 'Department' && activeReservation.department) {
+        return `Reserved for ${activeReservation.department}`
+      }
+    }
+    
+    return 'N/A'
+  }
+  
+  const assignedToUser = getAssignedToDisplay()
 
   // Get status badge
   const getStatusBadge = (status: string | null | undefined) => {
@@ -1560,7 +1673,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
-      className="space-y-6 pb-16"
+      className={`space-y-6 ${isFormDirty ? 'pb-16' : ''}`}
     >
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -1570,11 +1683,10 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
             Update asset details and information
           </p>
         </div>
-        <Link href="/assets" className="w-full sm:w-auto">
-          <Button variant="outline" className="w-full sm:w-auto">
+        <Link href="/assets" className="hidden md:block">
+          <Button variant="outline">
             <ArrowLeft className="mr-2 h-4 w-4" />
-            <span className="hidden sm:inline">Back to Assets</span>
-            <span className="sm:hidden">Back</span>
+            Back to Assets
           </Button>
         </Link>
       </div>
@@ -1760,7 +1872,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
       <div className="min-h-[400px]">
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
         <div className="grid gap-2.5 md:grid-cols-2">
-          <AnimatePresence mode="wait">
+          <AnimatePresence>
           {/* Details Tab - Basic Information & Asset Details */}
           {activeTab === 'details' && (
           <motion.div
@@ -3460,7 +3572,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
             animate={{ opacity: 1, y: 0, x: '-50%' }}
             exit={{ opacity: 0, y: 20, x: '-50%' }}
             transition={{ duration: 0.3, ease: "easeOut" }}
-          className="fixed bottom-6 z-50 flex items-center justify-center gap-3"
+          className="fixed bottom-20 md:bottom-6 z-50 flex items-center justify-center gap-3"
           style={{
               left: isMobile 
                 ? '50%'

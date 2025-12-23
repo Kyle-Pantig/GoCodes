@@ -33,6 +33,7 @@ import { UserPlus, X, Check, History, Save, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { cn } from '@/lib/utils'
+import { DeleteConfirmationDialog } from '@/components/dialogs/delete-confirmation-dialog'
 
 interface CheckoutManagerProps {
   assetId: string
@@ -52,6 +53,7 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
   const [selectedDeptEmployeeId, setSelectedDeptEmployeeId] = useState<string | null>(null)
   const [isCommandOpen, setIsCommandOpen] = useState(false)
   const [isDeptCommandOpen, setIsDeptCommandOpen] = useState(false)
+  const [cancelReservationId, setCancelReservationId] = useState<string | null>(null)
 
   // Fetch checkout records
   const { data: checkoutData, isLoading: isLoadingCheckouts } = useQuery({
@@ -199,7 +201,7 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
 
   // Checkout from reservation mutation
   const checkoutFromReservationMutation = useMutation({
-    mutationFn: async ({ reservationId, employeeUserId }: { reservationId: string; employeeUserId: string }) => {
+    mutationFn: async ({ reservationId, employeeUserId, department }: { reservationId: string; employeeUserId: string; department?: string }) => {
       const baseUrl = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true' 
         ? (process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000')
         : ''
@@ -213,14 +215,29 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
         headers['Authorization'] = `Bearer ${session.access_token}`
       }
       
+      // Build request body - include department update if checking out from department reservation
+      const requestBody: {
+        assetIds: string[];
+        employeeUserId: string;
+        checkoutDate: string;
+        updates?: { [key: string]: { department?: string } };
+      } = {
+        assetIds: [assetId],
+        employeeUserId,
+        checkoutDate: new Date().toISOString().split('T')[0],
+      }
+      
+      // If department is provided (from department reservation), include it in updates
+      if (department) {
+        requestBody.updates = {
+          [assetId]: { department }
+        }
+      }
+      
       const response = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          assetIds: [assetId],
-          employeeUserId,
-          checkoutDate: new Date().toISOString().split('T')[0],
-        }),
+        body: JSON.stringify(requestBody),
       })
       if (!response.ok) {
         const error = await response.json()
@@ -459,7 +476,7 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
                         </span>
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <Button
                         onClick={() => {
                           checkoutFromReservationMutation.mutate({
@@ -478,24 +495,19 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
                         ) : (
                           <>
                             <Check className="mr-2 h-4 w-4" />
-                            Checkout to {activeEmployeeReservation.employeeUser.name}
+                            <span className="truncate">Checkout to {activeEmployeeReservation.employeeUser.name}</span>
                           </>
                         )}
                       </Button>
                       <Button
-                        onClick={() => {
-                          if (confirm('Cancel this reservation?')) {
-                            cancelReservationMutation.mutate(activeEmployeeReservation.id)
-                          }
-                        }}
+                        onClick={() => setCancelReservationId(activeEmployeeReservation.id)}
                         disabled={checkoutFromReservationMutation.isPending || cancelReservationMutation.isPending}
                         variant="outline"
+                        title="Cancel reservation"
+                        className="sm:w-auto w-full btn-glass"
                       >
-                        {cancelReservationMutation.isPending ? (
-                          <Spinner className="h-4 w-4" />
-                        ) : (
-                          <XCircle className="h-4 w-4" />
-                        )}
+                        <XCircle className="h-4 w-4 mr-2" />
+                        Cancel
                       </Button>
                     </div>
                   </div>
@@ -503,7 +515,7 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
 
                 {/* Department Reservation Display */}
                 {activeDepartmentReservation && assetStatus === 'Reserved' && activeDepartmentReservation.department && !activeEmployeeReservation && (
-                  <div className="space-y-3 p-3 border rounded-md bg-purple-50/50 dark:bg-purple-950/20">
+                  <div className="space-y-3 p-3 border rounded-md ">
                     <div className="text-sm">
                       <span className="text-muted-foreground">Reserved for Department:</span>{' '}
                       <span className="font-medium">{activeDepartmentReservation.department}</span>
@@ -577,7 +589,7 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
                       })()}
                     </div>
                     
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <Button
                         onClick={() => {
                           if (!selectedDeptEmployeeId) {
@@ -587,6 +599,7 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
                           checkoutFromReservationMutation.mutate({
                             reservationId: activeDepartmentReservation.id,
                             employeeUserId: selectedDeptEmployeeId,
+                            department: activeDepartmentReservation.department || undefined,
                           })
                         }}
                         disabled={checkoutFromReservationMutation.isPending || cancelReservationMutation.isPending || !selectedDeptEmployeeId}
@@ -605,19 +618,14 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
                         )}
                       </Button>
                       <Button
-                        onClick={() => {
-                          if (confirm('Cancel this reservation?')) {
-                            cancelReservationMutation.mutate(activeDepartmentReservation.id)
-                          }
-                        }}
+                        onClick={() => setCancelReservationId(activeDepartmentReservation.id)}
                         disabled={checkoutFromReservationMutation.isPending || cancelReservationMutation.isPending}
                         variant="outline"
+                        title="Cancel reservation"
+                        className="sm:w-auto w-full btn-glass"
                       >
-                        {cancelReservationMutation.isPending ? (
-                          <Spinner className="h-4 w-4" />
-                        ) : (
-                          <XCircle className="h-4 w-4" />
-                        )}
+                        <XCircle className="h-4 w-4 mr-2" />
+                        Cancel
                       </Button>
                     </div>
                   </div>
@@ -789,17 +797,9 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
                 <p className="text-sm">Employee assignment changes will appear here</p>
               </div>
             ) : (
-              <div className="w-full">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                      <TableHead className="min-w-[180px]">Date & Time</TableHead>
-                      <TableHead>Changed From</TableHead>
-                      <TableHead>Changed To</TableHead>
-                    <TableHead>Action By</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              <>
+                {/* Mobile view - cards */}
+                <div className="sm:hidden space-y-3 p-1">
                   {assignedEmployeeLogs.map((log: { 
                     id: string
                     eventDate: string
@@ -813,37 +813,89 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
                       month: 'short',
                       day: 'numeric'
                     }) : '-'
-                      const formattedTime = eventDate ? eventDate.toLocaleTimeString('en-US', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: true
-                      }) : ''
+                    const formattedTime = eventDate ? eventDate.toLocaleTimeString('en-US', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true
+                    }) : ''
                     
                     return (
-                      <TableRow key={log.id}>
-                          <TableCell className="font-medium text-sm whitespace-nowrap">
-                            <div className="flex flex-col">
-                              <span>{formattedDate}</span>
-                              {formattedTime && (
-                                <span className="text-xs text-muted-foreground">{formattedTime}</span>
-                              )}
-                            </div>
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {log.changeFrom || <span className="text-muted-foreground">(empty)</span>}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {log.changeTo || <span className="text-muted-foreground">(empty)</span>}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {log.actionBy}
-                        </TableCell>
-                      </TableRow>
+                      <div key={log.id} className="border rounded-lg p-3 space-y-2">
+                        <div className="flex justify-between items-start">
+                          <div className="text-xs text-muted-foreground">
+                            {formattedDate} {formattedTime && `• ${formattedTime}`}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            by {log.actionBy}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-muted-foreground">{log.changeFrom || '(empty)'}</span>
+                          <span className="text-muted-foreground">→</span>
+                          <span className="font-medium">{log.changeTo || '(empty)'}</span>
+                        </div>
+                      </div>
                     )
                   })}
-                </TableBody>
-              </Table>
-              </div>
+                </div>
+                
+                {/* Desktop view - table */}
+                <div className="hidden sm:block w-full">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-[180px]">Date & Time</TableHead>
+                        <TableHead>Changed From</TableHead>
+                        <TableHead>Changed To</TableHead>
+                        <TableHead>Action By</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {assignedEmployeeLogs.map((log: { 
+                        id: string
+                        eventDate: string
+                        changeFrom?: string
+                        changeTo?: string
+                        actionBy: string
+                      }) => {
+                        const eventDate = log.eventDate ? new Date(log.eventDate) : null
+                        const formattedDate = eventDate ? eventDate.toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
+                        }) : '-'
+                        const formattedTime = eventDate ? eventDate.toLocaleTimeString('en-US', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true
+                        }) : ''
+                        
+                        return (
+                          <TableRow key={log.id}>
+                            <TableCell className="font-medium text-sm whitespace-nowrap">
+                              <div className="flex flex-col">
+                                <span>{formattedDate}</span>
+                                {formattedTime && (
+                                  <span className="text-xs text-muted-foreground">{formattedTime}</span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {log.changeFrom || <span className="text-muted-foreground">(empty)</span>}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {log.changeTo || <span className="text-muted-foreground">(empty)</span>}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {log.actionBy}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )}
           </ScrollArea>
         )}
@@ -851,33 +903,62 @@ export function CheckoutManager({ assetId, assetStatus, invalidateQueryKey = ['a
     </div>
   )
 
+  // Cancel Reservation Confirmation Dialog
+  const cancelConfirmationDialog = (
+    <DeleteConfirmationDialog
+      open={cancelReservationId !== null}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) setCancelReservationId(null)
+      }}
+      onConfirm={() => {
+        if (cancelReservationId) {
+          cancelReservationMutation.mutate(cancelReservationId)
+          setCancelReservationId(null)
+        }
+      }}
+      title="Cancel Reservation"
+      description="Are you sure you want to cancel this reservation? This action cannot be undone."
+      confirmLabel="Cancel Reservation"
+      isLoading={cancelReservationMutation.isPending}
+      loadingLabel="Cancelling..."
+    />
+  )
+
   // If open/onOpenChange props are provided, wrap in Dialog
   if (open !== undefined && onOpenChange !== undefined) {
     return (
-      <Dialog open={open} onOpenChange={(isOpen) => {
-        onOpenChange(isOpen)
-        if (!isOpen) {
-          setEditingCheckoutId(null)
-          setSelectedEmployeeId(null)
-          setSelectedDeptEmployeeId(null)
-          setActiveTab('assign')
-        }
-      }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Manage Employee Assignment</DialogTitle>
-            <DialogDescription>
-              Assign or change employee assignment for checkout records.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 overflow-hidden">
-            {content}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <>
+        <Dialog open={open} onOpenChange={(isOpen) => {
+          onOpenChange(isOpen)
+          if (!isOpen) {
+            setEditingCheckoutId(null)
+            setSelectedEmployeeId(null)
+            setSelectedDeptEmployeeId(null)
+            setActiveTab('assign')
+          }
+        }}>
+          <DialogContent className="max-w-3xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col">
+            <DialogHeader>
+              <DialogTitle>Manage Employee Assignment</DialogTitle>
+              <DialogDescription>
+                Assign or change employee assignment for checkout records.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 overflow-hidden">
+              {content}
+            </div>
+          </DialogContent>
+        </Dialog>
+        {cancelConfirmationDialog}
+      </>
     )
   }
 
   // Otherwise, render content directly (for read-only or embedded use cases)
-  return content
+  return (
+    <>
+      {content}
+      {cancelConfirmationDialog}
+    </>
+  )
 }

@@ -235,7 +235,7 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
                             data.activeCheckouts.slice(0, 10).map((checkout) => (
                               <TableRow key={checkout.id} className="hover:bg-muted/30">
                                 <TableCell className="font-medium text-primary">
-                                  <Link href={`/assets/details/${checkout.asset.id}`} className="hover:underline">
+                                  <Link href={`/assets/details/${checkout.asset.assetTagId}`} className="hover:underline">
                                     {checkout.asset.assetTagId}
                                   </Link>
                                 </TableCell>
@@ -314,7 +314,7 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
                             data.recentCheckins.slice(0, 10).map((checkin) => (
                               <TableRow key={checkin.id} className="hover:bg-muted/30">
                                 <TableCell className="font-medium text-primary">
-                                  <Link href={`/assets/details/${checkin.asset.id}`} className="hover:underline">
+                                  <Link href={`/assets/details/${checkin.asset.assetTagId}`} className="hover:underline">
                                     {checkin.asset.assetTagId}
                                   </Link>
                                 </TableCell>
@@ -385,7 +385,7 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
                             data.assetsUnderRepair.slice(0, 10).map((maintenance) => (
                               <TableRow key={maintenance.id} className="hover:bg-muted/30">
                                 <TableCell className="font-medium text-primary">
-                                  <Link href={`/assets/details/${maintenance.asset.id}`} className="hover:underline">
+                                  <Link href={`/assets/details/${maintenance.asset.assetTagId}`} className="hover:underline">
                                     {maintenance.asset.assetTagId}
                                   </Link>
                                 </TableCell>
@@ -456,7 +456,7 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
                             data.recentMoves.slice(0, 10).map((move) => (
                               <TableRow key={move.id} className="hover:bg-muted/30">
                                 <TableCell className="font-medium text-primary">
-                                  <Link href={`/assets/details/${move.asset.id}`} className="hover:underline">
+                                  <Link href={`/assets/details/${move.asset.assetTagId}`} className="hover:underline">
                                     {move.asset.assetTagId}
                                   </Link>
                                 </TableCell>
@@ -532,7 +532,7 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
                             data.recentReserves.slice(0, 10).map((reserve) => (
                               <TableRow key={reserve.id} className="hover:bg-muted/30">
                                 <TableCell className="font-medium text-primary">
-                                  <Link href={`/assets/details/${reserve.asset.id}`} className="hover:underline">
+                                  <Link href={`/assets/details/${reserve.asset.assetTagId}`} className="hover:underline">
                                     {reserve.asset.assetTagId}
                                   </Link>
                                 </TableCell>
@@ -610,7 +610,7 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
                             data.recentLeases.slice(0, 10).map((lease) => (
                               <TableRow key={lease.id} className="hover:bg-muted/30">
                                 <TableCell className="font-medium text-primary">
-                                  <Link href={`/assets/details/${lease.asset.id}`} className="hover:underline">
+                                  <Link href={`/assets/details/${lease.asset.assetTagId}`} className="hover:underline">
                                     {lease.asset.assetTagId}
                                   </Link>
                                 </TableCell>
@@ -680,7 +680,7 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
                             data.recentReturns.slice(0, 10).map((returnItem) => (
                               <TableRow key={returnItem.id} className="hover:bg-muted/30">
                                 <TableCell className="font-medium text-primary">
-                                  <Link href={`/assets/details/${returnItem.asset.id}`} className="hover:underline">
+                                  <Link href={`/assets/details/${returnItem.asset.assetTagId}`} className="hover:underline">
                                     {returnItem.asset.assetTagId}
                                   </Link>
                                 </TableCell>
@@ -741,7 +741,7 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
                             data.recentDisposes.slice(0, 10).map((dispose) => (
                               <TableRow key={dispose.id} className="hover:bg-muted/30">
                                 <TableCell className="font-medium text-primary">
-                                  <Link href={`/assets/details/${dispose.asset.id}`} className="hover:underline">
+                                  <Link href={`/assets/details/${dispose.asset.assetTagId}`} className="hover:underline">
                                     {dispose.asset.assetTagId}
                                   </Link>
                                 </TableCell>
@@ -802,7 +802,7 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
                             data.recentAssets.slice(0, 10).map((asset) => (
                               <TableRow key={asset.id} className="hover:bg-muted/30">
                                 <TableCell className="font-medium text-primary">
-                                  <Link href={`/assets/details/${asset.asset.id}`} className="hover:underline">
+                                  <Link href={`/assets/details/${asset.asset.assetTagId}`} className="hover:underline">
                                     {asset.asset.assetTagId}
                                   </Link>
                                 </TableCell>
