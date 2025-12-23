@@ -108,14 +108,17 @@ export function CheckoutReportFilters({ filters, onFiltersChange, disabled = fal
         </div>
 
         {/* Due Date Filter */}
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <Label htmlFor="due-date-filter">Due Date</Label>
-          <Input
-            id="due-date-filter"
-            type="date"
-            value={localFilters.dueDate || ''}
-            onChange={(e) => handleFilterChange('dueDate', e.target.value || undefined)}
-          />
+          <div className="w-full overflow-hidden">
+            <Input
+              id="due-date-filter"
+              type="date"
+              value={localFilters.dueDate || ''}
+              onChange={(e) => handleFilterChange('dueDate', e.target.value || undefined)}
+              className="w-full"
+            />
+          </div>
         </div>
 
         {/* Past Due Filter */}
@@ -196,25 +199,31 @@ export function CheckoutReportFilters({ filters, onFiltersChange, disabled = fal
         </div>
 
         {/* Checkout Start Date */}
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <Label htmlFor="start-date">Checkout From</Label>
-          <Input
-            id="start-date"
-            type="date"
-            value={localFilters.startDate || ''}
-            onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
-          />
+          <div className="w-full overflow-hidden">
+            <Input
+              id="start-date"
+              type="date"
+              value={localFilters.startDate || ''}
+              onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
+              className="w-full"
+            />
+          </div>
         </div>
 
         {/* Checkout End Date */}
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <Label htmlFor="end-date">Checkout To</Label>
-          <Input
-            id="end-date"
-            type="date"
-            value={localFilters.endDate || ''}
-            onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
-          />
+          <div className="w-full overflow-hidden">
+            <Input
+              id="end-date"
+              type="date"
+              value={localFilters.endDate || ''}
+              onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
+              className="w-full"
+            />
+          </div>
         </div>
       </div>
 

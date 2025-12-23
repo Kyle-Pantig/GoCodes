@@ -181,27 +181,31 @@ export function DepreciationReportFilters({ filters, onFiltersChange, disabled =
         </div>
 
         {/* Start Date Filter */}
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <Label htmlFor="start-date-filter">Date Acquired From</Label>
-          <Input
-            id="start-date-filter"
-            type="date"
-            value={localFilters.startDate || ''}
-            onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
-            className="w-full"
-          />
+          <div className="w-full overflow-hidden">
+            <Input
+              id="start-date-filter"
+              type="date"
+              value={localFilters.startDate || ''}
+              onChange={(e) => handleFilterChange('startDate', e.target.value || undefined)}
+              className="w-full"
+            />
+          </div>
         </div>
 
         {/* End Date Filter */}
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <Label htmlFor="end-date-filter">Date Acquired To</Label>
-          <Input
-            id="end-date-filter"
-            type="date"
-            value={localFilters.endDate || ''}
-            onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
-            className="w-full"
-          />
+          <div className="w-full overflow-hidden">
+            <Input
+              id="end-date-filter"
+              type="date"
+              value={localFilters.endDate || ''}
+              onChange={(e) => handleFilterChange('endDate', e.target.value || undefined)}
+              className="w-full"
+            />
+          </div>
         </div>
       </div>
 

@@ -193,24 +193,30 @@ export function ReportFilters({ filters, onFiltersChange, disabled = false, hide
         </div>
 
         {/* Date Range */}
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <Label htmlFor="start-date">Start Date</Label>
-          <Input
-            id="start-date"
-            type="date"
-            value={localFilters.startDate || ''}
-            onChange={(e) => handleFilterChange('startDate', e.target.value)}
-          />
+          <div className="w-full overflow-hidden">
+            <Input
+              id="start-date"
+              type="date"
+              value={localFilters.startDate || ''}
+              onChange={(e) => handleFilterChange('startDate', e.target.value)}
+              className="w-full"
+            />
+          </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <Label htmlFor="end-date">End Date</Label>
-          <Input
-            id="end-date"
-            type="date"
-            value={localFilters.endDate || ''}
-            onChange={(e) => handleFilterChange('endDate', e.target.value)}
-          />
+          <div className="w-full overflow-hidden">
+            <Input
+              id="end-date"
+              type="date"
+              value={localFilters.endDate || ''}
+              onChange={(e) => handleFilterChange('endDate', e.target.value)}
+              className="w-full"
+            />
+          </div>
         </div>
       </div>
 
