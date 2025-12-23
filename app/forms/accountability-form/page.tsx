@@ -892,20 +892,14 @@ export default function AccountabilityFormPage() {
             if (xhr.status >= 200 && xhr.status < 300) {
               try {
                 const blob = xhr.response
-      
-                // Create download link
-                const url = window.URL.createObjectURL(blob)
-                const link = document.createElement('a')
-                link.href = url
-                link.download = `Accountability-Form-${selectedEmployee?.name?.replace(/\s+/g, '-') || 'Employee'}-${dateIssued || new Date().toISOString().split('T')[0]}.pdf`
-                document.body.appendChild(link)
-                link.click()
-                document.body.removeChild(link)
-                window.URL.revokeObjectURL(url)
-
-                toast.success('PDF downloaded successfully', { id: 'pdf-generation' })
-
-                // Save form data to database after PDF is successfully downloaded
+                const fileName = `Accountability-Form-${selectedEmployee?.name?.replace(/\s+/g, '-') || 'Employee'}-${dateIssued || new Date().toISOString().split('T')[0]}.pdf`
+                
+                // Detect Safari browser
+                const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+                
+                // Save form data to database FIRST (before download) to ensure it's saved
+                // This prevents Safari's auto-open behavior from interrupting the save
+                let historySaved = false
                 try {
                   const formData = {
                     dateIssued,
@@ -936,22 +930,62 @@ export default function AccountabilityFormPage() {
                     financeDate,
                   }
 
-                  try {
-                    await createAccountabilityForm.mutateAsync({
-                      employeeUserId: selectedEmployeeId,
-                      dateIssued,
-                      department: clientDepartment || selectedEmployee?.department || null,
-                      accountabilityFormNo: accountabilityFormNo || null,
-                      formData,
-                    })
-                    toast.success('Form saved successfully', { id: 'form-save' })
-                  } catch (saveError) {
-                    console.error('Error saving accountability form:', saveError)
-                    toast.error('PDF downloaded but failed to save form history', { id: 'form-save' })
-                  }
+                  await createAccountabilityForm.mutateAsync({
+                    employeeUserId: selectedEmployeeId,
+                    dateIssued,
+                    department: clientDepartment || selectedEmployee?.department || null,
+                    accountabilityFormNo: accountabilityFormNo || null,
+                    formData,
+                  })
+                  historySaved = true
                 } catch (saveError) {
                   console.error('Error saving accountability form:', saveError)
-                  toast.error('PDF downloaded but failed to save form history', { id: 'form-save' })
+                }
+                
+                // Now handle the download
+                const url = window.URL.createObjectURL(blob)
+                
+                if (isSafari) {
+                  // Safari: Open in new tab and let user save manually
+                  // Safari doesn't respect download attribute well
+                  const newWindow = window.open(url, '_blank')
+                  if (newWindow) {
+                    // Give Safari time to load the PDF before revoking
+                    setTimeout(() => {
+                      window.URL.revokeObjectURL(url)
+                    }, 10000)
+                  } else {
+                    // Popup blocked - fallback to link click
+                    const link = document.createElement('a')
+                    link.href = url
+                    link.download = fileName
+                    link.target = '_blank'
+                    document.body.appendChild(link)
+                    link.click()
+                    document.body.removeChild(link)
+                    setTimeout(() => {
+                      window.URL.revokeObjectURL(url)
+                    }, 10000)
+                  }
+                } else {
+                  // Chrome/Firefox: Standard download approach
+                  const link = document.createElement('a')
+                  link.href = url
+                  link.download = fileName
+                  document.body.appendChild(link)
+                  link.click()
+                  document.body.removeChild(link)
+                  // Delay revocation slightly to ensure download starts
+                  setTimeout(() => {
+                    window.URL.revokeObjectURL(url)
+                  }, 1000)
+                }
+
+                if (historySaved) {
+                  toast.success('PDF downloaded and form saved successfully', { id: 'pdf-generation' })
+                } else {
+                  toast.success('PDF downloaded successfully', { id: 'pdf-generation' })
+                  toast.error('Failed to save form history', { id: 'form-save' })
                 }
 
                 resolve()
