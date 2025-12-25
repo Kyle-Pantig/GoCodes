@@ -211,15 +211,15 @@ export function AssetValueChart({ data, isLoading }: AssetValueChartProps) {
             </Select>
           </div>
         </CardHeader>
-        <CardContent className="pb-0 flex-1 flex flex-col relative z-10 gap-4">
+        <CardContent className="pb-0 flex-1 flex flex-col relative z-10 gap-6!">
           {chartData.length > 0 ? (
             <>
               <div className="flex-1 flex items-center justify-center min-h-[250px]">
                 <ChartContainer
                   config={chartConfig}
-                  className="w-full aspect-square max-h-[250px]"
+                  className="w-full aspect-square max-h-[250px] min-w-[250px] min-h-[250px]"
                 >
-                  <RadarChart data={chartData}>
+                  <RadarChart data={chartData} width={250} height={250} cx="50%" cy="50%">
                     <ChartTooltip
                       cursor={false}
                       content={<ChartTooltipContent hideLabel />}

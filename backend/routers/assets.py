@@ -9,6 +9,7 @@ import logging
 import asyncio
 import os
 import re
+import random
 from supabase import create_client, Client
 
 from models.assets import (
@@ -33,7 +34,9 @@ from models.assets import (
     CheckoutInfo,
     LeaseInfo,
     ReservationInfo,
-    AuditHistoryInfo
+    AuditHistoryInfo,
+    GenerateAssetTagRequest,
+    GenerateAssetTagResponse
 )
 from auth import verify_auth, SUPABASE_URL, SUPABASE_ANON_KEY
 from database import prisma
@@ -44,6 +47,57 @@ def is_uuid(value: str) -> bool:
     """Check if a string is a UUID"""
     uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
     return bool(uuid_pattern.match(value))
+
+def get_company_initials(company_name: Optional[str]) -> str:
+    """
+    Extract company initials from company name
+    Handles:
+    - Multiple words: "Shore Agents" -> "SA"
+    - CamelCase/combined words: "ShoreAgents" -> "SA", "ABCCompany" -> "AC"
+    - Single word: "XYZ" -> "XY"
+    """
+    if not company_name or not company_name.strip():
+        return 'AD'  # Default fallback (Asset Dog)
+    
+    trimmed = company_name.strip()
+    
+    # First, try splitting by spaces (multiple words)
+    words = [w for w in trimmed.split() if w]
+    
+    if len(words) >= 2:
+        # Multiple words: take first letter of first two words
+        first = words[0][0].upper()
+        second = words[1][0].upper()
+        return f"{first}{second}"
+    elif len(words) == 1:
+        word = words[0]
+        
+        # Check for camelCase pattern - handles both "ShoreAgents" and "shoreAgents"
+        # Pattern 1: Uppercase letter followed by lowercase, then uppercase (e.g., "ShoreAgents")
+        match1 = re.match(r'^([A-Z][a-z]+)([A-Z][a-z]*)', word)
+        if match1:
+            first_part = match1.group(1)
+            second_part = match1.group(2)
+            return f"{first_part[0].upper()}{second_part[0].upper()}"
+        
+        # Pattern 2: Lowercase followed by uppercase (e.g., "shoreAgents")
+        match2 = re.match(r'^([a-z]+)([A-Z][a-z]*)', word)
+        if match2:
+            first_part = match2.group(1)
+            second_part = match2.group(2)
+            return f"{first_part[0].upper()}{second_part[0].upper()}"
+        
+        # Check for all caps with word boundaries (e.g., "ABCCOMPANY" -> "AC")
+        if word == word.upper() and len(word) > 2:
+            first = word[0]
+            for i in range(1, len(word)):
+                if word[i].isalpha():
+                    return f"{first}{word[i]}"
+        
+        # No camelCase detected: take first 2 letters
+        return trimmed[:2].upper().ljust(2, 'X')
+    
+    return 'AD'  # Default fallback (Asset Dog)
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
@@ -216,6 +270,71 @@ def build_where_clause(
         where_clause["status"] = {"equals": status, "mode": "insensitive"}
     
     return where_clause
+
+
+@router.post("/generate-tag", response_model=GenerateAssetTagResponse)
+async def generate_asset_tag(
+    request: GenerateAssetTagRequest,
+    auth: dict = Depends(verify_auth)
+):
+    """Generate a unique asset tag with dynamic company suffix"""
+    try:
+        user_id = auth.get("user", {}).get("id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Get company info to extract initials
+        company_info = await prisma.companyinfo.find_first(
+            order={"createdAt": "desc"}
+        )
+        
+        # Get company initials (e.g., "Shore Agents" -> "SA")
+        company_suffix = get_company_initials(company_info.companyName if company_info else None)
+        
+        # Get year (from purchase date or current year)
+        if request.purchaseYear:
+            year = str(request.purchaseYear)[-2:]  # Last 2 digits
+        else:
+            year = str(datetime.now().year)[-2:]
+        
+        # Generate unique tag (retry up to 100 times)
+        attempts = 0
+        generated_tag = ''
+        is_unique = False
+        
+        while not is_unique and attempts < 100:
+            # Generate 6-digit random number (000000-999999)
+            random_num = str(random.randint(0, 999999)).zfill(6)
+            
+            # Build tag: YY-XXXXXX[S]-[COMPANY_INITIALS]
+            generated_tag = f"{year}-{random_num}{request.subCategoryLetter}-{company_suffix}"
+            
+            # Check if tag exists
+            exists = await prisma.assets.find_unique(
+                where={"assetTagId": generated_tag}
+            )
+            
+            if not exists:
+                is_unique = True
+            attempts += 1
+        
+        if not is_unique:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to generate unique asset tag after 100 attempts"
+            )
+        
+        return GenerateAssetTagResponse(
+            assetTagId=generated_tag,
+            companySuffix=company_suffix
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating asset tag: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate asset tag")
+
 
 @router.get("", response_model=Union[AssetsResponse, StatusesResponse, SummaryResponse])
 async def get_assets(

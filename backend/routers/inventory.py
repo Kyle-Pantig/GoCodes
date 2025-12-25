@@ -67,7 +67,7 @@ def get_company_initials(company_name: Optional[str]) -> str:
     - Single word: "XYZ" -> "XY"
     """
     if not company_name or not company_name.strip():
-        return 'SA'  # Default fallback
+        return 'AD'  # Default fallback (Asset Dog)
     
     trimmed = company_name.strip()
     
@@ -107,7 +107,7 @@ def get_company_initials(company_name: Optional[str]) -> str:
         # No camelCase detected: take first 2 letters
         return trimmed[:2].upper().ljust(2, 'X')
     
-    return 'SA'
+    return 'AD'  # Default fallback (Asset Dog)
 
 @router.get("/generate-code", response_model=GenerateCodeResponse)
 async def generate_item_code(auth: dict = Depends(verify_auth)):

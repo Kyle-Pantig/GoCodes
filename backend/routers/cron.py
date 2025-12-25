@@ -486,7 +486,20 @@ async def cleanup_deleted_inventory(
         
         logger.info(f"Found {len(item_ids)} expired deleted inventory items to permanently delete: {item_codes}")
         
-        # Permanently delete the expired inventory items
+        # Delete related records first to avoid foreign key constraints
+        # 1. Delete maintenance inventory items (has Restrict constraint)
+        maintenance_items_deleted = await prisma.maintenanceinventoryitem.delete_many(
+            where={"inventoryItemId": {"in": item_ids}}
+        )
+        logger.info(f"Deleted {maintenance_items_deleted} related maintenance inventory item records")
+        
+        # 2. Delete inventory transactions
+        transactions_deleted = await prisma.inventorytransaction.delete_many(
+            where={"inventoryItemId": {"in": item_ids}}
+        )
+        logger.info(f"Deleted {transactions_deleted} related inventory transaction records")
+        
+        # 3. Permanently delete the expired inventory items
         result = await prisma.inventoryitem.delete_many(
             where={"id": {"in": item_ids}}
         )
@@ -498,6 +511,10 @@ async def cleanup_deleted_inventory(
             "message": f"Permanently deleted {result} expired inventory item(s)",
             "deletedCount": result,
             "deletedItemCodes": item_codes,
+            "relatedRecordsDeleted": {
+                "maintenanceInventoryItems": maintenance_items_deleted,
+                "inventoryTransactions": transactions_deleted
+            },
             "retentionDays": retention_days,
             "cutoffDate": cutoff_date.isoformat()
         }

@@ -193,9 +193,6 @@ export function ActivityFeed({ data, isLoading }: ActivityFeedProps) {
               >
                 <tab.icon className="h-4 w-4" />
                 {tab.label}
-                <Badge variant={activeTab === tab.id ? 'default' : 'secondary'} className="ml-1 h-5 px-1.5 min-w-[20px] bg-transparent! bg-[linear-gradient(135deg,rgba(255,255,255,0.2)_0%,rgba(255,255,255,0.1)_100%)] backdrop-blur-md backdrop-saturate-150 border-[1px_solid_rgba(255,255,255,0.3)] shadow-[0_2px_8px_0_rgba(0,0,0,0.1),inset_0_1px_0_0_rgba(255,255,255,0.3)]">
-                  {tab.count}
-                </Badge>
                 {activeTab === tab.id && (
                   <motion.div
                     layoutId="activeTab"

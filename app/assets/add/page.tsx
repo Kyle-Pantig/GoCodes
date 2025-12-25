@@ -55,6 +55,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import {
@@ -482,64 +483,54 @@ export default function AddAssetPage() {
       // Check if subcategory is selected
       const subCategoryId = form.getValues("subCategoryId")
       if (!subCategoryId) {
-        toast.error('Please select a subcategory first to generate the asset tag')
+        toast.error('Please select a category first to generate the asset tag')
         setIsGeneratingTag(false)
         return
       }
 
-      // Get year from purchase date or use current year
-      const purchaseDate = form.getValues("purchaseDate")
-      let year: string
-      if (purchaseDate) {
-        const purchaseYear = new Date(purchaseDate).getFullYear()
-        year = purchaseYear.toString().slice(-2) // Last 2 digits
-      } else {
-        year = new Date().getFullYear().toString().slice(-2)
-      }
-
       // Get first letter of subcategory (required)
-      const currentSubCategoryId = form.getValues("subCategoryId")
-      const selectedSubCategory = subCategories.find(sc => sc.id === currentSubCategoryId)
+      const selectedSubCategory = subCategories.find(sc => sc.id === subCategoryId)
       if (!selectedSubCategory?.name) {
-        toast.error('Please select a valid subcategory first')
+        toast.error('Please select a valid category first')
         setIsGeneratingTag(false)
         return
       }
       const subCategoryLetter = selectedSubCategory.name.charAt(0).toUpperCase()
 
-      // Generate unique tag (retry up to 100 times to find unique)
-      let attempts = 0
-      let generatedTag = ''
-      let isUnique = false
+      // Get year from purchase date or use current year
+      const purchaseDate = form.getValues("purchaseDate")
+      const purchaseYear = purchaseDate 
+        ? new Date(purchaseDate).getFullYear() 
+        : new Date().getFullYear()
 
-      while (!isUnique && attempts < 100) {
-        // Generate 6-digit random number (000000-999999)
-        const randomNum = Math.floor(Math.random() * 1000000).toString().padStart(6, '0')
-        
-        // Build tag: YY-XXXXXX[S]-SA
-        generatedTag = `${year}-${randomNum}${subCategoryLetter}-SA`
-        
-        // Check if tag exists
-        const exists = await checkAssetTagExists(generatedTag)
-        if (!exists) {
-          isUnique = true
-        }
-        attempts++
+      // Call FastAPI endpoint to generate tag with dynamic company suffix
+      const token = await getAuthToken()
+      const response = await fetch(`${getApiBaseUrl()}/api/assets/generate-tag`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          subCategoryLetter,
+          purchaseYear
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Failed to generate asset tag')
       }
 
-      if (!isUnique) {
-        toast.error('Failed to generate unique asset tag. Please try again.')
-        setIsGeneratingTag(false)
-        return
-      }
-
+      const data = await response.json()
+      
       // Set the generated tag and trigger validation
-      form.setValue("assetTagId", generatedTag, { shouldValidate: true })
+      form.setValue("assetTagId", data.assetTagId, { shouldValidate: true })
 
       toast.success('Asset tag generated successfully')
     } catch (error) {
       console.error('Error generating asset tag:', error)
-      toast.error('Failed to generate asset tag')
+      toast.error(error instanceof Error ? error.message : 'Failed to generate asset tag')
     } finally {
       setIsGeneratingTag(false)
     }
@@ -1300,10 +1291,21 @@ export default function AddAssetPage() {
                 <Field>
                   <FieldLabel htmlFor="purchaseDate">Purchase Date</FieldLabel>
                   <FieldContent>
-                    <Input
-                      id="purchaseDate"
-                      type="date"
-                      {...form.register("purchaseDate")}
+                    <Controller
+                      name="purchaseDate"
+                      control={form.control}
+                      render={({ field, fieldState }) => (
+                        <DatePicker
+                          id="purchaseDate"
+                          value={field.value}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          placeholder="June 01, 2025"
+                          error={fieldState.error?.message}
+                          className="gap-2"
+                          labelClassName="hidden"
+                        />
+                      )}
                     />
                   </FieldContent>
                 </Field>

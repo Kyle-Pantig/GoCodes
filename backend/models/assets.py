@@ -280,3 +280,11 @@ class StatusesResponse(BaseModel):
 class SummaryResponse(BaseModel):
     summary: SummaryInfo
 
+class GenerateAssetTagRequest(BaseModel):
+    subCategoryLetter: str
+    purchaseYear: Optional[int] = None
+
+class GenerateAssetTagResponse(BaseModel):
+    assetTagId: str
+    companySuffix: str
+
