@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import type React from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
@@ -75,6 +76,12 @@ export function DepartmentDialog({
     })
   }
 
+  const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    await form.handleSubmit(handleSubmit)(e)
+  }
+
   const handleOpenChange = (newOpen: boolean) => {
     if (!isLoading) {
       onOpenChange(newOpen)
@@ -94,7 +101,7 @@ export function DepartmentDialog({
               : 'Add a new department for assets'}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={form.handleSubmit(handleSubmit)}>
+        <form onSubmit={handleFormSubmit}>
           <div className="space-y-4">
             <Field>
               <FieldLabel htmlFor="department-name">

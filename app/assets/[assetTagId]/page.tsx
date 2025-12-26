@@ -2031,7 +2031,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                                   }}
                                   aria-invalid={form.formState.errors.assetTagId ? "true" : "false"}
                                   placeholder="e.g., 25-016011C"
-                                  className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none rounded-r-none"
+                                  className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none rounded-r-none bg-transparent dark:bg-input/30"
                                   maxLength={10}
                                 />
                               )
@@ -2048,8 +2048,9 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                           variant="outline"
                           onClick={handleGenerateAssetTag}
                           title="Auto-generate asset tag"
-                          className="shrink-0 bg-transparent dark:bg-input/30"
+                          className="h-10 w-10 shrink-0 bg-transparent dark:bg-input/30"
                           disabled={isGeneratingTag}
+                          size="icon"
                         >
                           {isGeneratingTag ? (
                             <Spinner className="h-4 w-4" />
