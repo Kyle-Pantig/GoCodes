@@ -678,7 +678,7 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
   
   const nextMonthDays = []
   const totalCells = trailingDays.length + currentMonthDays.length
-  const remainingCells = 42 - totalCells
+  const remainingCells = 35 - totalCells
   for (let i = 1; i <= remainingCells; i++) {
     nextMonthDays.push(new Date(year, month + 1, i))
   }
