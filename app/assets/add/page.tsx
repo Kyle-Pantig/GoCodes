@@ -787,7 +787,7 @@ export default function AddAssetPage() {
                             type="button"
                             size="icon"
                             variant="outline"
-                            className="h-6 w-6"
+                            className="h-6 w-6 bg-card!"
                             onClick={() => setCategoryDialogOpen(true)}
                           >
                             <PlusIcon className="h-3.5 w-3.5" />
@@ -854,7 +854,7 @@ export default function AddAssetPage() {
                             size="icon"
                             variant="outline"
                             disabled={!selectedCategory}
-                            className="h-6 w-6"
+                            className="h-6 w-6 bg-card!"
                             onClick={() => setSubCategoryDialogOpen(true)}
                           >
                             <PlusIcon className="h-3.5 w-3.5" />
@@ -1035,7 +1035,7 @@ export default function AddAssetPage() {
                               <Button
                                 type="button"
                                 variant="outline"
-                                className="flex items-center gap-2"
+                                className="flex items-center gap-2 bg-card!"
                               >
                                 <Upload className="h-4 w-4" />
                                 Add Images
@@ -1184,7 +1184,7 @@ export default function AddAssetPage() {
                                 <Button
                                   type="button"
                                   variant="outline"
-                                  className="flex items-center gap-2"
+                                  className="flex items-center gap-2 bg-card!"
                                 >
                                   <Upload className="h-4 w-4" />
                                   Add Documents

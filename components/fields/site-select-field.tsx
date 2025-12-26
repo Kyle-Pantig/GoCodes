@@ -118,7 +118,7 @@ export function SiteSelectField({
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="w-full justify-between"
+            className="w-full justify-between bg-card!"
             disabled={disabled || isLoadingSites}
             aria-invalid={error ? 'true' : 'false'}
           >

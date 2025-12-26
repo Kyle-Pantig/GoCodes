@@ -107,7 +107,7 @@ export function CountrySelectField({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            "w-full justify-between",
+            "w-full justify-between bg-card!",
             error && "border-destructive"
           )}
           disabled={disabled || isLoading}

@@ -1117,7 +1117,7 @@ export default function CompanyInfoPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="w-full"
+                    className="w-full bg-card!"
                     onClick={() => primaryLogoInputRef.current?.click()}
                     disabled={saveMutation.isPending}
                   >
@@ -1200,7 +1200,7 @@ export default function CompanyInfoPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="w-full"
+                    className="w-full bg-card!"
                     onClick={() => secondaryLogoInputRef.current?.click()}
                     disabled={saveMutation.isPending}
                   >
