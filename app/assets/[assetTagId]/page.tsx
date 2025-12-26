@@ -773,7 +773,13 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
     }
 
     try {
-      await createCategoryMutation.mutateAsync(data)
+      const result = await createCategoryMutation.mutateAsync(data)
+      // Auto-select the newly created category
+      if (result?.category?.id) {
+        form.setValue("categoryId", result.category.id, { shouldValidate: true, shouldDirty: true })
+        // Reset subcategory when category changes
+        form.setValue("subCategoryId", "", { shouldValidate: true, shouldDirty: true })
+      }
       setCategoryDialogOpen(false)
       toast.success('Category created successfully')
     } catch (error) {
@@ -793,13 +799,17 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
     }
 
     try {
-      await createSubCategoryMutation.mutateAsync({
+      const result = await createSubCategoryMutation.mutateAsync({
         ...data,
         categoryId: selectedCategory,
       })
       // Invalidate and refetch subcategories for the selected category
       await queryClient.invalidateQueries({ queryKey: ["subcategories", selectedCategory] })
       await queryClient.refetchQueries({ queryKey: ["subcategories", selectedCategory] })
+      // Auto-select the newly created subcategory
+      if (result?.subcategory?.id) {
+        form.setValue("subCategoryId", result.subcategory.id, { shouldValidate: true, shouldDirty: true })
+      }
       setSubCategoryDialogOpen(false)
       toast.success('Sub category created successfully')
     } catch (error) {
@@ -2204,6 +2214,11 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                                 <span>Loading sub categories...</span>
                               </div>
                             </SelectItem>
+                          )}
+                          {isSubCategoryDropdownOpen && selectedCategory && !subCategoriesLoading && subCategories.length === 0 && (
+                            <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                              No subcategories available for this category
+                            </div>
                           )}
                         </SelectContent>
                       </Select>

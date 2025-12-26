@@ -822,7 +822,7 @@ export default function AddAssetPage() {
                           variant="outline"
                           onClick={() => handleGenerateAssetTag(false)}
                           title="Auto-generate asset tag"
-                          className="shrink-0 bg-transparent dark:bg-input/30"
+                          className="h-10 w-10 shrink-0 bg-transparent dark:bg-input/30"
                           disabled={isGeneratingTag}
                         >
                           {isGeneratingTag ? (
