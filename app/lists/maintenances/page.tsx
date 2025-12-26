@@ -1318,7 +1318,7 @@ function ListOfMaintenancesPageContent() {
             </div>
           )}
 
-          <div className={cn('h-140 pt-8', isMobile && "h-136")}>
+          <div className={cn('h-140 pt-6', isMobile && "h-136")}>
             {permissionsLoading || (isLoading && !data) ? (
               <div className={cn("flex items-center justify-center py-12", isMobile && "h-136")}>
                 <div className="flex flex-col items-center gap-3">
