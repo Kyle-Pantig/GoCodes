@@ -498,7 +498,7 @@ export default function AddAssetPage() {
       const subCategoryId = form.getValues("subCategoryId")
       if (!subCategoryId) {
         if (!silent) {
-          toast.error('Please select a category first to generate the asset tag')
+        toast.error('Please select a category first to generate the asset tag')
         }
         setIsGeneratingTag(false)
         return
@@ -508,7 +508,7 @@ export default function AddAssetPage() {
       const selectedSubCategory = subCategories.find(sc => sc.id === subCategoryId)
       if (!selectedSubCategory?.name) {
         if (!silent) {
-          toast.error('Please select a valid category first')
+        toast.error('Please select a valid category first')
         }
         setIsGeneratingTag(false)
         return
@@ -546,17 +546,17 @@ export default function AddAssetPage() {
       // Extract and store the company suffix
       const suffix = extractSuffix(fullTag)
       setCompanySuffix(suffix)
-      
+
       // Set the full tag in the form (for validation and submission)
       form.setValue("assetTagId", fullTag, { shouldValidate: true })
 
       if (!silent) {
-        toast.success('Asset tag generated successfully')
+      toast.success('Asset tag generated successfully')
       }
     } catch (error) {
       console.error('Error generating asset tag:', error)
       if (!silent) {
-        toast.error(error instanceof Error ? error.message : 'Failed to generate asset tag')
+      toast.error(error instanceof Error ? error.message : 'Failed to generate asset tag')
       }
     } finally {
       setIsGeneratingTag(false)
@@ -748,38 +748,38 @@ export default function AddAssetPage() {
                               const displayValue = extractMainPart(fullTagValue)
                               
                               return (
-                                <Input
-                                  id="assetTagId"
+                        <Input
+                          id="assetTagId"
                                   value={displayValue}
                                   onChange={(e) => {
-                                    const input = e.target as HTMLInputElement
-                                    const cursorPosition = input.selectionStart || 0
+                                const input = e.target as HTMLInputElement
+                                const cursorPosition = input.selectionStart || 0
                                     const currentMainPart = displayValue
-                                    const newValue = e.target.value
-                                    
+                                const newValue = e.target.value
+                                
                                     // Format only the main part
                                     const formattedMainPart = formatAssetTagMainPart(newValue)
-                                    
-                                    // Calculate new cursor position
+                                
+                                // Calculate new cursor position
                                     const beforeCursor = currentMainPart.substring(0, cursorPosition)
-                                    const nonFormattingBefore = beforeCursor.replace(/-/g, '').length
-                                    
-                                    let newCursorPosition = 0
-                                    let nonFormattingCount = 0
+                                const nonFormattingBefore = beforeCursor.replace(/-/g, '').length
+                                
+                                let newCursorPosition = 0
+                                let nonFormattingCount = 0
                                     for (let i = 0; i < formattedMainPart.length; i++) {
                                       if (formattedMainPart[i] !== '-') {
-                                        nonFormattingCount++
-                                        if (nonFormattingCount > nonFormattingBefore) {
-                                          newCursorPosition = i
-                                          break
-                                        }
-                                      }
-                                      if (nonFormattingCount === nonFormattingBefore) {
-                                        newCursorPosition = i + 1
-                                        break
-                                      }
+                                    nonFormattingCount++
+                                    if (nonFormattingCount > nonFormattingBefore) {
+                                      newCursorPosition = i
+                                      break
                                     }
-                                    
+                                  }
+                                  if (nonFormattingCount === nonFormattingBefore) {
+                                    newCursorPosition = i + 1
+                                    break
+                                  }
+                                }
+                                
                                     // Combine main part with suffix for form value
                                     const fullTag = companySuffix 
                                       ? `${formattedMainPart}-${companySuffix}`
@@ -787,30 +787,30 @@ export default function AddAssetPage() {
                                     
                                     // Set the full tag in the form
                                     field.onChange(fullTag)
-                                    
+                                
                                     // Restore cursor position
-                                    setTimeout(() => {
-                                      if (assetTagIdInputRef.current) {
-                                        assetTagIdInputRef.current.setSelectionRange(
+                                setTimeout(() => {
+                                  if (assetTagIdInputRef.current) {
+                                    assetTagIdInputRef.current.setSelectionRange(
                                           Math.min(newCursorPosition, formattedMainPart.length),
                                           Math.min(newCursorPosition, formattedMainPart.length)
-                                        )
-                                      }
-                                    }, 0)
+                                    )
+                                  }
+                                }, 0)
                                   }}
                                   onBlur={field.onBlur}
                                   ref={(e) => {
-                                    assetTagIdInputRef.current = e
+                                assetTagIdInputRef.current = e
                                     field.ref(e)
                                   }}
-                                  aria-invalid={form.formState.errors.assetTagId ? "true" : "false"}
+                          aria-invalid={form.formState.errors.assetTagId ? "true" : "false"}
                                   placeholder="e.g., 25-016011C"
                                   className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none rounded-r-none"
                                   maxLength={10}
                                 />
                               )
                             }}
-                          />
+                        />
                           {companySuffix && (
                             <span className="px-2 py-2 text-sm font-medium text-muted-foreground border-l border-input bg-muted/50 whitespace-nowrap">
                               -{companySuffix}
@@ -1177,10 +1177,10 @@ export default function AddAssetPage() {
                             <Tooltip 
                               open={tooltipOpen || undefined} 
                               onOpenChange={(open) => {
-                                // Allow manual control when no validation error, or when closing after error
-                                if (!validationError || !open) {
-                                  setTooltipOpen(open ?? false)
-                                }
+                              // Allow manual control when no validation error, or when closing after error
+                              if (!validationError || !open) {
+                                setTooltipOpen(open ?? false)
+                              }
                               }}
                             >
                               <TooltipTrigger asChild>
@@ -1338,10 +1338,10 @@ export default function AddAssetPage() {
                             <Tooltip 
                               open={documentTooltipOpen || undefined} 
                               onOpenChange={(open) => {
-                                // Allow manual control when no validation error, or when closing after error
-                                if (!documentValidationError || !open) {
-                                  setDocumentTooltipOpen(open ?? false)
-                                }
+                              // Allow manual control when no validation error, or when closing after error
+                              if (!documentValidationError || !open) {
+                                setDocumentTooltipOpen(open ?? false)
+                              }
                               }}
                             >
                               <TooltipTrigger asChild>
@@ -1721,7 +1721,7 @@ export default function AddAssetPage() {
                         control={form.control}
                         render={({ field, fieldState }) => (
                           <DatePicker
-                            id="dateAcquired"
+                        id="dateAcquired"
                             value={field.value}
                             onChange={field.onChange}
                             onBlur={field.onBlur}
