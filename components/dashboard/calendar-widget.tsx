@@ -742,7 +742,7 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
         {/* Inner Shadow for Depth */}
         <div className="absolute inset-0 pointer-events-none z-0 rounded-[24px] shadow-[inset_0_2px_4px_0_rgba(0,0,0,0.06)]" />
         
-        <CardHeader className="pb-4 relative z-10 gap-0 sm:gap-4">
+        <CardHeader className="pb-4 relative z-10">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="space-y-1">
               <CardTitle className="flex items-center gap-2">
@@ -916,8 +916,8 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="flex-1 flex flex-col min-h-0 relative z-10 overflow-auto max-h-[calc(100vh-300px)] md:max-h-none">
-          <div className="grid grid-cols-7 gap-1 mb-2">
+        <CardContent className="flex-1 flex flex-col min-h-0 relative z-10 overflow-hidden">
+          <div className="grid grid-cols-7 gap-1 mb-2 shrink-0">
             {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => (
               <div key={day} className="text-xs font-medium text-muted-foreground text-center py-2">
                 {day}
@@ -925,92 +925,94 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
             ))}
           </div>
           
-          <div className="grid grid-cols-7 gap-1 flex-1 auto-rows-[minmax(60px,auto)] md:auto-rows-fr">
-            {allDays.map((date, idx) => {
-              const year = date.getFullYear()
-              const month = String(date.getMonth() + 1).padStart(2, '0')
-              const day = String(date.getDate()).padStart(2, '0')
-              const dateStr = `${year}-${month}-${day}`
-              const events = eventsByDate.get(dateStr) || []
-              const isToday = format(date, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')
-              const isCurrentMonth = date.getMonth() === currentMonth.getMonth()
-              
-              return (
-                <motion.div
-                  key={`${dateStr}-${idx}-${resolvedTheme}`}
-                  whileHover={{ scale: 0.98, backgroundColor: "var(--accent)" }}
-                    onClick={() => handleDateClick(date)}
-                    className={cn(
-                      "group/day-cell relative border rounded-md p-1 flex flex-col cursor-pointer transition-colors min-h-[60px] md:min-h-[80px]",
-                      isCurrentMonth ? 'bg-accent hover:bg-accent/50' : 'bg-muted/20 opacity-50',
-                      isToday && 'ring-2 ring-primary ring-inset'
-                    )}
-                >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={cn(
-                        "text-[10px] font-medium w-fit px-1 rounded",
-                    isToday ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
-                      )}>
-                    {date.getDate()}
-                  </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleAddSchedule(date)
-                        }}
-                        className="opacity-0 group-hover/day-cell:opacity-100 hover:opacity-100 transition-opacity p-0.5 hover:bg-primary/10 rounded"
-                        title="Add schedule"
-                      >
-                        <Plus className="h-3 w-3 text-muted-foreground" />
-                      </button>
-                    </div>
-                  
-                  <div className="flex flex-col gap-0.5 overflow-hidden">
-                    {events.slice(0, 2).map((event, eventIdx) => (
-                      <div
-                        key={eventIdx}
-                      >
-                        <div
-                            className={cn(
-                              "text-[10px] h-4 px-1 py-0.5 w-full flex items-center rounded-sm pointer-events-none",
-                            event.type === 'maintenance'
-                              ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/80 dark:text-orange-100'
-                                : event.type === 'schedule'
-                                ? event.status === 'completed'
-                                  ? 'bg-green-100 text-green-900 dark:bg-green-900/50 dark:text-green-300 opacity-70 line-through'
-                                  : event.status === 'cancelled'
-                                  ? 'bg-gray-100 text-gray-500 dark:bg-gray-900/50 dark:text-gray-500 opacity-60 line-through'
-                                  : getScheduleTypeColor()
-                              : 'bg-blue-100 text-blue-800 dark:bg-blue-900/80 dark:text-blue-100'
-                            )}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden max-h-[calc(100vh-400px)] md:max-h-none">
+            <div className="grid grid-cols-7 gap-1 auto-rows-[minmax(60px,auto)] md:auto-rows-fr w-full">
+              {allDays.map((date, idx) => {
+                const year = date.getFullYear()
+                const month = String(date.getMonth() + 1).padStart(2, '0')
+                const day = String(date.getDate()).padStart(2, '0')
+                const dateStr = `${year}-${month}-${day}`
+                const events = eventsByDate.get(dateStr) || []
+                const isToday = format(date, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')
+                const isCurrentMonth = date.getMonth() === currentMonth.getMonth()
+                
+                return (
+                  <motion.div
+                    key={`${dateStr}-${idx}-${resolvedTheme}`}
+                    whileHover={{ scale: 0.98, backgroundColor: "var(--accent)" }}
+                      onClick={() => handleDateClick(date)}
+                      className={cn(
+                        "group/day-cell relative border rounded-md p-1 flex flex-col cursor-pointer transition-colors min-h-[60px] md:min-h-[80px]",
+                        isCurrentMonth ? 'bg-accent hover:bg-accent/50' : 'bg-muted/20 opacity-50',
+                        isToday && 'ring-2 ring-primary ring-inset'
+                      )}
+                  >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={cn(
+                          "text-[10px] font-medium w-fit px-1 rounded",
+                      isToday ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
+                        )}>
+                      {date.getDate()}
+                    </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleAddSchedule(date)
+                          }}
+                          className="opacity-0 group-hover/day-cell:opacity-100 hover:opacity-100 transition-opacity p-0.5 hover:bg-primary/10 rounded"
+                          title="Add schedule"
                         >
-                            <span className={cn(
-                              "truncate font-medium",
-                              event.type === 'schedule' && (event.status === 'completed' || event.status === 'cancelled')
-                                ? "line-through"
-                                : ""
-                            )}>
-                              {event.type === 'schedule' && event.status === 'completed'
-                                ? `✓ ${event.assetTagId}`
-                                : event.type === 'schedule' && event.status === 'cancelled'
-                                ? `✕ ${event.assetTagId}`
-                                : event.assetTagId}
-                            </span>
+                          <Plus className="h-3 w-3 text-muted-foreground" />
+                        </button>
+                      </div>
+                    
+                    <div className="flex flex-col gap-0.5 overflow-hidden">
+                      {events.slice(0, 2).map((event, eventIdx) => (
+                        <div
+                          key={eventIdx}
+                        >
+                          <div
+                              className={cn(
+                                "text-[10px] h-4 px-1 py-0.5 w-full flex items-center rounded-sm pointer-events-none",
+                              event.type === 'maintenance'
+                                ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/80 dark:text-orange-100'
+                                  : event.type === 'schedule'
+                                  ? event.status === 'completed'
+                                    ? 'bg-green-100 text-green-900 dark:bg-green-900/50 dark:text-green-300 opacity-70 line-through'
+                                    : event.status === 'cancelled'
+                                    ? 'bg-gray-100 text-gray-500 dark:bg-gray-900/50 dark:text-gray-500 opacity-60 line-through'
+                                    : getScheduleTypeColor()
+                                : 'bg-blue-100 text-blue-800 dark:bg-blue-900/80 dark:text-blue-100'
+                              )}
+                          >
+                              <span className={cn(
+                                "truncate font-medium",
+                                event.type === 'schedule' && (event.status === 'completed' || event.status === 'cancelled')
+                                  ? "line-through"
+                                  : ""
+                              )}>
+                                {event.type === 'schedule' && event.status === 'completed'
+                                  ? `✓ ${event.assetTagId}`
+                                  : event.type === 'schedule' && event.status === 'cancelled'
+                                  ? `✕ ${event.assetTagId}`
+                                  : event.assetTagId}
+                              </span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                    {events.length > 2 && (
-                      <div className="text-[9px] text-muted-foreground px-1">
-                        +{events.length - 2} more
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              )
-            })}
+                      ))}
+                      {events.length > 2 && (
+                        <div className="text-[9px] text-muted-foreground px-1">
+                          +{events.length - 2} more
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </div>
           </div>
 
-          <div className="flex items-center gap-4 mt-4 pt-4 border-t text-xs text-muted-foreground">
+          <div className="flex items-center gap-4 mt-4 pt-4 border-t text-xs text-muted-foreground shrink-0">
              <div className="flex items-center gap-2">
                 <div className="h-3 w-3 shrink-0 rounded-full bg-orange-400" />
                 Maintenance
