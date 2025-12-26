@@ -118,7 +118,7 @@ export function LocationSelectField({
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="w-full justify-between bg-card!"
+            className="w-full justify-between bg-transparent dark:bg-input/30"
             disabled={disabled || isLoadingLocations}
             aria-invalid={error ? 'true' : 'false'}
           >

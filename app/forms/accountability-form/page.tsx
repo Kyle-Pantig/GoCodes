@@ -32,6 +32,7 @@ const getAuthToken = async (): Promise<string | null> => {
 import { useCompanyInfo } from '@/hooks/use-company-info'
 import { motion, AnimatePresence } from "framer-motion"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -181,14 +182,15 @@ export default function AccountabilityFormPage() {
   
   // Signature fields for Rules and Regulations
   const [staffSignature, setStaffSignature] = useState("")
-  const [staffDate, setStaffDate] = useState("")
+  const [staffDate, setStaffDate] = useState(new Date().toISOString().split('T')[0])
   const [itSignature, setItSignature] = useState("")
-  const [itDate, setItDate] = useState("")
+  const [itDate, setItDate] = useState(new Date().toISOString().split('T')[0])
   const [assetCustodianSignature, setAssetCustodianSignature] = useState("")
-  const [assetCustodianDate, setAssetCustodianDate] = useState("")
+  const [assetCustodianDate, setAssetCustodianDate] = useState(new Date().toISOString().split('T')[0])
   const [financeSignature, setFinanceSignature] = useState("")
-  const [financeDate, setFinanceDate] = useState("")
+  const [financeDate, setFinanceDate] = useState(new Date().toISOString().split('T')[0])
   const [isFormOpen, setIsFormOpen] = useState(false)
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
 
   // Fetch selected employee details
   const { data: selectedEmployee, isLoading: isLoadingEmployee } = useEmployee(selectedEmployeeId || null, !!selectedEmployeeId)
@@ -251,6 +253,15 @@ export default function AccountabilityFormPage() {
       setSelectedAssets([])
     }
   }, [selectedEmployee, selectedEmployeeId]) // Only trigger when employee changes
+
+  // Set signature dates to today's date on page load
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0]
+    setStaffDate(today)
+    setItDate(today)
+    setAssetCustodianDate(today)
+    setFinanceDate(today)
+  }, [])
 
   // Debounce input to reduce API calls
   useEffect(() => {
@@ -623,6 +634,37 @@ export default function AccountabilityFormPage() {
     return groups
   }, [selectedAssets])
 
+  // Reset form to initial state (back to employee selection)
+  const resetForm = () => {
+    const today = new Date().toISOString().split('T')[0]
+    setSelectedEmployeeId("")
+    setDateIssued(today)
+    setPosition("")
+    setClientDepartment("")
+    setTicketNo("")
+    setAccountabilityFormNo("")
+    setMobileBrand("")
+    setMobileModel("")
+    setImeiNo("")
+    setSimNo("")
+    setNetworkProvider("")
+    setPlanAmount("")
+    setReplacementItems([])
+    setStaffSignature("")
+    setStaffDate(today)
+    setItSignature("")
+    setItDate(today)
+    setAssetCustodianSignature("")
+    setAssetCustodianDate(today)
+    setFinanceSignature("")
+    setFinanceDate(today)
+    setSelectedAssets([])
+    setAssetIdInput("")
+    setDebouncedAssetIdInput("")
+    setShowSuggestions(false)
+    setIsFormOpen(false)
+  }
+
   // Handle PDF download
   const handleDownloadPDF = async () => {
     if (!canManageAccountabilityForms) {
@@ -635,6 +677,12 @@ export default function AccountabilityFormPage() {
       return
     }
 
+    if (isGeneratingPDF) {
+      return // Prevent multiple simultaneous downloads
+    }
+
+    setIsGeneratingPDF(true)
+
     // Ensure the form is open before generating PDF
     setIsFormOpen(true)
     
@@ -646,6 +694,7 @@ export default function AccountabilityFormPage() {
     
     if (!formElement) {
       toast.error('Form not found')
+      setIsGeneratingPDF(false)
       return
     }
 
@@ -988,10 +1037,15 @@ export default function AccountabilityFormPage() {
                   toast.error('Failed to save form history', { id: 'form-save' })
                 }
 
+                // Reset form to start new form
+                resetForm()
+
+                setIsGeneratingPDF(false)
                 resolve()
               } catch (error) {
                 console.error('Error processing PDF:', error)
                 toast.error('Failed to process PDF', { id: 'pdf-generation' })
+                setIsGeneratingPDF(false)
                 reject(error)
               }
             } else {
@@ -1007,20 +1061,24 @@ export default function AccountabilityFormPage() {
                   const errorData = JSON.parse(reader.result as string)
                   const errorMessage = errorData.error || 'Failed to generate PDF'
                   toast.error(errorMessage, { id: 'pdf-generation' })
+                  setIsGeneratingPDF(false)
                   reject(new Error(errorMessage))
                 } catch {
                   toast.error('Failed to generate PDF', { id: 'pdf-generation' })
+                  setIsGeneratingPDF(false)
                   reject(new Error('Failed to generate PDF'))
                 }
               }
               reader.onerror = () => {
                 toast.error('Failed to generate PDF', { id: 'pdf-generation' })
+                setIsGeneratingPDF(false)
                 reject(new Error('Failed to generate PDF'))
               }
               if (xhr.response) {
                 reader.readAsText(xhr.response)
               } else {
                 toast.error('Failed to generate PDF', { id: 'pdf-generation' })
+                setIsGeneratingPDF(false)
                 reject(new Error('Failed to generate PDF'))
               }
             }
@@ -1032,6 +1090,7 @@ export default function AccountabilityFormPage() {
               stepInterval = null
             }
             toast.error('Network error while generating PDF', { id: 'pdf-generation' })
+            setIsGeneratingPDF(false)
             reject(new Error('Network error'))
           })
 
@@ -1041,6 +1100,7 @@ export default function AccountabilityFormPage() {
               stepInterval = null
             }
             toast.error('PDF generation cancelled', { id: 'pdf-generation' })
+            setIsGeneratingPDF(false)
             reject(new Error('Cancelled'))
           })
 
@@ -1055,12 +1115,14 @@ export default function AccountabilityFormPage() {
           }
           console.error('Error generating PDF:', error)
           toast.error(error instanceof Error ? error.message : 'Failed to generate PDF', { id: 'pdf-generation' })
+          setIsGeneratingPDF(false)
           reject(error)
         }
       })
     } catch (error) {
       console.error('Error generating PDF:', error)
       toast.error(`Failed to generate PDF: ${error instanceof Error ? error.message : 'Unknown error'}`, { id: 'pdf-generation' })
+      setIsGeneratingPDF(false)
     }
   }
 
@@ -1218,12 +1280,13 @@ export default function AccountabilityFormPage() {
                     DATE ISSUED: <span className="text-destructive">*</span>
                   </FieldLabel>
                   <FieldContent>
-                    <Input
+                    <DatePicker
                       id="dateIssued"
-                      type="date"
                       value={dateIssued}
-                      onChange={(e) => setDateIssued(e.target.value)}
-                      required
+                      onChange={setDateIssued}
+                      placeholder="Select date issued"
+                      className="gap-2"
+                      labelClassName="hidden"
                     />
                   </FieldContent>
                 </Field>
@@ -1406,11 +1469,13 @@ export default function AccountabilityFormPage() {
                         className="text-sm"
                       />
                       <div className="flex gap-2">
-                        <Input
-                          type="date"
+                        <DatePicker
+                          id={`replacement-date-${item.id}`}
                           value={item.date}
-                          onChange={(e) => handleUpdateReplacement(item.id, 'date', e.target.value)}
-                          className="text-sm flex-1"
+                          onChange={(value) => handleUpdateReplacement(item.id, 'date', value)}
+                          placeholder="Select date"
+                          className="gap-2 text-sm flex-1"
+                          labelClassName="hidden"
                         />
                         <Button
                           type="button"
@@ -1992,11 +2057,13 @@ export default function AccountabilityFormPage() {
                             </td>
                             <td className="py-0.5 px-1 sm:px-2 text-[10px] sm:text-xs text-foreground print:text-black">
                               <span className="print:hidden">
-                                <Input
-                                  type="date"
+                                <DatePicker
+                                  id={`table-replacement-date-${item.id}`}
                                   value={item.date}
-                                  onChange={(e) => handleUpdateReplacement(item.id, 'date', e.target.value)}
-                                  className="h-6 text-xs border-0 p-0 focus-visible:ring-0 bg-transparent"
+                                  onChange={(value) => handleUpdateReplacement(item.id, 'date', value)}
+                                  placeholder="Select date"
+                                  className="gap-1 [&_button]:h-6 [&_button]:text-xs [&_button]:px-2 [&_button]:text-[10px] sm:[&_button]:text-xs"
+                                  labelClassName="hidden"
                                 />
                               </span>
                               <span className="hidden print:inline">{item.date ? new Date(item.date).toLocaleDateString() : ''}</span>
@@ -2161,11 +2228,13 @@ export default function AccountabilityFormPage() {
                     <Field>
                       <FieldLabel htmlFor="staffDate">Staff Date</FieldLabel>
                       <FieldContent>
-                        <Input
+                        <DatePicker
                           id="staffDate"
-                          type="date"
                           value={staffDate}
-                          onChange={(e) => setStaffDate(e.target.value)}
+                          onChange={setStaffDate}
+                          placeholder="Select staff date"
+                          className="gap-2"
+                          labelClassName="hidden"
                         />
                       </FieldContent>
                     </Field>
@@ -2183,11 +2252,13 @@ export default function AccountabilityFormPage() {
                     <Field>
                       <FieldLabel htmlFor="itDate">IT Department Date</FieldLabel>
                       <FieldContent>
-                        <Input
+                        <DatePicker
                           id="itDate"
-                          type="date"
                           value={itDate}
-                          onChange={(e) => setItDate(e.target.value)}
+                          onChange={setItDate}
+                          placeholder="Select IT department date"
+                          className="gap-2"
+                          labelClassName="hidden"
                         />
                       </FieldContent>
                     </Field>
@@ -2207,11 +2278,13 @@ export default function AccountabilityFormPage() {
                     <Field>
                       <FieldLabel htmlFor="assetCustodianDate">Asset Custodian Date</FieldLabel>
                       <FieldContent>
-                        <Input
+                        <DatePicker
                           id="assetCustodianDate"
-                          type="date"
                           value={assetCustodianDate}
-                          onChange={(e) => setAssetCustodianDate(e.target.value)}
+                          onChange={setAssetCustodianDate}
+                          placeholder="Select asset custodian date"
+                          className="gap-2"
+                          labelClassName="hidden"
                         />
                       </FieldContent>
                     </Field>
@@ -2229,11 +2302,13 @@ export default function AccountabilityFormPage() {
                     <Field>
                       <FieldLabel htmlFor="financeDate">Finance Department Date</FieldLabel>
                       <FieldContent>
-                        <Input
+                        <DatePicker
                           id="financeDate"
-                          type="date"
                           value={financeDate}
-                          onChange={(e) => setFinanceDate(e.target.value)}
+                          onChange={setFinanceDate}
+                          placeholder="Select finance department date"
+                          className="gap-2"
+                          labelClassName="hidden"
                         />
                       </FieldContent>
                     </Field>
@@ -2289,10 +2364,20 @@ export default function AccountabilityFormPage() {
               type="button"
               size="lg"
               onClick={handleDownloadPDF}
+              disabled={isGeneratingPDF}
               className="min-w-[140px] shadow-lg"
             >
-              <Download className="mr-2 h-4 w-4" />
-              Download PDF
+              {isGeneratingPDF ? (
+                <>
+                  <Spinner className="mr-2 h-4 w-4" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download PDF
+                </>
+              )}
             </Button>
           </motion.div>
         )}

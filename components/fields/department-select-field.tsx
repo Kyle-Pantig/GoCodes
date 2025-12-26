@@ -120,7 +120,7 @@ export function DepartmentSelectField({
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="w-full justify-between bg-card!"
+            className="w-full justify-between bg-transparent dark:bg-input/30"
             disabled={disabled || isLoadingDepartments}
             aria-invalid={error ? 'true' : 'false'}
           >

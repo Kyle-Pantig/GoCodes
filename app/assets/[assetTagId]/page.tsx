@@ -40,6 +40,7 @@ import { MediaBrowserDialog } from "@/components/dialogs/media-browser-dialog"
 import { DocumentBrowserDialog } from "@/components/dialogs/document-browser-dialog"
 import { editAssetSchema, type EditAssetFormData } from "@/lib/validations/assets"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import {
@@ -56,6 +57,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Field, FieldLabel, FieldContent, FieldError } from "@/components/ui/field"
+import { DatePicker } from "@/components/ui/date-picker"
 import { LocationSelectField } from "@/components/fields/location-select-field"
 import { SiteSelectField } from "@/components/fields/site-select-field"
 import { DepartmentSelectField } from "@/components/fields/department-select-field"
@@ -1985,11 +1987,10 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                       Description <span className="text-destructive">*</span>
                     </FieldLabel>
                     <FieldContent>
-                      <textarea
+                      <Textarea
                         id="description"
                         {...form.register("description")}
                         aria-invalid={form.formState.errors.description ? "true" : "false"}
-                        className="min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
                         placeholder="Asset description"
                       />
                       {form.formState.errors.description && (
@@ -2750,10 +2751,21 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                 <Field>
                   <FieldLabel htmlFor="purchaseDate">Purchase Date</FieldLabel>
                   <FieldContent>
-                    <Input
-                      id="purchaseDate"
-                      type="date"
-                      {...form.register("purchaseDate")}
+                    <Controller
+                      name="purchaseDate"
+                      control={form.control}
+                      render={({ field, fieldState }) => (
+                        <DatePicker
+                          id="purchaseDate"
+                          value={field.value}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          placeholder="Select purchase date"
+                          error={fieldState.error?.message}
+                          className="gap-2"
+                          labelClassName="hidden"
+                        />
+                      )}
                     />
                   </FieldContent>
                 </Field>
@@ -2870,10 +2882,21 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                 <Field>
                   <FieldLabel htmlFor="deliveryDate">Delivery Date</FieldLabel>
                   <FieldContent>
-                    <Input
-                      id="deliveryDate"
-                      type="date"
-                      {...form.register("deliveryDate")}
+                    <Controller
+                      name="deliveryDate"
+                      control={form.control}
+                      render={({ field, fieldState }) => (
+                        <DatePicker
+                          id="deliveryDate"
+                          value={field.value}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          placeholder="Select delivery date"
+                          error={fieldState.error?.message}
+                          className="gap-2"
+                          labelClassName="hidden"
+                        />
+                      )}
                     />
                   </FieldContent>
                 </Field>
@@ -2942,10 +2965,9 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                 <Field>
                   <FieldLabel htmlFor="additionalInformation">Additional Information</FieldLabel>
                   <FieldContent>
-                    <textarea
+                    <Textarea
                       id="additionalInformation"
                       {...form.register("additionalInformation")}
-                      className="min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
                       placeholder="Any additional notes"
                     />
                   </FieldContent>
@@ -2954,10 +2976,9 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                 <Field>
                   <FieldLabel htmlFor="remarks">Remarks</FieldLabel>
                   <FieldContent>
-                    <textarea
+                    <Textarea
                       id="remarks"
                       {...form.register("remarks")}
-                      className="min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
                       placeholder="Additional remarks"
                     />
                   </FieldContent>
@@ -3090,11 +3111,22 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                     <Field>
                       <FieldLabel htmlFor="dateAcquired">Date Acquired</FieldLabel>
                       <FieldContent>
-                        <Input
-                          id="dateAcquired"
-                          type="date"
-                          {...form.register("dateAcquired")}
-                    />
+                        <Controller
+                          name="dateAcquired"
+                          control={form.control}
+                          render={({ field, fieldState }) => (
+                            <DatePicker
+                              id="dateAcquired"
+                              value={field.value}
+                              onChange={field.onChange}
+                              onBlur={field.onBlur}
+                              placeholder="Select date acquired"
+                              error={fieldState.error?.message}
+                              className="gap-2"
+                              labelClassName="hidden"
+                            />
+                          )}
+                        />
                         {form.formState.errors.dateAcquired && (
                           <FieldError>{form.formState.errors.dateAcquired.message}</FieldError>
                         )}

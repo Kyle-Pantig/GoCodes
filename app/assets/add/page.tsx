@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useMemo } from "react"
+import { useState, useRef, useMemo, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -40,6 +40,7 @@ import { SiteSelectField } from "@/components/fields/site-select-field"
 import { DepartmentSelectField } from "@/components/fields/department-select-field"
 import { assetSchema, type AssetFormData } from "@/lib/validations/assets"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -103,6 +104,7 @@ export default function AddAssetPage() {
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
   const [previewDocumentsDialogOpen, setPreviewDocumentsDialogOpen] = useState(false)
   const [isGeneratingTag, setIsGeneratingTag] = useState(false)
+  const [companySuffix, setCompanySuffix] = useState<string>("") // Store the company suffix (e.g., "SA")
   const imageInputRef = useRef<HTMLInputElement>(null)
   const documentInputRef = useRef<HTMLInputElement>(null)
   const assetTagIdInputRef = useRef<HTMLInputElement>(null)
@@ -412,8 +414,26 @@ export default function AddAssetPage() {
     }
   }
 
-  // Format asset tag as user types
-  const formatAssetTag = (value: string): string => {
+  // Extract suffix from full tag (e.g., "25-579811C-SA" -> "SA")
+  const extractSuffix = (fullTag: string): string => {
+    const parts = fullTag.split('-')
+    if (parts.length >= 3) {
+      return parts[parts.length - 1] // Last part is the suffix
+    }
+    return ""
+  }
+
+  // Extract main part from full tag (e.g., "25-579811C-SA" -> "25-579811C")
+  const extractMainPart = (fullTag: string): string => {
+    const parts = fullTag.split('-')
+    if (parts.length >= 3) {
+      return parts.slice(0, -1).join('-') // Everything except last part
+    }
+    return fullTag
+  }
+
+  // Format asset tag main part only (without suffix) as user types
+  const formatAssetTagMainPart = (value: string): string => {
     // Remove all non-alphanumeric characters except hyphens
     let cleaned = value.replace(/[^A-Za-z0-9-]/g, '').toUpperCase()
     
@@ -421,8 +441,8 @@ export default function AddAssetPage() {
     const parts = cleaned.split('-').filter(p => p.length > 0)
     cleaned = parts.join('')
     
-    // Format: YY-XXXXXX[S]-SA
-    // Max length: 2 (year) + 6 (random) + 1 (subcategory) + 2 (SA) = 11 chars + 2 hyphens = 13
+    // Format: YY-XXXXXX[S] (main part only, no suffix)
+    // Max length: 2 (year) + 6 (random) + 1 (subcategory) = 9 chars + 1 hyphen = 10
     if (cleaned.length === 0) return ''
     
     let formatted = ''
@@ -439,12 +459,6 @@ export default function AddAssetPage() {
           // Subcategory letter (next 1 character)
           const subcatPart = cleaned.substring(8, 9)
           formatted += subcatPart
-          if (cleaned.length > 9) {
-            formatted += '-'
-            // SA (last 2 characters)
-            const saPart = cleaned.substring(9, 11)
-            formatted += saPart
-          }
         }
       }
     }
@@ -477,13 +491,15 @@ export default function AddAssetPage() {
   }
 
   // Generate unique asset tag
-  const handleGenerateAssetTag = async () => {
+  const handleGenerateAssetTag = async (silent: boolean = false) => {
     setIsGeneratingTag(true)
     try {
       // Check if subcategory is selected
       const subCategoryId = form.getValues("subCategoryId")
       if (!subCategoryId) {
-        toast.error('Please select a category first to generate the asset tag')
+        if (!silent) {
+          toast.error('Please select a category first to generate the asset tag')
+        }
         setIsGeneratingTag(false)
         return
       }
@@ -491,7 +507,9 @@ export default function AddAssetPage() {
       // Get first letter of subcategory (required)
       const selectedSubCategory = subCategories.find(sc => sc.id === subCategoryId)
       if (!selectedSubCategory?.name) {
-        toast.error('Please select a valid category first')
+        if (!silent) {
+          toast.error('Please select a valid category first')
+        }
         setIsGeneratingTag(false)
         return
       }
@@ -523,18 +541,83 @@ export default function AddAssetPage() {
       }
 
       const data = await response.json()
+      const fullTag = data.assetTagId
       
-      // Set the generated tag and trigger validation
-      form.setValue("assetTagId", data.assetTagId, { shouldValidate: true })
+      // Extract and store the company suffix
+      const suffix = extractSuffix(fullTag)
+      setCompanySuffix(suffix)
+      
+      // Set the full tag in the form (for validation and submission)
+      form.setValue("assetTagId", fullTag, { shouldValidate: true })
 
-      toast.success('Asset tag generated successfully')
+      if (!silent) {
+        toast.success('Asset tag generated successfully')
+      }
     } catch (error) {
       console.error('Error generating asset tag:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to generate asset tag')
+      if (!silent) {
+        toast.error(error instanceof Error ? error.message : 'Failed to generate asset tag')
+      }
     } finally {
       setIsGeneratingTag(false)
     }
   }
+
+  // Auto-generate asset tag when page loads or when subcategory is selected
+  const subCategoryId = form.watch("subCategoryId")
+  const assetTagId = form.watch("assetTagId")
+  
+  // Update subcategory letter in asset tag when subcategory changes
+  useEffect(() => {
+    if (subCategoryId && assetTagId && subCategories.length > 0) {
+      const selectedSubCategory = subCategories.find(sc => sc.id === subCategoryId)
+      if (selectedSubCategory?.name) {
+        const newSubCategoryLetter = selectedSubCategory.name.charAt(0).toUpperCase()
+        
+        // Extract current tag parts
+        const mainPart = extractMainPart(assetTagId) // e.g., "25-281656C"
+        const parts = mainPart.split('-')
+        
+        if (parts.length >= 2) {
+          // Format: YY-XXXXXX[S]
+          const year = parts[0] // "25"
+          const numberAndLetter = parts[1] // "281656C"
+          
+          // Check if we have at least 6 digits + 1 letter
+          if (numberAndLetter.length >= 7) {
+            // Extract the 6-digit number (first 6 characters)
+            const numberPart = numberAndLetter.substring(0, 6) // "281656"
+            const currentLetter = numberAndLetter.substring(6, 7) // "C"
+            
+            // Only update if the letter actually changed
+            if (currentLetter !== newSubCategoryLetter) {
+              // Build new main part with new subcategory letter
+              const newMainPart = `${year}-${numberPart}${newSubCategoryLetter}`
+              
+              // Combine with suffix
+              const newFullTag = companySuffix 
+                ? `${newMainPart}-${companySuffix}`
+                : newMainPart
+              
+              form.setValue("assetTagId", newFullTag, { shouldValidate: false })
+            }
+          }
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subCategoryId, subCategories])
+  
+  // Auto-generate tag if subcategory is selected and tag is empty
+  useEffect(() => {
+    if (subCategoryId && !assetTagId && subCategories.length > 0) {
+      const selectedSubCategory = subCategories.find(sc => sc.id === subCategoryId)
+      if (selectedSubCategory?.name) {
+        handleGenerateAssetTag(true) // Silent generation
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subCategoryId, subCategories, assetTagId])
 
   // Track form changes to show floating buttons
   const formValues = form.watch()
@@ -583,6 +666,7 @@ export default function AddAssetPage() {
   // Clear form function
   const clearForm = () => {
     form.reset()
+    setCompanySuffix("")
   }
 
   // Show loading state while permissions are being fetched
@@ -654,75 +738,91 @@ export default function AddAssetPage() {
                     </FieldLabel>
                     <FieldContent>
                       <div className="flex gap-2">
-                        <Input
-                          id="assetTagId"
-                          {...(() => {
-                            const { ref, onChange, ...rest } = form.register("assetTagId", {
-                              onChange: (e) => {
-                                const input = e.target as HTMLInputElement
-                                const cursorPosition = input.selectionStart || 0
-                                const oldValue = form.getValues("assetTagId") || ""
-                                const newValue = e.target.value
-                                
-                                const formatted = formatAssetTag(newValue)
-                                
-                                // Calculate new cursor position
-                                // Count characters before cursor in old value
-                                const beforeCursor = oldValue.substring(0, cursorPosition)
-                                // Count non-formatting characters (excluding hyphens)
-                                const nonFormattingBefore = beforeCursor.replace(/-/g, '').length
-                                
-                                // Find position in formatted string
-                                let newCursorPosition = 0
-                                let nonFormattingCount = 0
-                                for (let i = 0; i < formatted.length; i++) {
-                                  if (formatted[i] !== '-') {
-                                    nonFormattingCount++
-                                    if (nonFormattingCount > nonFormattingBefore) {
-                                      newCursorPosition = i
-                                      break
+                        <div className="flex items-center gap-0 flex-1 border border-input rounded-md bg-transparent shadow-xs focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px] transition-colors overflow-hidden">
+                          <Controller
+                            name="assetTagId"
+                            control={form.control}
+                            render={({ field }) => {
+                              // Get the main part for display
+                              const fullTagValue = field.value || ""
+                              const displayValue = extractMainPart(fullTagValue)
+                              
+                              return (
+                                <Input
+                                  id="assetTagId"
+                                  value={displayValue}
+                                  onChange={(e) => {
+                                    const input = e.target as HTMLInputElement
+                                    const cursorPosition = input.selectionStart || 0
+                                    const currentMainPart = displayValue
+                                    const newValue = e.target.value
+                                    
+                                    // Format only the main part
+                                    const formattedMainPart = formatAssetTagMainPart(newValue)
+                                    
+                                    // Calculate new cursor position
+                                    const beforeCursor = currentMainPart.substring(0, cursorPosition)
+                                    const nonFormattingBefore = beforeCursor.replace(/-/g, '').length
+                                    
+                                    let newCursorPosition = 0
+                                    let nonFormattingCount = 0
+                                    for (let i = 0; i < formattedMainPart.length; i++) {
+                                      if (formattedMainPart[i] !== '-') {
+                                        nonFormattingCount++
+                                        if (nonFormattingCount > nonFormattingBefore) {
+                                          newCursorPosition = i
+                                          break
+                                        }
+                                      }
+                                      if (nonFormattingCount === nonFormattingBefore) {
+                                        newCursorPosition = i + 1
+                                        break
+                                      }
                                     }
-                                  }
-                                  if (nonFormattingCount === nonFormattingBefore) {
-                                    newCursorPosition = i + 1
-                                    break
-                                  }
-                                }
-                                
-                                // Set the formatted value
-                                form.setValue("assetTagId", formatted, { shouldValidate: false })
-                                
-                                // Restore cursor position after a brief delay to ensure DOM update
-                                setTimeout(() => {
-                                  if (assetTagIdInputRef.current) {
-                                    assetTagIdInputRef.current.setSelectionRange(
-                                      Math.min(newCursorPosition, formatted.length),
-                                      Math.min(newCursorPosition, formatted.length)
-                                    )
-                                  }
-                                }, 0)
-                              }
-                            })
-                            return {
-                              ...rest,
-                              onChange,
-                              ref: (e: HTMLInputElement | null) => {
-                                assetTagIdInputRef.current = e
-                                ref(e)
-                              }
-                            }
-                          })()}
-                          aria-invalid={form.formState.errors.assetTagId ? "true" : "false"}
-                          placeholder="e.g., 25-016011U-SA"
-                          className="flex-1"
-                          maxLength={13}
-                        />
+                                    
+                                    // Combine main part with suffix for form value
+                                    const fullTag = companySuffix 
+                                      ? `${formattedMainPart}-${companySuffix}`
+                                      : formattedMainPart
+                                    
+                                    // Set the full tag in the form
+                                    field.onChange(fullTag)
+                                    
+                                    // Restore cursor position
+                                    setTimeout(() => {
+                                      if (assetTagIdInputRef.current) {
+                                        assetTagIdInputRef.current.setSelectionRange(
+                                          Math.min(newCursorPosition, formattedMainPart.length),
+                                          Math.min(newCursorPosition, formattedMainPart.length)
+                                        )
+                                      }
+                                    }, 0)
+                                  }}
+                                  onBlur={field.onBlur}
+                                  ref={(e) => {
+                                    assetTagIdInputRef.current = e
+                                    field.ref(e)
+                                  }}
+                                  aria-invalid={form.formState.errors.assetTagId ? "true" : "false"}
+                                  placeholder="e.g., 25-016011C"
+                                  className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none rounded-r-none"
+                                  maxLength={10}
+                                />
+                              )
+                            }}
+                          />
+                          {companySuffix && (
+                            <span className="px-2 py-2 text-sm font-medium text-muted-foreground border-l border-input bg-muted/50 whitespace-nowrap">
+                              -{companySuffix}
+                            </span>
+                          )}
+                        </div>
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={handleGenerateAssetTag}
+                          onClick={() => handleGenerateAssetTag(false)}
                           title="Auto-generate asset tag"
-                          className="shrink-0 bg-card!"
+                          className="shrink-0 bg-transparent dark:bg-input/30"
                           disabled={isGeneratingTag}
                         >
                           {isGeneratingTag ? (
@@ -743,11 +843,10 @@ export default function AddAssetPage() {
                       Description <span className="text-destructive">*</span>
                     </FieldLabel>
                     <FieldContent>
-                      <textarea
+                      <Textarea
                         id="description"
                         {...form.register("description")}
                         aria-invalid={form.formState.errors.description ? "true" : "false"}
-                        className="min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
                         placeholder="Asset description"
                       />
                       {form.formState.errors.description && (
@@ -787,7 +886,7 @@ export default function AddAssetPage() {
                             type="button"
                             size="icon"
                             variant="outline"
-                            className="h-6 w-6 bg-card!"
+                            className="h-6 w-6 bg-transparent dark:bg-input/30"
                             onClick={() => setCategoryDialogOpen(true)}
                           >
                             <PlusIcon className="h-3.5 w-3.5" />
@@ -854,7 +953,7 @@ export default function AddAssetPage() {
                             size="icon"
                             variant="outline"
                             disabled={!selectedCategory}
-                            className="h-6 w-6 bg-card!"
+                            className="h-6 w-6 bg-transparent dark:bg-input/30"
                             onClick={() => setSubCategoryDialogOpen(true)}
                           >
                             <PlusIcon className="h-3.5 w-3.5" />
@@ -1035,7 +1134,7 @@ export default function AddAssetPage() {
                               <Button
                                 type="button"
                                 variant="outline"
-                                className="flex items-center gap-2 bg-card!"
+                                className="flex items-center gap-2 bg-transparent dark:bg-input/30"
                               >
                                 <Upload className="h-4 w-4" />
                                 Add Images
@@ -1184,7 +1283,7 @@ export default function AddAssetPage() {
                                 <Button
                                   type="button"
                                   variant="outline"
-                                  className="flex items-center gap-2 bg-card!"
+                                  className="flex items-center gap-2 bg-transparent dark:bg-input/30"
                                 >
                                   <Upload className="h-4 w-4" />
                                   Add Documents
@@ -1337,6 +1436,28 @@ export default function AddAssetPage() {
                   </FieldContent>
                 </Field>
 
+                <Field>
+                  <FieldLabel htmlFor="deliveryDate">Delivery Date</FieldLabel>
+                  <FieldContent>
+                    <Controller
+                      name="deliveryDate"
+                      control={form.control}
+                      render={({ field, fieldState }) => (
+                        <DatePicker
+                          id="deliveryDate"
+                          value={field.value}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          placeholder="Select delivery date"
+                          error={fieldState.error?.message}
+                          className="gap-2"
+                          labelClassName="hidden"
+                        />
+                      )}
+                    />
+                  </FieldContent>
+                </Field>
+
                 <DepartmentSelectField
                   name="department"
                   control={form.control}
@@ -1429,13 +1550,14 @@ export default function AddAssetPage() {
                   </FieldContent>
                 </Field>
 
+                <div className="md:col-span-2"></div>
+
                 <Field>
                   <FieldLabel htmlFor="additionalInformation">Additional Information</FieldLabel>
                   <FieldContent>
-                    <textarea
+                    <Textarea
                       id="additionalInformation"
                       {...form.register("additionalInformation")}
-                      className="min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
                       placeholder="Any additional notes"
                     />
                   </FieldContent>
@@ -1444,10 +1566,9 @@ export default function AddAssetPage() {
                 <Field>
                   <FieldLabel htmlFor="remarks">Remarks</FieldLabel>
                   <FieldContent>
-                    <textarea
+                    <Textarea
                       id="remarks"
                       {...form.register("remarks")}
-                      className="min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
                       placeholder="Additional remarks"
                     />
                   </FieldContent>
@@ -1571,10 +1692,21 @@ export default function AddAssetPage() {
                   <Field>
                     <FieldLabel htmlFor="dateAcquired">Date Acquired</FieldLabel>
                     <FieldContent>
-                      <Input
-                        id="dateAcquired"
-                        type="date"
-                        {...form.register("dateAcquired")}
+                      <Controller
+                        name="dateAcquired"
+                        control={form.control}
+                        render={({ field, fieldState }) => (
+                          <DatePicker
+                            id="dateAcquired"
+                            value={field.value}
+                            onChange={field.onChange}
+                            onBlur={field.onBlur}
+                            placeholder="Select date acquired"
+                            error={fieldState.error?.message}
+                            className="gap-2"
+                            labelClassName="hidden"
+                          />
+                        )}
                       />
                     </FieldContent>
                   </Field>
