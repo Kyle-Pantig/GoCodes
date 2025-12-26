@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, Suspense } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { QrCode, CheckCircle2, X, FileText, History, Trash2 } from 'lucide-react'
+import { QrCode, CheckCircle2, X, FileText, History, Trash2, ChevronLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
@@ -119,7 +119,16 @@ function AuditPageContent() {
   useEffect(() => {
     if (isMobile) {
       setDockContent(
-        <div className="flex items-center justify-center w-full">
+        <>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => router.back()}
+            className="h-10 w-10 rounded-full btn-glass-elevated"
+            title="Go Back"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
           <Button
             variant="outline"
             size="icon"
@@ -135,7 +144,7 @@ function AuditPageContent() {
           >
             <QrCode className="h-4 w-4" />
           </Button>
-        </div>
+        </>
       )
     } else {
       setDockContent(null)
@@ -144,7 +153,7 @@ function AuditPageContent() {
     return () => {
       setDockContent(null)
     }
-  }, [isMobile, setDockContent, canAudit, setIsScannerOpen])
+  }, [isMobile, setDockContent, canAudit, router])
 
 
   // Fetch recent audit history
@@ -1005,7 +1014,7 @@ function AuditPageContent() {
             </div>
           )}
         </div>
-        {canAudit && (
+        {canAudit && !isMobile && (
           <Button
             type="button"
             variant="outline"

@@ -4,11 +4,12 @@ import { useState, useRef, useEffect, useMemo, useCallback, Suspense } from "rea
 import { useSearchParams, useRouter } from "next/navigation"
 import { useForm, Controller, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { XIcon, History, QrCode } from "lucide-react"
+import { XIcon, History, QrCode, Search } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { usePermissions } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useMobileDock } from '@/components/mobile-dock-provider'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { QRScannerDialog } from '@/components/dialogs/qr-scanner-dialog'
 import { QRCodeDisplayDialog } from '@/components/dialogs/qr-code-display-dialog'
@@ -156,6 +157,7 @@ function DisposeAssetPageContent() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
   const hasProcessedUrlParams = useRef(false)
   const canViewAssets = hasPermission('canViewAssets')
   const canDispose = hasPermission('canDispose')
@@ -601,6 +603,46 @@ function DisposeAssetPageContent() {
     )
   }, [selectedAssets, disposalMethod, disposeReason])
 
+  // Set mobile dock content
+  useEffect(() => {
+    if (isMobile) {
+      setDockContent(
+        <>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => {
+              if (inputRef.current) {
+                inputRef.current.focus()
+              }
+            }}
+            className="h-10 w-10 rounded-full btn-glass-elevated"
+            title="Search"
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+          {canViewAssets && canDispose && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setQrDialogOpen(true)}
+              className="h-10 w-10 rounded-full btn-glass-elevated"
+              title="QR Code"
+            >
+              <QrCode className="h-4 w-4" />
+            </Button>
+          )}
+        </>
+      )
+    } else {
+      setDockContent(null)
+    }
+    
+    return () => {
+      setDockContent(null)
+    }
+  }, [isMobile, setDockContent, canViewAssets, canDispose])
+
   // Clear form function
   const clearForm = () => {
     setSelectedAssets([])
@@ -1011,7 +1053,7 @@ function DisposeAssetPageContent() {
                 </div>
               )}
               </div>
-              {canViewAssets && canDispose && (
+              {canViewAssets && canDispose && !isMobile && (
                 <Button
                   type="button"
                   variant="outline"
@@ -1312,7 +1354,7 @@ function DisposeAssetPageContent() {
             animate={{ opacity: 1, y: 0, x: '-50%' }}
             exit={{ opacity: 0, y: 20, x: '-50%' }}
             transition={{ duration: 0.3, ease: "easeOut" }}
-          className="fixed bottom-6 z-50 flex items-center justify-center gap-3"
+          className="fixed bottom-20 md:bottom-6 z-50 flex items-center justify-center gap-3"
           style={{
               left: isMobile 
                 ? '50%'
