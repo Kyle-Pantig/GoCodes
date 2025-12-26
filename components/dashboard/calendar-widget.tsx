@@ -742,7 +742,7 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
         {/* Inner Shadow for Depth */}
         <div className="absolute inset-0 pointer-events-none z-0 rounded-[24px] shadow-[inset_0_2px_4px_0_rgba(0,0,0,0.06)]" />
         
-        <CardHeader className="pb-4 relative z-10">
+        <CardHeader className="pb-4 relative z-10 gap-0 sm:gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="space-y-1">
               <CardTitle className="flex items-center gap-2">
