@@ -1126,7 +1126,7 @@ function TrashPageContent() {
                   setIsManualRefresh(true)
                   queryClient.invalidateQueries({ queryKey: ['deletedAssets'] })
                 }}
-                className="h-8 w-8 shrink-0 md:hidden"
+                className="h-8.5 w-8.5 shrink-0 md:hidden bg-transparent dark:bg-input/30"
                 title="Refresh table"
               >
                 <RotateCw className="h-4 w-4" />
