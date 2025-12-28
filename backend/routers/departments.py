@@ -21,13 +21,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/departments", tags=["departments"])
 
 async def check_permission(user_id: str, permission: str) -> bool:
-    """Check if user has a specific permission"""
+    """Check if user has a specific permission. Admins have all permissions."""
     try:
         asset_user = await prisma.assetuser.find_unique(
             where={"userId": user_id}
         )
         if not asset_user or not asset_user.isActive:
             return False
+        
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+        
         return getattr(asset_user, permission, False)
     except Exception:
         return False
@@ -42,6 +47,18 @@ async def get_departments(
 ):
     """Get all departments with optional search filter"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to view departments
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to view departments"
+            )
+        
         if search:
             departments_data = await prisma.assetsdepartment.find_many(
                 where={
@@ -74,6 +91,8 @@ async def get_departments(
         
         return DepartmentsResponse(departments=departments)
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching departments: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch departments")
@@ -85,6 +104,18 @@ async def create_department(
 ):
     """Create a new department"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to create departments
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create departments"
+            )
+        
         # Check if department with same name exists
         existing = await prisma.assetsdepartment.find_first(
             where={
@@ -133,6 +164,18 @@ async def update_department(
 ):
     """Update an existing department"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to update departments
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to update departments"
+            )
+        
         # Check if department exists
         existing = await prisma.assetsdepartment.find_unique(
             where={"id": department_id}
@@ -195,6 +238,14 @@ async def bulk_delete_departments(
         user_id = auth.get("user_id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to delete departments
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete departments"
+            )
         
         if not request.ids or len(request.ids) == 0:
             raise HTTPException(status_code=400, detail="Invalid request. Expected an array of department IDs.")
@@ -259,6 +310,18 @@ async def delete_department(
 ):
     """Delete a department"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to delete departments
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete departments"
+            )
+        
         # Check if department exists
         department = await prisma.assetsdepartment.find_unique(
             where={"id": department_id}

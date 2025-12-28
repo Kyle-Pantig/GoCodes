@@ -63,6 +63,10 @@ export const useDepartments = (enabled: boolean = true, search?: string) => {
         headers,
       })
       if (!response.ok) {
+        // Handle 403 Forbidden silently - user doesn't have permission
+        if (response.status === 403) {
+          return []
+        }
         const errorText = await response.text()
         console.error(`Failed to fetch departments: ${response.status} ${response.statusText}`, errorText)
         if (response.status === 401) {

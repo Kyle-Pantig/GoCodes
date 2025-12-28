@@ -332,6 +332,7 @@ export default function SitesPage() {
                 variant="outline"
                 size="lg"
                 onClick={handleToggleSelectAll}
+                disabled={!canManageSetup}
                 className="rounded-full btn-glass-elevated"
               >
                 {allSelected ? 'Deselect All' : 'Select All'}
@@ -349,7 +350,7 @@ export default function SitesPage() {
               variant="outline"
               size="icon"
               onClick={() => setIsBulkDeleteDialogOpen(true)}
-              disabled={!hasSelectedItems}
+              disabled={!hasSelectedItems || !canManageSetup}
               className="h-10 w-10 rounded-full btn-glass-elevated"
               title="Delete Selected"
             >
@@ -366,6 +367,7 @@ export default function SitesPage() {
                 variant="outline"
                 size="lg"
                 onClick={handleToggleSelectionMode}
+                disabled={!canManageSetup}
                 className="rounded-full btn-glass-elevated"
               >
                 Select
@@ -374,6 +376,7 @@ export default function SitesPage() {
                 onClick={() => setIsCreateSiteDialogOpen(true)}
                 variant="outline"
                 size="lg"
+                disabled={!canManageSetup}
                 className="rounded-full btn-glass-elevated"
               >
                 Add Site
@@ -417,7 +420,7 @@ export default function SitesPage() {
     return () => {
       setDockContent(null)
     }
-  }, [isMobile, setDockContent, isSelectionMode, selectedSites.size, handleToggleSelectAll, handleToggleSelectionMode, sortBy, sortOrder])
+  }, [isMobile, setDockContent, isSelectionMode, selectedSites.size, handleToggleSelectAll, handleToggleSelectionMode, sortBy, sortOrder, canManageSetup])
 
   if (permissionsLoading || sitesLoading) {
     return (
@@ -459,7 +462,7 @@ export default function SitesPage() {
   if (!canManageSetup) {
     return (
       <div className="space-y-4">
-        <Card>
+        <Card className='border-none! shadow-none! bg-transparent!'>
           <CardHeader>
             <CardTitle>Sites</CardTitle>
             <CardDescription>Manage company sites/branches</CardDescription>

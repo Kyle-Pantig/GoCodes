@@ -19,6 +19,23 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
 
+async def check_permission(user_id: str, permission: str) -> bool:
+    """Check if user has a specific permission. Admins have all permissions."""
+    try:
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        if not asset_user or not asset_user.isActive:
+            return False
+        
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+        
+        return getattr(asset_user, permission, False)
+    except Exception:
+        return False
+
 @router.get("", response_model=CategoriesResponse)
 async def get_categories(
     search: Optional[str] = Query(None),
@@ -26,6 +43,18 @@ async def get_categories(
 ):
     """Get all categories with their subcategories and optional search filter"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to view categories
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to view categories"
+            )
+        
         if search:
             categories_data = await prisma.category.find_many(
                 where={
@@ -75,6 +104,8 @@ async def get_categories(
         
         return CategoriesResponse(categories=categories)
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching categories: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch categories")
@@ -86,6 +117,18 @@ async def create_category(
 ):
     """Create a new category"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to create categories
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create categories"
+            )
+        
         # Check if category with same name exists
         existing = await prisma.category.find_first(
             where={
@@ -148,6 +191,18 @@ async def update_category(
 ):
     """Update an existing category"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to update categories
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to update categories"
+            )
+        
         # Check if category exists
         existing = await prisma.category.find_unique(
             where={"id": category_id},
@@ -222,6 +277,18 @@ async def delete_category(
 ):
     """Delete a category"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to delete categories
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete categories"
+            )
+        
         # Check if category exists
         category = await prisma.category.find_unique(
             where={"id": category_id}

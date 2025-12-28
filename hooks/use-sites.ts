@@ -65,6 +65,10 @@ export const useSites = (enabled: boolean = true, search?: string) => {
         headers,
       })
       if (!response.ok) {
+        // Handle 403 Forbidden silently - user doesn't have permission
+        if (response.status === 403) {
+          return []
+        }
         const errorText = await response.text()
         console.error(`Failed to fetch sites: ${response.status} ${response.statusText}`, errorText)
         if (response.status === 401) {
@@ -107,7 +111,7 @@ export const useCreateSite = () => {
       })
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || "Failed to create site")
+        throw new Error(error.detail || error.error || "Failed to create site")
       }
       return response.json()
     },
@@ -206,7 +210,7 @@ export const useUpdateSite = () => {
       })
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || "Failed to update site")
+        throw new Error(error.detail || error.error || "Failed to update site")
       }
       return response.json()
     },
@@ -248,7 +252,7 @@ export const useDeleteSite = () => {
       })
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || "Failed to delete site")
+        throw new Error(error.detail || error.error || "Failed to delete site")
       }
       return response.json()
     },

@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Shield, ShieldCheck } from 'lucide-react'
+import { createClient } from '@/lib/supabase-client'
 
 interface UserPermissions {
   role: string
@@ -36,8 +37,38 @@ interface UserPermissions {
   canManageInventory: boolean
 }
 
+// Get API base URL - use FastAPI if enabled
+const getApiBaseUrl = () => {
+  const useFastAPI = process.env.NEXT_PUBLIC_USE_FASTAPI === 'true'
+  const fastApiUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000'
+  return useFastAPI ? fastApiUrl : ''
+}
+
+// Helper function to get auth token from Supabase session
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    return session?.access_token || null
+  } catch (error) {
+    console.error('Error getting auth token:', error)
+    return null
+  }
+}
+
 async function fetchPermissions(): Promise<UserPermissions> {
-  const response = await fetch('/api/auth/me')
+  const baseUrl = getApiBaseUrl()
+  const token = await getAuthToken()
+  
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  }
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  
+  const response = await fetch(`${baseUrl}/api/auth/me`, { headers })
   if (!response.ok) {
     throw new Error('Failed to fetch permissions')
   }

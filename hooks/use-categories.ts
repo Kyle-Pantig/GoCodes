@@ -74,6 +74,10 @@ export const useCategories = (enabled: boolean = true) => {
         headers,
       })
       if (!response.ok) {
+        // Handle 403 Forbidden silently - user doesn't have permission
+        if (response.status === 403) {
+          return []
+        }
         const errorText = await response.text()
         console.error(`Failed to fetch categories: ${response.status} ${response.statusText}`, errorText)
         if (response.status === 401) {
@@ -111,6 +115,10 @@ export const useSubCategories = (categoryId: string | null) => {
         headers,
       })
       if (!response.ok) {
+        // Handle 403 Forbidden silently - user doesn't have permission
+        if (response.status === 403) {
+          return []
+        }
         const errorText = await response.text()
         console.error(`Failed to fetch subcategories: ${response.status} ${response.statusText}`, errorText)
         // Return empty array on error instead of undefined

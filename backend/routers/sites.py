@@ -21,13 +21,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/sites", tags=["sites"])
 
 async def check_permission(user_id: str, permission: str) -> bool:
-    """Check if user has a specific permission"""
+    """Check if user has a specific permission. Admins have all permissions."""
     try:
         asset_user = await prisma.assetuser.find_unique(
             where={"userId": user_id}
         )
         if not asset_user or not asset_user.isActive:
             return False
+        
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+        
         return getattr(asset_user, permission, False)
     except Exception:
         return False
@@ -42,6 +47,18 @@ async def get_sites(
 ):
     """Get all sites with optional search filter"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to view sites
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to view sites"
+            )
+        
         if search:
             sites_data = await prisma.assetssite.find_many(
                 where={
@@ -70,6 +87,8 @@ async def get_sites(
         
         return SitesResponse(sites=sites)
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching sites: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch sites")
@@ -81,6 +100,18 @@ async def create_site(
 ):
     """Create a new site"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to create sites
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create sites"
+            )
+        
         # Check if site with same name exists
         existing = await prisma.assetssite.find_first(
             where={
@@ -129,6 +160,18 @@ async def update_site(
 ):
     """Update an existing site"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to update sites
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to update sites"
+            )
+        
         # Check if site exists
         existing = await prisma.assetssite.find_unique(
             where={"id": site_id}
@@ -191,6 +234,14 @@ async def bulk_delete_sites(
         user_id = auth.get("user_id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to delete sites
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete sites"
+            )
         
         if not request.ids or len(request.ids) == 0:
             raise HTTPException(status_code=400, detail="Invalid request. Expected an array of site IDs.")
@@ -255,6 +306,18 @@ async def delete_site(
 ):
     """Delete a site"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to delete sites
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete sites"
+            )
+        
         # Check if site exists
         site = await prisma.assetssite.find_unique(
             where={"id": site_id}

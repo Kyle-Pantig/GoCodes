@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useTransition, useMemo, Suspense } from 'react'
+import { useState, useCallback, useTransition, useMemo, Suspense, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { User, Lock, Shield, PanelLeft, Settings } from 'lucide-react'
@@ -13,6 +13,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useMobileDock } from '@/components/mobile-dock-provider'
 import PersonalDetails from '@/components/settings/personal-details'
 import PasswordAndSecurity from '@/components/settings/password-security'
 import Permissions from '@/components/settings/permissions'
@@ -23,15 +24,16 @@ function AccountPageContent() {
   const searchParams = useSearchParams()
   const [, startTransition] = useTransition()
   const isMobile = useIsMobile()
+  const { setDockContent } = useMobileDock()
   const [manualCollapsed, setManualCollapsed] = useState<boolean | null>(null)
   
-  // Derive collapsed state: use manual override if set, otherwise use mobile state
+  // Derive collapsed state: use manual override if set, otherwise default to expanded on desktop
   const isCollapsed = useMemo(() => {
     if (manualCollapsed !== null) {
       return manualCollapsed
     }
-    return isMobile
-  }, [manualCollapsed, isMobile])
+    return false
+  }, [manualCollapsed])
   
   // Tab state from URL
   const activeTab = (searchParams.get('tab') as 'personal' | 'password' | 'permissions' | 'preferences') || 'personal'
@@ -56,9 +58,9 @@ function AccountPageContent() {
     [searchParams, router, startTransition]
   )
 
-  const handleTabChange = (tab: 'personal' | 'password' | 'permissions' | 'preferences') => {
+  const handleTabChange = useCallback((tab: 'personal' | 'password' | 'permissions' | 'preferences') => {
     updateURL({ tab })
-  }
+  }, [updateURL])
 
   const toggleSidebar = () => {
     setManualCollapsed(!isCollapsed)
@@ -87,6 +89,49 @@ function AccountPageContent() {
     },
   ]
 
+  // Set mobile dock content with 4 tab buttons
+  useEffect(() => {
+    if (isMobile) {
+      setDockContent(
+        <>
+          {tabs.map((tab) => {
+            const Icon = tab.icon
+            const isActive = activeTab === tab.id
+            return (
+              <Button
+                key={tab.id}
+                variant="ghost"
+                size="icon"
+                onClick={() => handleTabChange(tab.id)}
+                className={cn(
+                  "h-12 w-12 rounded-full flex flex-col items-center justify-center gap-0.5",
+                  isActive 
+                    ? "bg-primary text-primary-foreground" 
+                    : "btn-glass-elevated text-muted-foreground"
+                )}
+                title={tab.label}
+              >
+                <Icon className="h-5 w-5" />
+                <span className="text-[10px] font-medium truncate max-w-[48px]">
+                  {tab.id === 'personal' ? 'Profile' : 
+                   tab.id === 'password' ? 'Security' : 
+                   tab.id === 'permissions' ? 'Access' : 
+                   'Prefs'}
+                </span>
+              </Button>
+            )
+          })}
+        </>
+      )
+    } else {
+      setDockContent(null)
+    }
+    
+    return () => {
+      setDockContent(null)
+    }
+  }, [isMobile, setDockContent, activeTab, handleTabChange])
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -106,9 +151,9 @@ function AccountPageContent() {
       </motion.div>
 
       <div className="flex flex-row gap-6">
-        {/* Sidebar Navigation */}
+        {/* Sidebar Navigation - Hidden on mobile, uses dock instead */}
         <div className={cn(
-          'shrink-0 transition-all duration-200',
+          'shrink-0 transition-all duration-200 hidden md:block',
           isCollapsed ? 'w-12' : 'w-64'
         )}>
           <div className={cn(
@@ -117,7 +162,6 @@ function AccountPageContent() {
           )}>
             <h2 className={cn(
               'text-sm font-semibold transition-opacity',
-              isMobile && 'hidden',
               isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'
             )}>
               Navigation
@@ -126,7 +170,7 @@ function AccountPageContent() {
               variant="ghost"
               size="icon"
               onClick={toggleSidebar}
-              className={cn("h-7 w-7 rounded-full", isMobile && "hidden")}
+              className="h-7 w-7 rounded-full"
             >
               <PanelLeft className={cn(
                 'h-4 w-4 transition-transform',

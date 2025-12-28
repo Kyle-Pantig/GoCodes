@@ -18,6 +18,23 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/subcategories", tags=["subcategories"])
 
+async def check_permission(user_id: str, permission: str) -> bool:
+    """Check if user has a specific permission. Admins have all permissions."""
+    try:
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        if not asset_user or not asset_user.isActive:
+            return False
+        
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+        
+        return getattr(asset_user, permission, False)
+    except Exception:
+        return False
+
 
 @router.get("", response_model=SubCategoriesResponse)
 async def get_subcategories(
@@ -26,6 +43,18 @@ async def get_subcategories(
 ):
     """Get subcategories, optionally filtered by category ID"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to view subcategories
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to view subcategories"
+            )
+        
         where_clause = {}
         if categoryId:
             where_clause["categoryId"] = categoryId
@@ -50,6 +79,8 @@ async def get_subcategories(
         
         return SubCategoriesResponse(subcategories=subcategories)
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching subcategories: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch subcategories")
@@ -62,6 +93,18 @@ async def create_subcategory(
 ):
     """Create a new subcategory"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to create subcategories
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create subcategories"
+            )
+        
         # Check if subcategory with same name exists in the same category
         existing = await prisma.subcategory.find_first(
             where={
@@ -114,6 +157,18 @@ async def update_subcategory(
 ):
     """Update an existing subcategory"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to update subcategories
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to update subcategories"
+            )
+        
         # Check if subcategory exists
         existing = await prisma.subcategory.find_unique(
             where={"id": subcategory_id},
@@ -178,6 +233,18 @@ async def delete_subcategory(
 ):
     """Delete a subcategory"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to delete subcategories
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete subcategories"
+            )
+        
         # Check if subcategory exists
         subcategory = await prisma.subcategory.find_unique(
             where={"id": subcategory_id},

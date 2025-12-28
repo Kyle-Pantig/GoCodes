@@ -92,6 +92,7 @@ export default function CategoriesPage() {
             onClick={() => setIsCreateCategoryDialogOpen(true)}
             variant="outline"
             size="lg"
+            disabled={!canManageSetup}
             className="rounded-full btn-glass-elevated"
           >
             Add Category
@@ -133,7 +134,7 @@ export default function CategoriesPage() {
     return () => {
       setDockContent(null)
     }
-  }, [isMobile, setDockContent, sortBy, sortOrder, setIsCreateCategoryDialogOpen])
+  }, [isMobile, setDockContent, sortBy, sortOrder, setIsCreateCategoryDialogOpen, canManageSetup])
 
   // Category handlers
   const handleCreateCategory = async (data: { name: string; description?: string }) => {
@@ -351,7 +352,7 @@ export default function CategoriesPage() {
   if (!canManageSetup) {
     return (
       <div className="space-y-4">
-        <Card>
+        <Card className='border-none! shadow-none! bg-transparent!'>
           <CardHeader>
             <CardTitle>Categories</CardTitle>
             <CardDescription>Manage asset categories and subcategories</CardDescription>

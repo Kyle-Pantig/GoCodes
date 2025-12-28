@@ -21,13 +21,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/locations", tags=["locations"])
 
 async def check_permission(user_id: str, permission: str) -> bool:
-    """Check if user has a specific permission"""
+    """Check if user has a specific permission. Admins have all permissions."""
     try:
         asset_user = await prisma.assetuser.find_unique(
             where={"userId": user_id}
         )
         if not asset_user or not asset_user.isActive:
             return False
+        
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+        
         return getattr(asset_user, permission, False)
     except Exception:
         return False
@@ -42,6 +47,18 @@ async def get_locations(
 ):
     """Get all locations with optional search filter"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to view locations
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to view locations"
+            )
+        
         if search:
             locations_data = await prisma.assetslocation.find_many(
                 where={
@@ -74,6 +91,8 @@ async def get_locations(
         
         return LocationsResponse(locations=locations)
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching locations: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch locations")
@@ -85,6 +104,18 @@ async def create_location(
 ):
     """Create a new location"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to create locations
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create locations"
+            )
+        
         # Check if location with same name exists
         existing = await prisma.assetslocation.find_first(
             where={
@@ -133,6 +164,18 @@ async def update_location(
 ):
     """Update an existing location"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to update locations
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to update locations"
+            )
+        
         # Check if location exists
         existing = await prisma.assetslocation.find_unique(
             where={"id": location_id}
@@ -195,6 +238,14 @@ async def bulk_delete_locations(
         user_id = auth.get("user_id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to delete locations
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete locations"
+            )
         
         if not request.ids or len(request.ids) == 0:
             raise HTTPException(status_code=400, detail="Invalid request. Expected an array of location IDs.")
@@ -259,6 +310,18 @@ async def delete_location(
 ):
     """Delete a location"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageSetup to delete locations
+        has_permission = await check_permission(user_id, "canManageSetup")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete locations"
+            )
+        
         # Check if location exists
         location = await prisma.assetslocation.find_unique(
             where={"id": location_id}

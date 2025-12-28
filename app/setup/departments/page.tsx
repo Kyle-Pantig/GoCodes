@@ -324,6 +324,7 @@ export default function DepartmentsPage() {
                 variant="outline"
                 size="lg"
                 onClick={handleToggleSelectAll}
+                disabled={!canManageSetup}
                 className="rounded-full btn-glass-elevated"
               >
                 {allSelected ? 'Deselect All' : 'Select All'}
@@ -341,7 +342,7 @@ export default function DepartmentsPage() {
               variant="outline"
               size="icon"
               onClick={() => setIsBulkDeleteDialogOpen(true)}
-              disabled={!hasSelectedItems}
+              disabled={!hasSelectedItems || !canManageSetup}
               className="h-10 w-10 rounded-full btn-glass-elevated"
               title="Delete Selected"
             >
@@ -358,6 +359,7 @@ export default function DepartmentsPage() {
                 variant="outline"
                 size="lg"
                 onClick={handleToggleSelectionMode}
+                disabled={!canManageSetup}
                 className="rounded-full btn-glass-elevated"
               >
                 Select
@@ -366,6 +368,7 @@ export default function DepartmentsPage() {
                 onClick={() => setIsCreateDepartmentDialogOpen(true)}
                 variant="outline"
                 size="lg"
+                disabled={!canManageSetup}
                 className="rounded-full btn-glass-elevated"
               >
                 Add Department
@@ -409,7 +412,7 @@ export default function DepartmentsPage() {
     return () => {
       setDockContent(null)
     }
-  }, [isMobile, setDockContent, isSelectionMode, selectedDepartments.size, handleToggleSelectAll, handleToggleSelectionMode, sortBy, sortOrder])
+  }, [isMobile, setDockContent, isSelectionMode, selectedDepartments.size, handleToggleSelectAll, handleToggleSelectionMode, sortBy, sortOrder, canManageSetup])
 
   if (permissionsLoading || departmentsLoading) {
     return (
@@ -451,7 +454,7 @@ export default function DepartmentsPage() {
   if (!canManageSetup) {
     return (
       <div className="space-y-4">
-        <Card>
+        <Card className='border-none! shadow-none! bg-transparent!'>
           <CardHeader>
             <CardTitle>Departments</CardTitle>
             <CardDescription>Manage asset departments</CardDescription>
