@@ -13,6 +13,23 @@ from database import prisma
 
 logger = logging.getLogger(__name__)
 
+async def check_permission(user_id: str, permission: str) -> bool:
+    """Check if user has a specific permission. Admins have all permissions."""
+    try:
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        if not asset_user or not asset_user.isActive:
+            return False
+
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+
+        return getattr(asset_user, permission, False)
+    except Exception:
+        return False
+
 def is_uuid(value: str) -> bool:
     """Check if a string is a UUID"""
     uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
@@ -37,6 +54,18 @@ async def create_lease_return(
 ):
     """Create lease return records for assets"""
     try:
+        user_id = auth.get("user", {}).get("id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission (lease return is part of lease operations)
+        has_permission = await check_permission(user_id, "canLease")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to return leased assets"
+            )
+        
         if not return_data.assetIds or len(return_data.assetIds) == 0:
             raise HTTPException(status_code=400, detail="Asset IDs are required")
 

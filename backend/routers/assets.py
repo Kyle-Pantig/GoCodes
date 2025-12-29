@@ -352,6 +352,17 @@ async def get_assets(
 ):
     """Get all assets with optional search filter and pagination"""
     try:
+        user_id = auth.get("user", {}).get("id") or auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canViewAssets")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to view assets"
+            )
         where_clause = build_where_clause(
             search=search,
             category=category,
@@ -3670,6 +3681,17 @@ async def get_asset(
 ):
     """Get a single asset by ID or assetTagId"""
     try:
+        user_id = auth.get("user", {}).get("id") or auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canViewAssets")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to view assets"
+            )
         # Check if it's a UUID or assetTagId
         is_id_uuid = is_uuid(asset_id)
         
@@ -3881,6 +3903,18 @@ async def create_asset(
 ):
     """Create a new asset"""
     try:
+        user_id = auth.get("user", {}).get("id") or auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canCreateAssets")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create assets"
+            )
+        
         # Get user info for history logging
         user_metadata = auth.get("user_metadata", {})
         user_name = (
@@ -4053,6 +4087,18 @@ async def update_asset(
 ):
     """Update an existing asset"""
     try:
+        user_id = auth.get("user", {}).get("id") or auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canEditAssets")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to edit assets"
+            )
+        
         # Get user info for history logging
         user_metadata = auth.get("user_metadata", {})
         user_name = (
@@ -4309,6 +4355,18 @@ async def delete_asset(
 ):
     """Delete an asset (soft delete by default, permanent if specified)"""
     try:
+        user_id = auth.get("user", {}).get("id") or auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canDeleteAssets")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete assets"
+            )
+        
         # Get user info for history logging
         user_metadata = auth.get("user_metadata", {})
         user_name = (
@@ -4560,6 +4618,18 @@ async def bulk_delete_assets(
 ):
     """Bulk delete multiple assets (soft delete or permanent)"""
     try:
+        user_id = auth.get("user", {}).get("id") or auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canDeleteAssets")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete assets"
+            )
+        
         user_metadata = auth.get("user_metadata", {})
         user_name = (
             user_metadata.get("name") or

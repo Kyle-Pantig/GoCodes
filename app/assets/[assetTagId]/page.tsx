@@ -439,6 +439,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
   const imageInputRef = useRef<HTMLInputElement>(null)
   const documentInputRef = useRef<HTMLInputElement>(null)
   const assetTagIdInputRef = useRef<HTMLInputElement>(null)
+  const updateAbortControllerRef = useRef<AbortController | null>(null)
 
   // Handle refresh
   const handleRefresh = useCallback(() => {
@@ -486,6 +487,16 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
       }
     }
   }, [isMobile, setDockContent, router, handleRefresh])
+
+  // Cleanup: abort any pending update request when component unmounts (user navigates away)
+  useEffect(() => {
+    return () => {
+      if (updateAbortControllerRef.current) {
+        updateAbortControllerRef.current.abort()
+        updateAbortControllerRef.current = null
+      }
+    }
+  }, [])
 
   // Extract suffix from full tag (e.g., "25-579811C-SA" -> "SA")
   const extractSuffix = (fullTag: string): string => {
@@ -1313,7 +1324,6 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
 
   const onSubmit = async (data: EditAssetFormData) => {
     if (!canEditAssets) {
-      toast.error('You do not have permission to edit assets')
       return
     }
 
@@ -1333,6 +1343,10 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
     }
 
     try {
+      // Create new AbortController for this request - allows cancellation on navigate/cancel
+      updateAbortControllerRef.current = new AbortController()
+      const signal = updateAbortControllerRef.current.signal
+
       const updateData = {
         assetTagId: data.assetTagId.trim(),
         description: data.description,
@@ -1369,7 +1383,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const updatedAsset = await updateAssetMutation.mutateAsync({ id: resolvedParams.assetTagId, ...updateData as any })
+      const updatedAsset = await updateAssetMutation.mutateAsync({ id: resolvedParams.assetTagId, signal, ...updateData as any })
       // Trigger additional cache invalidation for images/documents
       await handleUpdateSuccess(updatedAsset)
 
@@ -1485,7 +1499,14 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
 
       router.push("/assets")
     } catch (error) {
+      // Don't show error toast if request was cancelled by user
+      if (error instanceof Error && error.name === 'AbortError') {
+        return
+      }
       toast.error(error instanceof Error ? error.message : 'Failed to update asset')
+    } finally {
+      // Clear the abort controller reference after request completes
+      updateAbortControllerRef.current = null
     }
   }
 
@@ -1508,6 +1529,18 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
 
   // Clear form function - reset to original asset values
   const clearForm = () => {
+    // Abort any pending update request when user cancels
+    const wasUpdating = updateAbortControllerRef.current !== null
+    if (updateAbortControllerRef.current) {
+      updateAbortControllerRef.current.abort()
+      updateAbortControllerRef.current = null
+    }
+
+    // Show appropriate toast message
+    if (wasUpdating) {
+      toast.info('Save cancelled - changes discarded')
+    }
+
     if (asset) {
       const resetData = {
         assetTagId: asset.assetTagId || "",
@@ -3721,7 +3754,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                 formElement.requestSubmit()
               }
             }}
-            disabled={loading || uploadingImages || uploadingDocuments || isCheckingAssetTag}
+            disabled={loading || uploadingImages || uploadingDocuments || isCheckingAssetTag || !canEditAssets}
             className="min-w-[120px]"
           >
             {loading || uploadingImages || uploadingDocuments ? (

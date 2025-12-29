@@ -14,6 +14,23 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/assets/checkin", tags=["checkin"])
 
+async def check_permission(user_id: str, permission: str) -> bool:
+    """Check if user has a specific permission. Admins have all permissions."""
+    try:
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        if not asset_user or not asset_user.isActive:
+            return False
+
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+
+        return getattr(asset_user, permission, False)
+    except Exception:
+        return False
+
 def parse_date(date_str: str) -> datetime:
     """Parse date string to datetime"""
     try:
@@ -31,6 +48,18 @@ async def create_checkin(
 ):
     """Create checkin records for assets"""
     try:
+        user_id = auth.get("user", {}).get("id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canCheckin")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to checkin assets"
+            )
+        
         # Get user info for history logging
         user_metadata = auth.get('user', {}).get('user_metadata', {})
         userName = (

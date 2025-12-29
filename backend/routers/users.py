@@ -36,6 +36,24 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_ANON_KEY = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY") or os.getenv("SUPABASE_ANON_KEY")
 
 
+async def check_permission(user_id: str, permission: str) -> bool:
+    """Check if user has a specific permission"""
+    try:
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        if not asset_user or not asset_user.isActive:
+            return False
+        
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+        
+        return getattr(asset_user, permission, False)
+    except Exception:
+        return False
+
+
 def generate_random_password(length: int = 12) -> str:
     """Generate a random password"""
     charset = string.ascii_letters + string.digits + "!@#$%^&*()_+-=[]{}|;:,.<>?/~`"
@@ -364,6 +382,14 @@ async def create_user(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
         
+        # Check permission
+        has_permission = await check_permission(user_id, "canManageUsers")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create users"
+            )
+        
         # Generate password if not provided
         user_password = request.password or generate_random_password()
         
@@ -484,6 +510,14 @@ async def update_user(
         if not auth_user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
         
+        # Check permission
+        has_permission = await check_permission(auth_user_id, "canManageUsers")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to update users"
+            )
+        
         # Get the user being updated
         user_to_update = await prisma.assetuser.find_unique(where={"id": user_id})
         
@@ -579,6 +613,14 @@ async def delete_user(
         if not auth_user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
         
+        # Check permission
+        has_permission = await check_permission(auth_user_id, "canManageUsers")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete users"
+            )
+        
         # Get the user being deleted
         user_to_delete = await prisma.assetuser.find_unique(where={"id": user_id})
         
@@ -616,6 +658,14 @@ async def send_password_reset(
         auth_user_id = auth.get("user", {}).get("id")
         if not auth_user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(auth_user_id, "canManageUsers")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to send password reset emails"
+            )
         
         # Get user from database
         db_user = await prisma.assetuser.find_unique(where={"id": user_id})

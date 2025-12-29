@@ -22,6 +22,24 @@ def is_uuid(value: str) -> bool:
 router = APIRouter(prefix="/api/assets/maintenance", tags=["maintenance"])
 
 
+async def check_permission(user_id: str, permission: str) -> bool:
+    """Check if user has a specific permission"""
+    try:
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        if not asset_user or not asset_user.isActive:
+            return False
+        
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+        
+        return getattr(asset_user, permission, False)
+    except Exception:
+        return False
+
+
 @router.get("", response_model=MaintenancesListResponse)
 async def list_maintenances(
     assetId: Optional[str] = Query(None, description="Filter by asset ID (UUID) or assetTagId"),
@@ -269,6 +287,18 @@ async def delete_maintenance(
 ):
     """Delete a maintenance record"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canManageMaintenance")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete maintenance records"
+            )
+        
         # Check if maintenance record exists
         maintenance = await prisma.assetsmaintenance.find_unique(
             where={"id": maintenance_id}
@@ -332,6 +362,18 @@ async def update_maintenance(
 ):
     """Update a maintenance record"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canManageMaintenance")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to update maintenance records"
+            )
+        
         if not data.id:
             raise HTTPException(status_code=400, detail="Maintenance ID is required")
         
@@ -487,6 +529,18 @@ async def create_maintenance(
 ):
     """Create a maintenance record"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canManageMaintenance")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create maintenance records"
+            )
+        
         if not maintenance_data.assetId:
             raise HTTPException(status_code=400, detail="Asset ID is required")
         

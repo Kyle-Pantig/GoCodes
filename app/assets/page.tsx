@@ -1422,12 +1422,8 @@ const AssetActions = memo(function AssetActions({ asset, isSelectionMode, hasSel
   }, [deleteAssetMutation, asset.id, queryClient])
 
   const handleEdit = useCallback(() => {
-    if (!hasPermission('canEditAssets')) {
-      toast.error('You do not have permission to edit assets')
-      return
-    }
     router.push(`/assets/${asset.assetTagId}`)
-  }, [hasPermission, router, asset.assetTagId])
+  }, [router, asset.assetTagId])
 
   const handleAudit = useCallback(() => {
     if (!hasPermission('canAudit')) {
@@ -1438,28 +1434,16 @@ const AssetActions = memo(function AssetActions({ asset, isSelectionMode, hasSel
   }, [hasPermission])
 
   const handleCheckout = useCallback(() => {
-    if (!hasPermission('canCheckout')) {
-      toast.error('You do not have permission to manage checkouts')
-      return
-    }
     setIsCheckoutOpen(true)
-  }, [hasPermission])
+  }, [])
 
   const handleCheckoutAction = useCallback(() => {
-    if (!hasPermission('canCheckout')) {
-      toast.error('You do not have permission to checkout assets')
-      return
-    }
     router.push(`/assets/checkout?assetId=${asset.assetTagId}`)
-  }, [hasPermission, router, asset.id])
+  }, [router, asset.assetTagId])
 
   const handleDelete = useCallback(() => {
-    if (!hasPermission('canDeleteAssets')) {
-      toast.error('You do not have permission to delete assets')
-      return
-    }
     setIsDeleteOpen(true)
-  }, [hasPermission])
+  }, [])
 
   const handleViewDetails = useCallback(() => {
     if (!asset.assetTagId) return
@@ -1467,63 +1451,43 @@ const AssetActions = memo(function AssetActions({ asset, isSelectionMode, hasSel
   }, [router, asset.assetTagId])
 
   const handleCheckin = useCallback(() => {
-    if (!hasPermission('canCheckin')) {
-      toast.error('You do not have permission to check in assets')
-      return
-    }
     router.push(`/assets/checkin?assetId=${asset.assetTagId}`)
-  }, [hasPermission, router, asset.id])
+  }, [router, asset.assetTagId])
 
   const handleMove = useCallback(() => {
-    if (!hasPermission('canMove')) {
-      toast.error('You do not have permission to move assets')
-      return
-    }
     router.push(`/assets/move?assetId=${asset.assetTagId}`)
-  }, [hasPermission, router, asset.id])
+  }, [router, asset.assetTagId])
 
   const handleReserve = useCallback(() => {
-    if (!hasPermission('canReserve')) {
-      toast.error('You do not have permission to reserve assets')
-      return
-    }
     router.push(`/assets/reserve?assetId=${asset.assetTagId}`)
-  }, [hasPermission, router, asset.id])
+  }, [router, asset.assetTagId])
 
   const handleLease = useCallback(() => {
-    if (!hasPermission('canLease')) {
-      toast.error('You do not have permission to lease assets')
-      return
-    }
     router.push(`/assets/lease?assetId=${asset.assetTagId}`)
-  }, [hasPermission, router, asset.id])
+  }, [router, asset.assetTagId])
 
   const handleLeaseReturn = useCallback(() => {
-    if (!hasPermission('canLease')) {
-      toast.error('You do not have permission to return leased assets')
-      return
-    }
     router.push(`/assets/lease-return?assetId=${asset.assetTagId}`)
-  }, [hasPermission, router, asset.id])
+  }, [router, asset.assetTagId])
 
   const handleDispose = useCallback((method: string) => {
-    if (!hasPermission('canDispose')) {
-      toast.error('You do not have permission to dispose assets')
-      return
-    }
     router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=${method}`)
-  }, [hasPermission, router, asset.id])
+  }, [router, asset.assetTagId])
 
   const handleMaintenance = useCallback((status: string) => {
-    if (!hasPermission('canManageMaintenance')) {
-      toast.error('You do not have permission to manage maintenance')
-      return
-    }
     router.push(`/assets/maintenance?assetId=${asset.assetTagId}&status=${status}`)
-  }, [hasPermission, router, asset.id])
+  }, [router, asset.id])
 
 
   const isDisabled = isSelectionMode || hasSelectedAssets
+  const canEditAssets = hasPermission('canEditAssets')
+  const canDeleteAssets = hasPermission('canDeleteAssets')
+  const canCheckout = hasPermission('canCheckout')
+  const canCheckin = hasPermission('canCheckin')
+  const canMove = hasPermission('canMove')
+  const canReserve = hasPermission('canReserve')
+  const canLease = hasPermission('canLease')
+  const canDispose = hasPermission('canDispose')
 
   return (
     <>
@@ -1549,15 +1513,18 @@ const AssetActions = memo(function AssetActions({ asset, isSelectionMode, hasSel
             View Details
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleEdit}>
+          <DropdownMenuItem onClick={handleEdit} disabled={!canEditAssets}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleAudit}>
+          <DropdownMenuItem 
+            onClick={handleAudit}
+            disabled={!hasPermission('canAudit')}
+          >
             <CheckCircle2 className="mr-2 h-4 w-4" />
             Manage Audits
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleCheckout}>
+          <DropdownMenuItem onClick={handleCheckout} disabled={!canCheckout}>
             <ArrowRight className="mr-2 h-4 w-4" />
             Manage Checkouts
           </DropdownMenuItem>
@@ -1568,63 +1535,69 @@ const AssetActions = memo(function AssetActions({ asset, isSelectionMode, hasSel
               More Actions
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-                <DropdownMenuItem onClick={handleCheckoutAction}>
+                <DropdownMenuItem onClick={handleCheckoutAction} disabled={!canCheckout}>
                   <ArrowRight className="mr-2 h-4 w-4" />
                   Checkout
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleCheckin}>
+                <DropdownMenuItem onClick={handleCheckin} disabled={!canCheckin}>
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Checkin
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleMove}>
+                <DropdownMenuItem onClick={handleMove} disabled={!canMove}>
                   <Move className="mr-2 h-4 w-4" />
                   Move
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleReserve}>
+                <DropdownMenuItem onClick={handleReserve} disabled={!canReserve}>
                   <Package className="mr-2 h-4 w-4" />
                   Reserve
                 </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleLease}>
+                  <DropdownMenuItem onClick={handleLease} disabled={!canLease}>
                     <FileTextIcon className="mr-2 h-4 w-4" />
                     Lease
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleLeaseReturn}>
+                  <DropdownMenuItem onClick={handleLeaseReturn} disabled={!canLease}>
                     <FileTextIcon className="mr-2 h-4 w-4" />
                     Lease Return
                   </DropdownMenuItem>
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
+                  <DropdownMenuSubTrigger disabled={!canDispose}>
                     <Trash2 className="mr-2 h-4 w-4" />
                     Dispose
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
-                    <DropdownMenuItem onClick={() => handleDispose('Sold')}>
+                    <DropdownMenuItem onClick={() => handleDispose('Sold')} disabled={!canDispose}>
                       Sold
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleDispose('Donated')}>
+                    <DropdownMenuItem onClick={() => handleDispose('Donated')} disabled={!canDispose}>
                       Donated
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleDispose('Scrapped')}>
+                    <DropdownMenuItem onClick={() => handleDispose('Scrapped')} disabled={!canDispose}>
                       Scrapped
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleDispose('Lost/Missing')}>
+                    <DropdownMenuItem onClick={() => handleDispose('Lost/Missing')} disabled={!canDispose}>
                       Lost/Missing
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleDispose('Destroyed')}>
+                    <DropdownMenuItem onClick={() => handleDispose('Destroyed')} disabled={!canDispose}>
                       Destroyed
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
+                  <DropdownMenuSubTrigger disabled={!hasPermission('canManageMaintenance')}>
                     <Wrench className="mr-2 h-4 w-4" />
                     Maintenance
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
-                    <DropdownMenuItem onClick={() => handleMaintenance('Scheduled')}>
+                    <DropdownMenuItem 
+                      onClick={() => handleMaintenance('Scheduled')}
+                      disabled={!hasPermission('canManageMaintenance')}
+                    >
                       Scheduled
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleMaintenance('In progress')}>
+                    <DropdownMenuItem 
+                      onClick={() => handleMaintenance('In progress')}
+                      disabled={!hasPermission('canManageMaintenance')}
+                    >
                       In Progress
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
@@ -1635,6 +1608,7 @@ const AssetActions = memo(function AssetActions({ asset, isSelectionMode, hasSel
           <DropdownMenuItem
             onClick={handleDelete}
             variant="destructive"
+            disabled={!canDeleteAssets}
           >
             <Trash2 className="mr-2 h-4 w-4" />
             Move to Trash
@@ -2917,13 +2891,13 @@ function AssetsPageContent() {
         </div>
         <Link href="/assets/add" className={cn(isMobile && "hidden")}>
           <Button
+            size='sm'
+            disabled={!hasPermission('canCreateAssets')}
             onClick={(e) => {
               if (!hasPermission('canCreateAssets')) {
                 e.preventDefault()
-                toast.error('You do not have permission to create assets')
               }
             }}
-            size='sm'
           >
             Add Asset
           </Button>
@@ -3116,16 +3090,11 @@ function AssetsPageContent() {
                 </>
               {selectedAssets.size > 0 && (
                 <Button
-                  onClick={() => {
-                    if (!hasPermission('canDeleteAssets')) {
-                      toast.error('You do not have permission to delete assets')
-                      return
-                    }
-                    handleBulkDeleteClick()
-                  }}
+                  onClick={handleBulkDeleteClick}
                   variant="destructive"
                   size="sm"
                   className={cn("flex-1 sm:flex-initial", isMobile && "hidden")}
+                  disabled={!hasPermission('canDeleteAssets')}
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
                   <span className="sm:hidden">Move to Trash</span>

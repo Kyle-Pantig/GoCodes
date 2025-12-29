@@ -278,7 +278,8 @@ const isPendingApproval = (user: AssetUser): boolean => {
 const createColumns = (
   onEdit: (user: AssetUser) => void,
   onDelete: (user: AssetUser) => void,
-  onApprove: (user: AssetUser) => void
+  onApprove: (user: AssetUser) => void,
+  canManageUsers: boolean
 ): ColumnDef<AssetUser>[] => [
   {
     accessorKey: 'name',
@@ -432,13 +433,17 @@ const createColumns = (
             <DropdownMenuContent align="end">
               {isPendingApproval(user) ? (
                 <>
-                  <DropdownMenuItem onClick={() => onApprove(user)}>
+                  <DropdownMenuItem 
+                    onClick={() => onApprove(user)}
+                    disabled={!canManageUsers}
+                  >
                     <CheckCircle className="mr-2 h-4 w-4" />
                     Approve Account
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => onDelete(user)}
+                    disabled={!canManageUsers}
                     className="text-red-600"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
@@ -447,13 +452,17 @@ const createColumns = (
                 </>
               ) : (
                 <>
-                  <DropdownMenuItem onClick={() => onEdit(user)}>
+                  <DropdownMenuItem 
+                    onClick={() => onEdit(user)}
+                    disabled={!canManageUsers}
+                  >
                     <Edit className="mr-2 h-4 w-4" />
                     Edit
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => onDelete(user)}
+                    disabled={!canManageUsers}
                     className="text-red-600"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
@@ -831,10 +840,7 @@ function UsersPageContent() {
   })
 
   const handleCreate = createForm.handleSubmit((data) => {
-    if (!canManageUsers) {
-      toast.error('You do not have permission to create users')
-      return
-    }
+    if (!canManageUsers) return
     createMutation.mutate({
       email: data.email,
       password: data.password || undefined, // Password is optional (can be auto-generated)
@@ -845,10 +851,7 @@ function UsersPageContent() {
   })
 
   const handleEdit = useCallback((user: AssetUser) => {
-    if (!canManageUsers) {
-      toast.error('You do not have permission to edit users')
-      return
-    }
+    if (!canManageUsers) return
     setSelectedUser(user)
       setFormData({
         email: '', // Email is not editable, only shown in display
@@ -889,10 +892,7 @@ function UsersPageContent() {
   }, [canManageUsers])
 
   const handleUpdate = () => {
-    if (!canManageUsers) {
-      toast.error('You do not have permission to update users')
-      return
-    }
+    if (!canManageUsers) return
     if (!selectedUser || !formData.role) {
       toast.error('Role is required')
       return
@@ -923,10 +923,7 @@ function UsersPageContent() {
   }
 
   const handleDelete = useCallback((user: AssetUser) => {
-    if (!canManageUsers) {
-      toast.error('You do not have permission to delete users')
-      return
-    }
+    if (!canManageUsers) return
     // Prevent user from deleting themselves
     if (currentUserId && user.userId === currentUserId) {
       toast.error('You cannot delete your own account')
@@ -937,10 +934,7 @@ function UsersPageContent() {
   }, [canManageUsers, currentUserId])
 
   const handleApprove = useCallback((user: AssetUser) => {
-    if (!canManageUsers) {
-      toast.error('You do not have permission to approve users')
-      return
-    }
+    if (!canManageUsers) return
     // Open edit dialog with default permissions for admin to review and adjust
     // Admin can set permissions before approving the account
     setSelectedUser(user)
@@ -1055,7 +1049,7 @@ function UsersPageContent() {
     })
   }, [formData])
 
-  const columns = useMemo(() => createColumns(handleEdit, handleDelete, handleApprove), [handleEdit, handleDelete, handleApprove])
+  const columns = useMemo(() => createColumns(handleEdit, handleDelete, handleApprove, canManageUsers), [handleEdit, handleDelete, handleApprove, canManageUsers])
 
   const users = useMemo(() => data?.users || [], [data?.users])
   const pagination = data?.pagination
@@ -1090,12 +1084,10 @@ function UsersPageContent() {
         <>
           <Button 
             onClick={() => {
-              if (!canManageUsers) {
-                toast.error('You do not have permission to create users')
-                return
-              }
+              if (!canManageUsers) return
               setIsCreateDialogOpen(true)
             }} 
+            disabled={!canManageUsers}
             variant="outline"
             size="lg"
             className="rounded-full btn-glass-elevated"
@@ -1270,12 +1262,10 @@ function UsersPageContent() {
             <div className="flex items-center gap-2">
               <Button 
                 onClick={() => {
-                  if (!canManageUsers) {
-                    toast.error('You do not have permission to create users')
-                    return
-                  }
+                  if (!canManageUsers) return
                   setIsCreateDialogOpen(true)
                 }} 
+                disabled={!canManageUsers}
                 size="sm"
                 className="flex-1 hidden md:flex"
               >
@@ -1887,14 +1877,10 @@ function UsersPageContent() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    if (!selectedUser) return
-                    if (!canManageUsers) {
-                      toast.error('You do not have permission to send password reset emails')
-                      return
-                    }
+                    if (!selectedUser || !canManageUsers) return
                     sendPasswordResetMutation.mutate(selectedUser.id)
                   }}
-                  disabled={sendPasswordResetMutation.isPending || !selectedUser}
+                  disabled={sendPasswordResetMutation.isPending || !selectedUser || !canManageUsers}
                   className="w-full"
                 >
                   {sendPasswordResetMutation.isPending ? (
@@ -2286,7 +2272,7 @@ function UsersPageContent() {
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleUpdate} disabled={updateMutation.isPending}>
+            <Button onClick={handleUpdate} disabled={updateMutation.isPending || !canManageUsers}>
               {updateMutation.isPending ? (
                 <>
                   <Spinner className="mr-2 h-4 w-4" />

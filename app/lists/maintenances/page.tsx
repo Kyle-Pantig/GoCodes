@@ -537,10 +537,6 @@ const createMaintenanceColumns = (
               size="icon"
               className="h-8 w-8 p-0 rounded-full"
               onClick={() => {
-                if (!canManageMaintenance) {
-                  toast.error('You do not have permission to take actions')
-                  return
-                }
                 onEditMaintenance?.({
                   id: maintenance.id,
                   status: maintenance.status,
@@ -548,6 +544,7 @@ const createMaintenanceColumns = (
                   dateCancelled: maintenance.dateCancelled,
                 })
               }}
+              disabled={!canManageMaintenance}
               title="Edit"
             >
               <Edit2 className="h-4 w-4" />
@@ -559,12 +556,9 @@ const createMaintenanceColumns = (
             size="icon"
             className="h-8 w-8 p-0 rounded-full text-destructive hover:text-destructive hover:bg-destructive/10"
             onClick={() => {
-              if (!canManageMaintenance) {
-                toast.error('You do not have permission to delete maintenance records')
-                return
-              }
               onDeleteMaintenance?.(maintenance.id)
             }}
+            disabled={!canManageMaintenance}
             title="Delete"
           >
             <Trash2 className="h-4 w-4" />
@@ -759,7 +753,7 @@ function ListOfMaintenancesPageContent() {
       pageSize,
       hasSearchQuery && searchFields.length > 0 ? searchFields.join(',') : undefined
     ),
-    enabled: canManageMaintenance, // Only fetch if user has permission
+    enabled: true, // Always fetch maintenance records (GET endpoint is open)
     placeholderData: (previousData) => previousData,
   })
 
@@ -1074,6 +1068,7 @@ function ListOfMaintenancesPageContent() {
             variant="outline"
             size="lg"
             className="rounded-full btn-glass-elevated"
+            disabled={!canManageMaintenance}
           >
             <Link href="/assets/maintenance">
               Add Maintenance
@@ -1324,16 +1319,6 @@ function ListOfMaintenancesPageContent() {
                 <div className="flex flex-col items-center gap-3">
                   <Spinner className="h-8 w-8" />
                   <p className="text-sm text-muted-foreground">Loading...</p>
-                </div>
-              </div>
-            ) : !canManageMaintenance ? (
-              <div className={cn("flex items-center justify-center py-12", isMobile && "h-136")}>
-                <div className="flex flex-col items-center gap-3 text-center">
-                  <Package className="h-12 w-12 text-muted-foreground opacity-50" />
-                  <p className="text-lg font-medium">Access Denied</p>
-                  <p className="text-sm text-muted-foreground">
-                    You do not have permission to view maintenance records. Please contact your administrator.
-                  </p>
                 </div>
               </div>
             ) : maintenances.length === 0 ? (

@@ -20,6 +20,25 @@ def is_uuid(value: str) -> bool:
 
 router = APIRouter(prefix="/api/assets", tags=["audit"])
 
+
+async def check_permission(user_id: str, permission: str) -> bool:
+    """Check if user has a specific permission"""
+    try:
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        if not asset_user or not asset_user.isActive:
+            return False
+        
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+        
+        return getattr(asset_user, permission, False)
+    except Exception:
+        return False
+
+
 def parse_date(date_str: str) -> datetime:
     """Parse date string to datetime"""
     try:
@@ -88,6 +107,18 @@ async def create_audit(
 ):
     """Create a new audit record for an asset"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canAudit")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create audit records"
+            )
+        
         # Check if it's a UUID or assetTagId
         is_id_uuid = is_uuid(asset_id)
         
@@ -145,6 +176,18 @@ async def update_audit(
 ):
     """Update an audit record"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canAudit")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to update audit records"
+            )
+        
         # Check if audit exists
         existing_audit = await prisma.assetsaudithistory.find_unique(
             where={"id": audit_id}
@@ -206,6 +249,18 @@ async def delete_audit(
 ):
     """Delete an audit record"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canAudit")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete audit records"
+            )
+        
         # Check if audit exists
         audit = await prisma.assetsaudithistory.find_unique(
             where={"id": audit_id}

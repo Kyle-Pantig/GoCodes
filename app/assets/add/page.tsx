@@ -334,7 +334,6 @@ export default function AddAssetPage() {
 
   const onSubmit = async (data: AssetFormData) => {
     if (!canCreateAssets) {
-      toast.error('You do not have permission to create assets')
       return
     }
 
@@ -1809,7 +1808,7 @@ export default function AddAssetPage() {
                   form.requestSubmit()
                 }
               }}
-              disabled={loading || uploadingImages || uploadingDocuments}
+              disabled={loading || uploadingImages || uploadingDocuments || !canCreateAssets}
               className="min-w-[120px]"
             >
               {loading || uploadingImages || uploadingDocuments ? (

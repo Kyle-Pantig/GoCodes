@@ -638,12 +638,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
 
   // Handle delete - opens confirmation dialog
   const handleDelete = useCallback(() => {
-    if (!canDeleteAssets) {
-      toast.error('You do not have permission to delete assets')
-      return
-    }
     setIsDeleteDialogOpen(true)
-  }, [canDeleteAssets])
+  }, [])
 
   // Confirm delete - calls the delete mutation
   const confirmDelete = useCallback(() => {
@@ -710,42 +706,48 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" className="w-56 mb-2 z-[100]">
-              {canAudit && (
-                <DropdownMenuItem onSelect={() => router.push(`/tools/audit?assetId=${asset.assetTagId}`)}>
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                  Manage Audits
-                </DropdownMenuItem>
-              )}
-              {canCheckout && (
-                <DropdownMenuItem onSelect={() => router.push(`/assets/checkout?assetId=${asset.assetTagId}`)}>
-                  <ArrowRight className="mr-2 h-4 w-4" />
-                  Checkout
-                </DropdownMenuItem>
-              )}
-              {canCheckin && (
-                <DropdownMenuItem onSelect={() => router.push(`/assets/checkin?assetId=${asset.assetTagId}`)}>
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Checkin
-                </DropdownMenuItem>
-              )}
-              {canMove && (
-                <DropdownMenuItem onSelect={() => router.push(`/assets/move?assetId=${asset.assetTagId}`)}>
-                  <Move className="mr-2 h-4 w-4" />
-                  Move
-                </DropdownMenuItem>
-              )}
-              {canReserve && (
-                <DropdownMenuItem onSelect={() => router.push(`/assets/reserve?assetId=${asset.assetTagId}`)}>
-                  <Package className="mr-2 h-4 w-4" />
-                  Reserve
-                </DropdownMenuItem>
-              )}
-              {canLease && (
-                <DropdownMenuItem onSelect={() => router.push(`/assets/lease?assetId=${asset.assetTagId}`)}>
-                  <FileTextIcon className="mr-2 h-4 w-4" />
-                  Lease
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem 
+                onSelect={() => router.push(`/tools/audit?assetId=${asset.assetTagId}`)}
+                disabled={!canAudit}
+              >
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+                Manage Audits
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onSelect={() => router.push(`/assets/checkout?assetId=${asset.assetTagId}`)}
+                disabled={!canCheckout}
+              >
+                <ArrowRight className="mr-2 h-4 w-4" />
+                Checkout
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onSelect={() => router.push(`/assets/checkin?assetId=${asset.assetTagId}`)}
+                disabled={!canCheckin}
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Checkin
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onSelect={() => router.push(`/assets/move?assetId=${asset.assetTagId}`)}
+                disabled={!canMove}
+              >
+                <Move className="mr-2 h-4 w-4" />
+                Move
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onSelect={() => router.push(`/assets/reserve?assetId=${asset.assetTagId}`)}
+                disabled={!canReserve}
+              >
+                <Package className="mr-2 h-4 w-4" />
+                Reserve
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onSelect={() => router.push(`/assets/lease?assetId=${asset.assetTagId}`)}
+                disabled={!canLease}
+              >
+                <FileTextIcon className="mr-2 h-4 w-4" />
+                Lease
+              </DropdownMenuItem>
               {canLease && (
                 <DropdownMenuItem onSelect={() => router.push(`/assets/lease-return?assetId=${asset.assetTagId}`)}>
                   <FileTextIcon className="mr-2 h-4 w-4" />
@@ -776,29 +778,34 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
               <DropdownMenuSub>
-                <DropdownMenuSubTrigger disabled={isGeneratingPDF}>
+                <DropdownMenuSubTrigger disabled={isGeneratingPDF || !canManageMaintenance}>
                   <Wrench className="mr-2 h-4 w-4" />
                   Maintenance
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
-                  <DropdownMenuItem onSelect={() => router.push(`/assets/maintenance?assetId=${asset.assetTagId}&status=Scheduled`)}>
+                  <DropdownMenuItem 
+                    onSelect={() => router.push(`/assets/maintenance?assetId=${asset.assetTagId}&status=Scheduled`)}
+                    disabled={!canManageMaintenance}
+                  >
                     Scheduled
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => router.push(`/assets/maintenance?assetId=${asset.assetTagId}&status=In progress`)}>
+                  <DropdownMenuItem 
+                    onSelect={() => router.push(`/assets/maintenance?assetId=${asset.assetTagId}&status=In progress`)}
+                    disabled={!canManageMaintenance}
+                  >
                     In Progress
                   </DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
               <DropdownMenuSeparator />
-              {canDeleteAssets && (
-                <DropdownMenuItem 
-                  onSelect={handleDelete}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Move to Trash
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem 
+                onSelect={handleDelete}
+                className="text-destructive focus:text-destructive"
+                disabled={!canDeleteAssets}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Move to Trash
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </>
@@ -1145,204 +1152,120 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
                 <DropdownMenuItem 
-                  onClick={() => {
-                  if (!canEditAssets) {
-                    toast.error('You do not have permission to edit assets')
-                    return
-                  }
-                    router.push(`/assets/${asset.assetTagId}`)
-                  }}
-                  disabled={isGeneratingPDF}
+                  onClick={() => router.push(`/assets/${asset.assetTagId}`)}
+                  disabled={isGeneratingPDF || !canEditAssets}
                 >
                   <Edit className="mr-2 h-4 w-4" />
                   Edit Asset
                 </DropdownMenuItem>
                 <DropdownMenuItem 
                   onClick={() => {
-                  if (!canAudit) {
-                    toast.error('You do not have permission to manage audits')
-                    return
-                  }
                     router.push(`/tools/audit?assetId=${asset.assetTagId}`)
                   }}
-                  disabled={isGeneratingPDF}
+                  disabled={isGeneratingPDF || !canAudit}
                 >
                   <CheckCircle2 className="mr-2 h-4 w-4" />
                   Manage Audits
                 </DropdownMenuItem>
                 <DropdownMenuItem 
-                  onClick={() => {
-                  if (!canCheckout) {
-                    toast.error('You do not have permission to checkout assets')
-                    return
-                  }
-                    router.push(`/assets/checkout?assetId=${asset.assetTagId}`)
-                  }}
-                  disabled={isGeneratingPDF}
+                  onClick={() => router.push(`/assets/checkout?assetId=${asset.assetTagId}`)}
+                  disabled={isGeneratingPDF || !canCheckout}
                 >
                   <ArrowRight className="mr-2 h-4 w-4" />
                   Checkout
                 </DropdownMenuItem>
                 <DropdownMenuItem 
-                  onClick={() => {
-                  if (!canCheckin) {
-                    toast.error('You do not have permission to checkin assets')
-                    return
-                  }
-                    router.push(`/assets/checkin?assetId=${asset.assetTagId}`)
-                  }}
-                  disabled={isGeneratingPDF}
+                  onClick={() => router.push(`/assets/checkin?assetId=${asset.assetTagId}`)}
+                  disabled={isGeneratingPDF || !canCheckin}
                 >
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Checkin
                 </DropdownMenuItem>
                 <DropdownMenuItem 
-                  onClick={() => {
-                  if (!canMove) {
-                    toast.error('You do not have permission to move assets')
-                    return
-                  }
-                    router.push(`/assets/move?assetId=${asset.assetTagId}`)
-                  }}
-                  disabled={isGeneratingPDF}
+                  onClick={() => router.push(`/assets/move?assetId=${asset.assetTagId}`)}
+                  disabled={isGeneratingPDF || !canMove}
                 >
                   <Move className="mr-2 h-4 w-4" />
                   Move
                 </DropdownMenuItem>
                 <DropdownMenuItem 
-                  onClick={() => {
-                  if (!canReserve) {
-                    toast.error('You do not have permission to reserve assets')
-                    return
-                  }
-                    router.push(`/assets/reserve?assetId=${asset.assetTagId}`)
-                  }}
-                  disabled={isGeneratingPDF}
+                  onClick={() => router.push(`/assets/reserve?assetId=${asset.assetTagId}`)}
+                  disabled={isGeneratingPDF || !canReserve}
                 >
                   <Package className="mr-2 h-4 w-4" />
                   Reserve
                 </DropdownMenuItem>
                   <DropdownMenuItem 
-                    onClick={() => {
-                  if (!canLease) {
-                    toast.error('You do not have permission to lease assets')
-                    return
-                  }
-                      router.push(`/assets/lease?assetId=${asset.assetTagId}`)
-                    }}
-                    disabled={isGeneratingPDF}
+                    onClick={() => router.push(`/assets/lease?assetId=${asset.assetTagId}`)}
+                    disabled={isGeneratingPDF || !canLease}
                   >
                     <FileTextIcon className="mr-2 h-4 w-4" />
                     Lease
                   </DropdownMenuItem>
                   <DropdownMenuItem 
-                    onClick={() => {
-                  if (!canLease) {
-                    toast.error('You do not have permission to return leased assets')
-                    return
-                  }
-                      router.push(`/assets/lease-return?assetId=${asset.assetTagId}`)
-                    }}
-                    disabled={isGeneratingPDF}
+                    onClick={() => router.push(`/assets/lease-return?assetId=${asset.assetTagId}`)}
+                    disabled={isGeneratingPDF || !canLease}
                   >
                     <FileTextIcon className="mr-2 h-4 w-4" />
                     Lease Return
                   </DropdownMenuItem>
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger disabled={isGeneratingPDF}>
+                  <DropdownMenuSubTrigger disabled={isGeneratingPDF || !canDispose}>
                     <Trash2 className="mr-2 h-4 w-4" />
                     Dispose
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuItem
-                      onClick={() => {
-                      if (!canDispose) {
-                        toast.error('You do not have permission to dispose assets')
-                        return
-                      }
-                        router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Sold`)
-                      }}
-                      disabled={isGeneratingPDF}
+                      onClick={() => router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Sold`)}
+                      disabled={isGeneratingPDF || !canDispose}
                     >
                       Sold
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => {
-                      if (!canDispose) {
-                        toast.error('You do not have permission to dispose assets')
-                        return
-                      }
-                        router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Donated`)
-                      }}
-                      disabled={isGeneratingPDF}
+                      onClick={() => router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Donated`)}
+                      disabled={isGeneratingPDF || !canDispose}
                     >
                       Donated
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => {
-                      if (!canDispose) {
-                        toast.error('You do not have permission to dispose assets')
-                        return
-                      }
-                        router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Scrapped`)
-                      }}
-                      disabled={isGeneratingPDF}
+                      onClick={() => router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Scrapped`)}
+                      disabled={isGeneratingPDF || !canDispose}
                     >
                       Scrapped
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => {
-                      if (!canDispose) {
-                        toast.error('You do not have permission to dispose assets')
-                        return
-                      }
-                        router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Lost/Missing`)
-                      }}
-                      disabled={isGeneratingPDF}
+                      onClick={() => router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Lost/Missing`)}
+                      disabled={isGeneratingPDF || !canDispose}
                     >
                       Lost/Missing
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => {
-                      if (!canDispose) {
-                        toast.error('You do not have permission to dispose assets')
-                        return
-                      }
-                        router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Destroyed`)
-                      }}
-                      disabled={isGeneratingPDF}
+                      onClick={() => router.push(`/assets/dispose?assetId=${asset.assetTagId}&method=Destroyed`)}
+                      disabled={isGeneratingPDF || !canDispose}
                     >
                       Destroyed
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger disabled={isGeneratingPDF}>
+                  <DropdownMenuSubTrigger disabled={isGeneratingPDF || !canManageMaintenance}>
                     <Wrench className="mr-2 h-4 w-4" />
                     Maintenance
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuItem
                       onClick={() => {
-                      if (!canManageMaintenance) {
-                        toast.error('You do not have permission to manage maintenance')
-                        return
-                      }
                         router.push(`/assets/maintenance?assetId=${asset.assetTagId}&status=Scheduled`)
                       }}
-                      disabled={isGeneratingPDF}
+                      disabled={isGeneratingPDF || !canManageMaintenance}
                     >
                       Scheduled
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => {
-                      if (!canManageMaintenance) {
-                        toast.error('You do not have permission to manage maintenance')
-                        return
-                      }
                         router.push(`/assets/maintenance?assetId=${asset.assetTagId}&status=In progress`)
                       }}
-                      disabled={isGeneratingPDF}
+                      disabled={isGeneratingPDF || !canManageMaintenance}
                     >
                       In Progress
                     </DropdownMenuItem>
@@ -1352,7 +1275,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
                   <DropdownMenuItem
                     onClick={handleDelete}
                     className="text-destructive focus:text-destructive"
-                    disabled={isGeneratingPDF}
+                    disabled={isGeneratingPDF || !canDeleteAssets}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
                     Move to Trash

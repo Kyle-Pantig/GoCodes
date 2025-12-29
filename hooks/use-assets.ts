@@ -569,12 +569,12 @@ export const useCreateAsset = () => {
   })
 }
 
-// Update asset mutation
+// Update asset mutation - supports AbortSignal for request cancellation
 export const useUpdateAsset = () => {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: async ({ id, ...data }: AssetCreateData & { id: string }) => {
+    mutationFn: async ({ id, signal, ...data }: AssetCreateData & { id: string; signal?: AbortSignal }) => {
       const baseUrl = getApiBaseUrl()
       const url = `${baseUrl}/api/assets/${id}`
       
@@ -588,6 +588,7 @@ export const useUpdateAsset = () => {
         method: "PUT",
         headers,
         body: JSON.stringify(data),
+        signal, // Pass AbortSignal to enable request cancellation
       })
       
       if (!response.ok) {

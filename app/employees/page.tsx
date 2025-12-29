@@ -1377,7 +1377,10 @@ function EmployeesPageContent() {
                                         </DropdownMenuSubContent>
                                       </DropdownMenuSub>
                                       <DropdownMenuSub>
-                                        <DropdownMenuSubTrigger onClick={(e) => e.stopPropagation()}>
+                                        <DropdownMenuSubTrigger 
+                                          onClick={(e) => e.stopPropagation()}
+                                          disabled={!hasPermission('canManageMaintenance')}
+                                        >
                                           <Wrench className="mr-2 h-4 w-4" />
                                           Maintenance
                                         </DropdownMenuSubTrigger>
@@ -1385,26 +1388,20 @@ function EmployeesPageContent() {
                                           <DropdownMenuItem 
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              if (!hasPermission('canManageMaintenance')) {
-                                                toast.error('You do not have permission to manage maintenance')
-                                                return
-                                              }
                                               router.push(`/assets/maintenance?assetId=${checkout.asset.assetTagId}&status=Scheduled`)
                                               setIsCheckoutsDialogOpen(false)
                                             }}
+                                            disabled={!hasPermission('canManageMaintenance')}
                                           >
                                             Scheduled
                                           </DropdownMenuItem>
                                           <DropdownMenuItem 
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              if (!hasPermission('canManageMaintenance')) {
-                                                toast.error('You do not have permission to manage maintenance')
-                                                return
-                                              }
                                               router.push(`/assets/maintenance?assetId=${checkout.asset.assetTagId}&status=In progress`)
                                               setIsCheckoutsDialogOpen(false)
                                             }}
+                                            disabled={!hasPermission('canManageMaintenance')}
                                           >
                                             In Progress
                                           </DropdownMenuItem>

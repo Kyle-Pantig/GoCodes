@@ -1027,190 +1027,148 @@ const breadcrumbs = crumbs
                         </DropdownMenuItem>
                         <DropdownMenuItem 
                           onClick={() => {
-                          if (!canAudit) {
-                            toast.error('You do not have permission to manage audits')
-                            return
-                          }
                             router.push(`/tools/audit?assetId=${scannedAsset.assetTagId}`)
                             setQrDialogOpen(false)
                           }}
+                          disabled={!canAudit}
                         >
                           <CheckCircle2 className="mr-2 h-4 w-4" />
                           Manage Audits
                         </DropdownMenuItem>
                         <DropdownMenuItem 
                           onClick={() => {
-                          if (!canCheckout) {
-                            toast.error('You do not have permission to checkout assets')
-                            return
-                          }
                             router.push(`/assets/checkout?assetId=${scannedAsset.assetTagId}`)
                             setQrDialogOpen(false)
                           }}
+                          disabled={!canCheckout}
                         >
                           <ArrowRight className="mr-2 h-4 w-4" />
                           Checkout
                         </DropdownMenuItem>
                         <DropdownMenuItem 
                           onClick={() => {
-                          if (!canCheckin) {
-                            toast.error('You do not have permission to checkin assets')
-                            return
-                          }
                             router.push(`/assets/checkin?assetId=${scannedAsset.assetTagId}`)
                             setQrDialogOpen(false)
                           }}
+                          disabled={!canCheckin}
                         >
                           <ArrowLeft className="mr-2 h-4 w-4" />
                           Checkin
                         </DropdownMenuItem>
                         <DropdownMenuItem 
                           onClick={() => {
-                          if (!canMove) {
-                            toast.error('You do not have permission to move assets')
-                            return
-                          }
                             router.push(`/assets/move?assetId=${scannedAsset.assetTagId}`)
                             setQrDialogOpen(false)
                           }}
+                          disabled={!canMove}
                         >
                           <Move className="mr-2 h-4 w-4" />
                           Move
                         </DropdownMenuItem>
                         <DropdownMenuItem 
                           onClick={() => {
-                          if (!canReserve) {
-                            toast.error('You do not have permission to reserve assets')
-                            return
-                          }
                             router.push(`/assets/reserve?assetId=${scannedAsset.assetTagId}`)
                             setQrDialogOpen(false)
                           }}
+                          disabled={!canReserve}
                         >
                           <Package className="mr-2 h-4 w-4" />
                           Reserve
                         </DropdownMenuItem>
                           <DropdownMenuItem 
                             onClick={() => {
-                          if (!canLease) {
-                            toast.error('You do not have permission to lease assets')
-                            return
-                          }
                               router.push(`/assets/lease?assetId=${scannedAsset.assetTagId}`)
                               setQrDialogOpen(false)
                             }}
+                            disabled={!canLease}
                           >
                             <FileText className="mr-2 h-4 w-4" />
                             Lease
                           </DropdownMenuItem>
                           <DropdownMenuItem 
                             onClick={() => {
-                          if (!canLease) {
-                            toast.error('You do not have permission to return leased assets')
-                            return
-                          }
                               router.push(`/assets/lease-return?assetId=${scannedAsset.assetTagId}`)
                               setQrDialogOpen(false)
                             }}
+                            disabled={!canLease}
                           >
                             <FileText className="mr-2 h-4 w-4" />
                             Lease Return
                           </DropdownMenuItem>
                         <DropdownMenuSub>
-                          <DropdownMenuSubTrigger>
+                          <DropdownMenuSubTrigger disabled={!canDispose}>
                             <Trash2 className="mr-2 h-4 w-4" />
                             Dispose
                           </DropdownMenuSubTrigger>
                           <DropdownMenuSubContent>
                             <DropdownMenuItem
                               onClick={() => {
-                              if (!canDispose) {
-                                toast.error('You do not have permission to dispose assets')
-                                return
-                              }
                                 router.push(`/assets/dispose?assetId=${scannedAsset.assetTagId}&method=Sold`)
                                 setQrDialogOpen(false)
                               }}
+                              disabled={!canDispose}
                             >
                               Sold
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => {
-                              if (!canDispose) {
-                                toast.error('You do not have permission to dispose assets')
-                                return
-                              }
                                 router.push(`/assets/dispose?assetId=${scannedAsset.assetTagId}&method=Donated`)
                                 setQrDialogOpen(false)
                               }}
+                              disabled={!canDispose}
                             >
                               Donated
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => {
-                              if (!canDispose) {
-                                toast.error('You do not have permission to dispose assets')
-                                return
-                              }
                                 router.push(`/assets/dispose?assetId=${scannedAsset.assetTagId}&method=Scrapped`)
                                 setQrDialogOpen(false)
                               }}
+                              disabled={!canDispose}
                             >
                               Scrapped
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => {
-                              if (!canDispose) {
-                                toast.error('You do not have permission to dispose assets')
-                                return
-                              }
                                 router.push(`/assets/dispose?assetId=${scannedAsset.assetTagId}&method=Lost/Missing`)
                                 setQrDialogOpen(false)
                               }}
+                              disabled={!canDispose}
                             >
                               Lost/Missing
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => {
-                              if (!canDispose) {
-                                toast.error('You do not have permission to dispose assets')
-                                return
-                              }
                                 router.push(`/assets/dispose?assetId=${scannedAsset.assetTagId}&method=Destroyed`)
                                 setQrDialogOpen(false)
                               }}
+                              disabled={!canDispose}
                             >
                               Destroyed
                             </DropdownMenuItem>
                           </DropdownMenuSubContent>
                         </DropdownMenuSub>
                         <DropdownMenuSub>
-                          <DropdownMenuSubTrigger>
+                          <DropdownMenuSubTrigger disabled={!canManageMaintenance}>
                             <Wrench className="mr-2 h-4 w-4" />
                             Maintenance
                           </DropdownMenuSubTrigger>
                           <DropdownMenuSubContent>
                             <DropdownMenuItem
                               onClick={() => {
-                              if (!canManageMaintenance) {
-                                toast.error('You do not have permission to manage maintenance')
-                                return
-                              }
                                 router.push(`/assets/maintenance?assetId=${scannedAsset.assetTagId}&status=Scheduled`)
                                 setQrDialogOpen(false)
                               }}
+                              disabled={!canManageMaintenance}
                             >
                               Scheduled
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => {
-                              if (!canManageMaintenance) {
-                                toast.error('You do not have permission to manage maintenance')
-                                return
-                              }
                                 router.push(`/assets/maintenance?assetId=${scannedAsset.assetTagId}&status=In progress`)
                                 setQrDialogOpen(false)
                               }}
+                              disabled={!canManageMaintenance}
                             >
                               In Progress
                             </DropdownMenuItem>

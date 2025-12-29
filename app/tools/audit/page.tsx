@@ -132,13 +132,8 @@ function AuditPageContent() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => {
-              if (!canAudit) {
-                toast.error('You do not have permission to conduct audits')
-                return
-              }
-              setIsScannerOpen(true)
-            }}
+            onClick={() => setIsScannerOpen(true)}
+            disabled={!canAudit}
             className="h-10 w-10 rounded-full btn-glass-elevated"
             title="Scan QR Code"
           >
@@ -201,7 +196,7 @@ function AuditPageContent() {
       }
       return response.json()
     },
-    enabled: canAudit,
+    enabled: true, // Always fetch audit history (GET endpoint is open)
     staleTime: 30000, // Cache for 30 seconds
     refetchOnWindowFocus: false,
   })
@@ -450,7 +445,6 @@ function AuditPageContent() {
   // Handle QR code scan
   const handleQRScan = async (scannedCode: string) => {
     if (!canAudit) {
-      toast.error('You do not have permission to conduct audits')
       setIsScannerOpen(false)
       return
     }
@@ -520,7 +514,6 @@ function AuditPageContent() {
   // Add asset to scanned list
   const handleAddAsset = async (asset?: Asset) => {
     if (!canAudit) {
-      toast.error('You do not have permission to conduct audits')
       return
     }
     
@@ -777,13 +770,8 @@ function AuditPageContent() {
           </p>
         </div>
         <Button
-          onClick={() => {
-            if (!canAudit) {
-              toast.error('You do not have permission to conduct audits')
-              return
-            }
-            setIsScannerOpen(true)
-          }}
+          onClick={() => setIsScannerOpen(true)}
+          disabled={!canAudit}
           size="sm"
           className={cn("gap-2 shrink-0", isMobile && "hidden")}
         >
@@ -809,14 +797,6 @@ function AuditPageContent() {
                 <Spinner variant="default" size={24} className="text-muted-foreground" />
                 <p className="text-muted-foreground text-sm">Loading...</p>
               </div>
-            </div>
-          ) : !canAudit ? (
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <History className="h-8 w-8 text-muted-foreground opacity-50 mb-2" />
-              <p className="text-sm font-medium">Access Denied</p>
-              <p className="text-xs text-muted-foreground">
-                You do not have permission to conduct audits. Please contact your administrator.
-              </p>
             </div>
           ) : !canViewAssets ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -912,6 +892,7 @@ function AuditPageContent() {
                               })
                               setIsDeleteDialogOpen(true)
                             }}
+                            disabled={!canAudit}
                             title="Delete audit record"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -952,11 +933,9 @@ function AuditPageContent() {
                 onChange={handleInputChange}
                 onKeyDown={handleSuggestionKeyDown}
                 onFocus={() => {
-                  if (!canAudit) {
-                    toast.error('You do not have permission to conduct audits')
-                    return
+                  if (canAudit) {
+                    setShowSuggestions(true)
                   }
-                  setShowSuggestions(true)
                 }}
                 className="w-full"
                 autoComplete="off"
@@ -1170,6 +1149,7 @@ function AuditPageContent() {
                                   setSelectedAsset(asset)
                                   setIsAuditDialogOpen(true)
                                 }}
+                                disabled={!canAudit}
                                 className="shrink-0 btn-glass"
                               >
                                 <FileText className="h-3.5 w-3.5 mr-1" />
