@@ -4195,6 +4195,7 @@ async def update_asset(
         # Track changes for history logging
         history_logs = []
         date_fields = ["purchaseDate", "deliveryDate", "dateAcquired"]
+        numeric_fields = ["cost", "depreciableCost", "salvageValue", "assetLifeMonths"]
         
         for field, new_value in update_data.items():
             old_value = getattr(current_asset, field, None)
@@ -4208,6 +4209,20 @@ async def update_asset(
                         "field": field,
                         "changeFrom": old_date_str,
                         "changeTo": new_date_str
+                    })
+            elif field in numeric_fields:
+                # Compare numeric values, not string representations
+                # This prevents false changes like "45000" vs "45000.0"
+                old_num = float(old_value) if old_value is not None else None
+                new_num = float(new_value) if new_value is not None else None
+                if old_num != new_num:
+                    # Format for display: remove trailing zeros for cleaner logs
+                    old_str = f"{old_num:g}" if old_num is not None else ""
+                    new_str = f"{new_num:g}" if new_num is not None else ""
+                    history_logs.append({
+                        "field": field,
+                        "changeFrom": old_str,
+                        "changeTo": new_str
                     })
             else:
                 old_str = str(old_value) if old_value is not None else ""

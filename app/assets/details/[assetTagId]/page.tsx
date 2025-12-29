@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, use, useEffect, useCallback } from 'react'
+import { useState, use, useEffect, useCallback, useTransition } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ImageIcon, FileText, Edit, CheckCircle2, ArrowRight, Trash2, Move, Package, FileText as FileTextIcon, Wrench, ChevronDown, ChevronLeft, Download, MoreHorizontal } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -531,15 +531,43 @@ function getStatusBadge(status: string | null | undefined) {
 export default function AssetDetailsPage({ params }: { params: Promise<{ assetTagId: string }> }) {
   const resolvedParams = use(params)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const { hasPermission } = usePermissions()
   const isMobile = useIsMobile()
   const { setDockContent } = useMobileDock()
-  const [activeTab, setActiveTab] = useState<'details' | 'photos' | 'docs' | 'depreciation' | 'maintenance' | 'reserve' | 'audit' | 'history'>('details')
+  const [, startTransition] = useTransition()
   const [isMoreActionsOpen, setIsMoreActionsOpen] = useState(false)
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   const [isPdfSectionsDialogOpen, setIsPdfSectionsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  
+  // Tab state from URL
+  const activeTab = (searchParams.get('tab') as 'details' | 'photos' | 'docs' | 'depreciation' | 'maintenance' | 'reserve' | 'audit' | 'history') || 'details'
+  
+  // Update URL parameters
+  const updateURL = useCallback(
+    (updates: { tab?: 'details' | 'photos' | 'docs' | 'depreciation' | 'maintenance' | 'reserve' | 'audit' | 'history' }) => {
+      const params = new URLSearchParams(searchParams.toString())
+
+      if (updates.tab !== undefined) {
+        if (updates.tab === 'details') {
+          params.delete('tab')
+        } else {
+          params.set('tab', updates.tab)
+        }
+      }
+
+      startTransition(() => {
+        router.replace(`/assets/details/${resolvedParams.assetTagId}${params.toString() ? `?${params.toString()}` : ''}`, { scroll: false })
+      })
+    },
+    [searchParams, router, resolvedParams.assetTagId, startTransition]
+  )
+
+  const handleTabChange = (tab: 'details' | 'photos' | 'docs' | 'depreciation' | 'maintenance' | 'reserve' | 'audit' | 'history') => {
+    updateURL({ tab })
+  }
   
   // Delete asset mutation
   const deleteAssetMutation = useDeleteAsset()
@@ -1373,7 +1401,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
           <Button
             type="button"
             variant="ghost"
-            onClick={() => setActiveTab('details')}
+            onClick={() => handleTabChange('details')}
             disabled={isGeneratingPDF}
             className={`px-4 py-2 h-auto text-sm font-medium transition-colors border-b-2 rounded-none ${
               activeTab === 'details'
@@ -1386,7 +1414,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
           <Button
             type="button"
             variant="ghost"
-            onClick={() => setActiveTab('photos')}
+            onClick={() => handleTabChange('photos')}
             disabled={isGeneratingPDF}
             className={`px-4 py-2 h-auto text-sm font-medium transition-colors border-b-2 rounded-none ${
               activeTab === 'photos'
@@ -1399,7 +1427,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
           <Button
             type="button"
             variant="ghost"
-            onClick={() => setActiveTab('docs')}
+            onClick={() => handleTabChange('docs')}
             disabled={isGeneratingPDF}
             className={`px-4 py-2 h-auto text-sm font-medium transition-colors border-b-2 rounded-none ${
               activeTab === 'docs'
@@ -1412,7 +1440,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
           <Button
             type="button"
             variant="ghost"
-            onClick={() => setActiveTab('depreciation')}
+            onClick={() => handleTabChange('depreciation')}
             disabled={isGeneratingPDF}
             className={`px-4 py-2 h-auto text-sm font-medium transition-colors border-b-2 rounded-none ${
               activeTab === 'depreciation'
@@ -1425,7 +1453,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
           <Button
             type="button"
             variant="ghost"
-            onClick={() => setActiveTab('maintenance')}
+            onClick={() => handleTabChange('maintenance')}
             disabled={isGeneratingPDF}
             className={`px-4 py-2 h-auto text-sm font-medium transition-colors border-b-2 rounded-none ${
               activeTab === 'maintenance'
@@ -1438,7 +1466,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
           <Button
             type="button"
             variant="ghost"
-            onClick={() => setActiveTab('reserve')}
+            onClick={() => handleTabChange('reserve')}
             disabled={isGeneratingPDF}
             className={`px-4 py-2 h-auto text-sm font-medium transition-colors border-b-2 rounded-none ${
               activeTab === 'reserve'
@@ -1451,7 +1479,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
           <Button
             type="button"
             variant="ghost"
-            onClick={() => setActiveTab('audit')}
+            onClick={() => handleTabChange('audit')}
             disabled={isGeneratingPDF}
             className={`px-4 py-2 h-auto text-sm font-medium transition-colors border-b-2 rounded-none ${
               activeTab === 'audit'
@@ -1464,7 +1492,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
           <Button
             type="button"
             variant="ghost"
-            onClick={() => setActiveTab('history')}
+            onClick={() => handleTabChange('history')}
             disabled={isGeneratingPDF}
             className={`px-4 py-2 h-auto text-sm font-medium transition-colors border-b-2 rounded-none ${
               activeTab === 'history'
@@ -1714,14 +1742,6 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
           transition={{ duration: 0.3, ease: "easeInOut" }}
         >
           <div className="space-y-4">
-            {isLoadingMaintenance ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="flex flex-col items-center gap-3">
-                  <Spinner className="h-8 w-8" />
-                  <p className="text-sm text-muted-foreground">Loading maintenance records...</p>
-                </div>
-              </div>
-            ) : (
               <div className="min-w-full">
                 <ScrollArea className="h-[500px] relative border rounded-lg">
                   <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
@@ -1739,7 +1759,18 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {maintenances.length === 0 ? (
+                        {isLoadingMaintenance ? (
+                          <TableRow>
+                            <TableCell colSpan={8} className="h-[200px]">
+                              <div className="flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-3">
+                                  <Spinner className="h-8 w-8" />
+                                  <p className="text-sm text-muted-foreground">Loading maintenance records...</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : maintenances.length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
                               No maintenance records found.
@@ -1833,7 +1864,6 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
                   <ScrollBar orientation="vertical" className="z-50" />
                 </ScrollArea>
               </div>
-            )}
           </div>
         </motion.div>
         )}
@@ -1850,14 +1880,6 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
           transition={{ duration: 0.3, ease: "easeInOut" }}
         >
           <div className="space-y-4">
-            {isLoadingReserve ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="flex flex-col items-center gap-3">
-                  <Spinner className="h-8 w-8" />
-                  <p className="text-sm text-muted-foreground">Loading reservations...</p>
-                </div>
-              </div>
-            ) : (
               <div className="min-w-full">
                 <ScrollArea className="h-[500px] relative border rounded-lg">
                   <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
@@ -1874,7 +1896,18 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {reservations.length === 0 ? (
+                        {isLoadingReserve ? (
+                          <TableRow>
+                            <TableCell colSpan={7} className="h-[200px]">
+                              <div className="flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-3">
+                                  <Spinner className="h-8 w-8" />
+                                  <p className="text-sm text-muted-foreground">Loading reservations...</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : reservations.length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
                               No reservations found.
@@ -1936,7 +1969,6 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
                   <ScrollBar orientation="vertical" className="z-50" />
                 </ScrollArea>
               </div>
-            )}
           </div>
         </motion.div>
         )}
@@ -1953,14 +1985,6 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
           transition={{ duration: 0.3, ease: "easeInOut" }}
         >
           <div className="space-y-4">
-            {assetLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="flex flex-col items-center gap-3">
-                  <Spinner className="h-8 w-8" />
-                  <p className="text-sm text-muted-foreground">Loading audit records...</p>
-                </div>
-              </div>
-            ) : (
               <div className="min-w-full">
                 <ScrollArea className="h-[500px] relative border rounded-lg">
                   <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
@@ -1975,7 +1999,18 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {!asset?.auditHistory || asset.auditHistory.length === 0 ? (
+                        {assetLoading ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="h-[200px]">
+                              <div className="flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-3">
+                                  <Spinner className="h-8 w-8" />
+                                  <p className="text-sm text-muted-foreground">Loading audit records...</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : !asset?.auditHistory || asset.auditHistory.length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
                               No audit records found.
@@ -2019,7 +2054,6 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
                   <ScrollBar orientation="vertical" className="z-50" />
                 </ScrollArea>
               </div>
-            )}
           </div>
         </motion.div>
         )}
@@ -2036,30 +2070,33 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
           transition={{ duration: 0.3, ease: "easeInOut" }}
         >
           <div className="space-y-4">
-            {isLoadingHistory ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="flex flex-col items-center gap-3">
-                  <Spinner className="h-8 w-8" />
-                  <p className="text-sm text-muted-foreground">Loading history logs...</p>
-                </div>
-              </div>
-            ) : (
               <div className="min-w-full">
                 <ScrollArea className="h-[500px] relative border rounded-lg">
                   <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
                     <Table>
                       <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0">
                         <TableRow className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:bg-border after:z-30">
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[130px]">Date</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[110px]">Event</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[130px]">Field</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left">Changed from</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left">Changed to</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[150px]">Action by</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[14%]">Date</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[12%]">Event</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[14%]">Field</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[22%]">Changed from</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[22%]">Changed to</TableHead>
+                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[16%]">Action by</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {historyLogs.length === 0 ? (
+                        {isLoadingHistory ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="h-[200px]">
+                              <div className="flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-3">
+                                  <Spinner className="h-8 w-8" />
+                                  <p className="text-sm text-muted-foreground">Loading history logs...</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : historyLogs.length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                               No history logs found.
@@ -2092,15 +2129,15 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
                                 )}
                               </TableCell>
                               <TableCell>
-                                <div className="max-w-[300px]">
-                                  <p className="text-sm wrap-break-word">
+                                <div className="max-w-[200px]" title={log.changeFrom || ''}>
+                                  <p className="text-sm truncate">
                                     {log.changeFrom || <span className="text-muted-foreground">(empty)</span>}
                                   </p>
                                 </div>
                               </TableCell>
                               <TableCell>
-                                <div className="max-w-[300px]">
-                                  <p className="text-sm wrap-break-word">
+                                <div className="max-w-[200px]" title={log.changeTo || ''}>
+                                  <p className="text-sm truncate">
                                     {log.changeTo || <span className="text-muted-foreground">(empty)</span>}
                                   </p>
                                 </div>
@@ -2117,7 +2154,6 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ assetTa
                   <ScrollBar orientation="vertical" className="z-50" />
                 </ScrollArea>
               </div>
-            )}
           </div>
         </motion.div>
         )}

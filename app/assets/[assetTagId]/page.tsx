@@ -10,6 +10,7 @@ import { ArrowLeft, Sparkles, ImageIcon, Upload, FileText, PlusIcon, Eye, X, Tra
 import Image from "next/image"
 import { motion, AnimatePresence } from "framer-motion"
 import { usePermissions } from '@/hooks/use-permissions'
+import { useUserProfile } from '@/hooks/use-user-profile'
 import { useSidebar } from '@/components/ui/sidebar'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useMobileDock } from '@/components/mobile-dock-provider'
@@ -150,11 +151,15 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
+  const { isAdmin } = useUserProfile()
   const { state: sidebarState, open: sidebarOpen } = useSidebar()
   const isMobile = useIsMobile()
   const { setDockContent } = useMobileDock()
   const canEditAssets = hasPermission('canEditAssets')
   const canManageSetup = hasPermission('canManageSetup')
+  const canManageMaintenance = hasPermission('canManageMaintenance')
+  const canReserve = hasPermission('canReserve')
+  const canAudit = hasPermission('canAudit')
   const [, startTransition] = useTransition()
   
   // Fetch asset data using FastAPI hook - now using assetTagId from URL
@@ -3275,33 +3280,43 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
           transition={{ duration: 0.3, ease: "easeInOut" }}
         >
           <div className="space-y-4">
-            {assetLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="flex flex-col items-center gap-3">
-                  <Spinner className="h-8 w-8" />
-                  <p className="text-sm text-muted-foreground">Loading audit records...</p>
-                </div>
-              </div>
-            ) : !asset?.auditHistory || asset.auditHistory.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No audit records found.</p>
-            ) : (
               <div className="min-w-full">
                 <ScrollArea className="h-[500px] relative border">
                   <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
                   <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
-                    <Table className="border-b">
+                    <Table>
                       <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-2.5">
                         <TableRow className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-[1.5px] after:h-px after:bg-border after:z-30">
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[11%]">Date</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[16%]">Audit Type</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[11%]">Status</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[16%]">Auditor</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[36%]">Notes</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canAudit ? 'w-[12%]' : 'w-[13%]'}`}>Date</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canAudit ? 'w-[16%]' : 'w-[18%]'}`}>Audit Type</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canAudit ? 'w-[11%]' : 'w-[12%]'}`}>Status</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canAudit ? 'w-[16%]' : 'w-[18%]'}`}>Auditor</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canAudit ? 'w-[35%]' : 'w-[39%]'}`}>Notes</TableHead>
+                          {canAudit && (
                           <TableHead className="bg-card transition-colors sticky z-10 right-0 group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 text-center w-[10%]">Actions</TableHead>
+                          )}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {asset.auditHistory.map((audit) => (
+                        {assetLoading ? (
+                          <TableRow>
+                            <TableCell colSpan={canAudit ? 6 : 5} className="h-[200px]">
+                              <div className="flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-3">
+                                  <Spinner className="h-8 w-8" />
+                                  <p className="text-sm text-muted-foreground">Loading audit records...</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : !asset?.auditHistory || asset.auditHistory.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={canAudit ? 6 : 5} className="h-[200px] text-center">
+                              <p className="text-sm text-muted-foreground">No audit records found.</p>
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          asset.auditHistory.map((audit) => (
                           <TableRow key={audit.id} className="group relative">
                             <TableCell className="font-medium">
                               {formatDate(audit.auditDate || null)}
@@ -3331,6 +3346,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                                 {audit.notes || <span className="text-muted-foreground">-</span>}
                               </p>
                             </TableCell>
+                            {canAudit && (
                             <TableCell className="sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 group-hover:bg-card">
                               <Button
                                 type="button"
@@ -3345,8 +3361,10 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </TableCell>
+                            )}
                           </TableRow>
-                        ))}
+                        ))
+                        )}
                       </TableBody>
                     </Table>
                   </div>
@@ -3354,7 +3372,6 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                   <ScrollBar orientation="vertical" className="z-50" />
                 </ScrollArea>
               </div>
-            )}
           </div>
         </motion.div>
         )}
@@ -3371,36 +3388,46 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
           transition={{ duration: 0.3, ease: "easeInOut" }}
         >
           <div className="space-y-4">
-            {isLoadingMaintenance ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="flex flex-col items-center gap-3">
-                  <Spinner className="h-8 w-8" />
-                  <p className="text-sm text-muted-foreground">Loading maintenance records...</p>
-                </div>
-              </div>
-            ) : maintenances.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No maintenance records found.</p>
-            ) : (
               <div className="min-w-full">
                 <ScrollArea className="h-[500px] relative border">
                   <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
                   <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
-                    <Table className="border-b">
+                    <Table>
                       <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-2.5">
                         <TableRow className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-[1.5px] after:h-px after:bg-border after:z-30">
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[18%]">Title</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[13%]">Status</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[11%]">Due Date</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[11%]">Date Completed</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[13%]">Maintenance By</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[10%]">Cost</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[12%]">Inventory Items</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[12%]">Details</TableHead>
-                          <TableHead className="bg-card transition-colors sticky z-10 right-0 group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 text-center w-[12%]">Actions</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canManageMaintenance ? 'w-[14%]' : 'w-[15%]'}`}>Title</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canManageMaintenance ? 'w-[10%]' : 'w-[11%]'}`}>Status</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canManageMaintenance ? 'w-[10%]' : 'w-[11%]'}`}>Due Date</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canManageMaintenance ? 'w-[12%]' : 'w-[13%]'}`}>Date Completed</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canManageMaintenance ? 'w-[12%]' : 'w-[13%]'}`}>Maintenance By</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canManageMaintenance ? 'w-[8%]' : 'w-[9%]'}`}>Cost</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canManageMaintenance ? 'w-[12%]' : 'w-[13%]'}`}>Inventory Items</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canManageMaintenance ? 'w-[12%]' : 'w-[15%]'}`}>Details</TableHead>
+                          {canManageMaintenance && (
+                          <TableHead className="bg-card transition-colors sticky z-10 right-0 group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 text-center w-[10%]">Actions</TableHead>
+                          )}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {maintenances.map((maintenance) => (
+                        {isLoadingMaintenance ? (
+                          <TableRow>
+                            <TableCell colSpan={canManageMaintenance ? 9 : 8} className="h-[200px]">
+                              <div className="flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-3">
+                                  <Spinner className="h-8 w-8" />
+                                  <p className="text-sm text-muted-foreground">Loading maintenance records...</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : maintenances.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={canManageMaintenance ? 9 : 8} className="h-[200px] text-center">
+                              <p className="text-sm text-muted-foreground">No maintenance records found.</p>
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          maintenances.map((maintenance) => (
                           <TableRow key={maintenance.id} className="group relative">
                             <TableCell>
                               <span className="text-sm font-medium">{maintenance.title || 'N/A'}</span>
@@ -3460,6 +3487,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                                 </p>
                               </div>
                             </TableCell>
+                            {canManageMaintenance && (
                             <TableCell className="sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 group-hover:bg-card">
                               <Button
                                 type="button"
@@ -3474,8 +3502,10 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </TableCell>
+                            )}
                           </TableRow>
-                        ))}
+                        ))
+                        )}
                       </TableBody>
                     </Table>
                   </div>
@@ -3483,7 +3513,6 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                   <ScrollBar orientation="vertical" className="z-50" />
                 </ScrollArea>
               </div>
-            )}
           </div>
         </motion.div>
         )}
@@ -3500,35 +3529,45 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
           transition={{ duration: 0.3, ease: "easeInOut" }}
         >
           <div className="space-y-4">
-            {isLoadingReserve ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="flex flex-col items-center gap-3">
-                  <Spinner className="h-8 w-8" />
-                  <p className="text-sm text-muted-foreground">Loading reservations...</p>
-                </div>
-              </div>
-            ) : reservations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No reservations found.</p>
-            ) : (
               <div className="min-w-full">
                 <ScrollArea className="h-[500px] relative border">
                   <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
                   <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
-                    <Table className="border-b">
+                    <Table>
                       <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-2.5">
                         <TableRow className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-[1.5px] after:h-px after:bg-border after:z-30">
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[13%]">Asset ID</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[16%]">Description</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[10%]">Type</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[13%]">Reserved For</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[13%]">Purpose</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[11%]">Reservation Date</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[11%]">Time Ago</TableHead>
-                          <TableHead className="bg-card transition-colors sticky z-10 right-0 group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 text-center w-[13%]">Actions</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canReserve ? 'w-[12%]' : 'w-[14%]'}`}>Asset ID</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canReserve ? 'w-[20%]' : 'w-[22%]'}`}>Description</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canReserve ? 'w-[10%]' : 'w-[11%]'}`}>Type</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canReserve ? 'w-[12%]' : 'w-[14%]'}`}>Reserved For</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canReserve ? 'w-[12%]' : 'w-[14%]'}`}>Purpose</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canReserve ? 'w-[14%]' : 'w-[15%]'}`}>Reservation Date</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${canReserve ? 'w-[10%]' : 'w-[10%]'}`}>Time Ago</TableHead>
+                          {canReserve && (
+                          <TableHead className="bg-card transition-colors sticky z-10 right-0 group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 text-center w-[10%]">Actions</TableHead>
+                          )}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {reservations.map((reservation: { 
+                        {isLoadingReserve ? (
+                          <TableRow>
+                            <TableCell colSpan={canReserve ? 8 : 7} className="h-[200px]">
+                              <div className="flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-3">
+                                  <Spinner className="h-8 w-8" />
+                                  <p className="text-sm text-muted-foreground">Loading reservations...</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : reservations.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={canReserve ? 8 : 7} className="h-[200px] text-center">
+                              <p className="text-sm text-muted-foreground">No reservations found.</p>
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          reservations.map((reservation: { 
                           id: string
                           reservationType: string
                           purpose?: string | null
@@ -3575,6 +3614,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                               <TableCell>
                                 <span className="text-sm text-muted-foreground">{timeAgo}</span>
                               </TableCell>
+                              {canReserve && (
                               <TableCell className="sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 group-hover:bg-card">
                                 <Button
                                   type="button"
@@ -3589,9 +3629,11 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               </TableCell>
+                              )}
                             </TableRow>
                           )
-                        })}
+                        })
+                        )}
                       </TableBody>
                     </Table>
                   </div>
@@ -3599,7 +3641,6 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                   <ScrollBar orientation="vertical" className="z-50" />
                 </ScrollArea>
               </div>
-            )}
           </div>
         </motion.div>
         )}
@@ -3616,34 +3657,44 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
           transition={{ duration: 0.3, ease: "easeInOut" }}
         >
           <div className="space-y-4">
-            {isLoadingHistory ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="flex flex-col items-center gap-3">
-                  <Spinner className="h-8 w-8" />
-                  <p className="text-sm text-muted-foreground">Loading history logs...</p>
-                </div>
-              </div>
-            ) : historyLogs.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No history logs found.</p>
-            ) : (
               <div className="min-w-full">
                 <ScrollArea className="h-[500px] relative border">
                   <div className="sticky top-0 z-30 h-px bg-border w-full"></div>
                   <div className="pr-2.5 relative after:content-[''] after:absolute after:right-[10px] after:top-0 after:bottom-0 after:w-px after:bg-border after:z-50 after:h-full">
-                    <Table className="border-b">
+                    <Table>
                       <TableHeader className="sticky -top-1 z-20 bg-card [&_tr]:border-b-0 -mr-2.5">
                         <TableRow className="group hover:bg-muted/50 relative border-b-0 after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-[1.5px] after:h-px after:bg-border after:z-30">
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[130px]">Date</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[110px]">Event</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[130px]">Field</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left">Changed from</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left">Changed to</TableHead>
-                          <TableHead className="bg-card transition-colors group-hover:bg-muted/50 text-left w-[160px]">Action by</TableHead>
-                          <TableHead className="bg-card transition-colors sticky z-10 right-0 group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 text-center w-[100px]">Actions</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${isAdmin ? 'w-[12%]' : 'w-[14%]'}`}>Date</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${isAdmin ? 'w-[10%]' : 'w-[12%]'}`}>Event</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${isAdmin ? 'w-[12%]' : 'w-[14%]'}`}>Field</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${isAdmin ? 'w-[20%]' : 'w-[22%]'}`}>Changed from</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${isAdmin ? 'w-[20%]' : 'w-[22%]'}`}>Changed to</TableHead>
+                          <TableHead className={`bg-card transition-colors group-hover:bg-muted/50 text-left ${isAdmin ? 'w-[16%]' : 'w-[16%]'}`}>Action by</TableHead>
+                          {isAdmin && (
+                          <TableHead className="bg-card transition-colors sticky z-10 right-0 group-hover:bg-card before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 text-center w-[10%]">Actions</TableHead>
+                          )}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {historyLogs.map((log: { id: string; eventType: string; eventDate: string; field?: string; changeFrom?: string; changeTo?: string; actionBy: string }) => {
+                        {isLoadingHistory ? (
+                          <TableRow>
+                            <TableCell colSpan={isAdmin ? 7 : 6} className="h-[200px]">
+                              <div className="flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-3">
+                                  <Spinner className="h-8 w-8" />
+                                  <p className="text-sm text-muted-foreground">Loading history logs...</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : historyLogs.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={isAdmin ? 7 : 6} className="h-[200px] text-center">
+                              <p className="text-sm text-muted-foreground">No history logs found.</p>
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          historyLogs.map((log: { id: string; eventType: string; eventDate: string; field?: string; changeFrom?: string; changeTo?: string; actionBy: string }) => {
                           const eventLabel = log.eventType === 'added' ? 'Asset added' : 
                                             log.eventType === 'edited' ? 'Asset edit' : 
                                             'Asset deleted'
@@ -3670,15 +3721,15 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                                 )}
                               </TableCell>
                               <TableCell>
-                                <div className="max-w-[300px]">
-                                  <p className="text-sm wrap-break-word">
+                                <div className="max-w-[200px]" title={log.changeFrom || ''}>
+                                  <p className="text-sm truncate">
                                     {log.changeFrom || <span className="text-muted-foreground">(empty)</span>}
                                   </p>
                                 </div>
                               </TableCell>
                               <TableCell>
-                                <div className="max-w-[300px]">
-                                  <p className="text-sm wrap-break-word">
+                                <div className="max-w-[200px]" title={log.changeTo || ''}>
+                                  <p className="text-sm truncate">
                                     {log.changeTo || <span className="text-muted-foreground">(empty)</span>}
                                   </p>
                                 </div>
@@ -3686,6 +3737,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                               <TableCell>
                                 <span className="text-sm">{log.actionBy}</span>
                               </TableCell>
+                              {isAdmin && (
                               <TableCell className="sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 group-hover:bg-card">
                                 <Button
                                   type="button"
@@ -3700,9 +3752,11 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               </TableCell>
+                              )}
                             </TableRow>
                           )
-                        })}
+                        })
+                        )}
                       </TableBody>
                     </Table>
                   </div>
@@ -3710,7 +3764,6 @@ export default function EditAssetPage({ params }: { params: Promise<{ assetTagId
                   <ScrollBar orientation="vertical" className="z-50" />
                 </ScrollArea>
               </div>
-            )}
           </div>
         </motion.div>
         )}
