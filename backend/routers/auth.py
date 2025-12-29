@@ -2,6 +2,7 @@
 Authentication API router
 """
 from fastapi import APIRouter, HTTPException, Depends, Request, status
+from fastapi.responses import JSONResponse
 from typing import Dict, Any, Optional
 import logging
 import os
@@ -280,12 +281,14 @@ async def get_current_user(auth: dict = Depends(verify_auth)):
             )
             
             if asset_user:
-                # Check if user account is inactive
+                # Check if user account is inactive - return isActive: false so frontend can auto-logout
                 if not asset_user.isActive:
-                    user_name = user_data.get("user_metadata", {}).get("name") or user_data.get("user_metadata", {}).get("full_name") or ""
-                    raise HTTPException(
+                    return JSONResponse(
                         status_code=403,
-                        detail="User account is inactive"
+                        content={
+                            "detail": "User account is inactive",
+                            "isActive": False
+                        }
                     )
                 
                 # Build permissions dict
