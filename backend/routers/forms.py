@@ -29,6 +29,23 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/forms", tags=["forms"])
 
+async def check_permission(user_id: str, permission: str) -> bool:
+    """Check if user has a specific permission. Admins have all permissions."""
+    try:
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        if not asset_user or not asset_user.isActive:
+            return False
+        
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+        
+        return getattr(asset_user, permission, False)
+    except Exception:
+        return False
+
 
 def accountability_form_to_response(db_form) -> AccountabilityForm:
     """Convert database accountability form to response model"""
@@ -104,6 +121,14 @@ async def get_accountability_forms(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
         
+        # Check permission - user must have canViewAccountabilityForms to view forms
+        has_permission = await check_permission(user_id, "canViewAccountabilityForms")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to view accountability forms"
+            )
+        
         where_clause = {}
         if employeeId:
             where_clause["employeeUserId"] = employeeId
@@ -135,6 +160,14 @@ async def create_accountability_form(
         user_id = auth.get("user", {}).get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageAccountabilityForms to create forms
+        has_permission = await check_permission(user_id, "canManageAccountabilityForms")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create accountability forms"
+            )
         
         # Parse date
         date_issued = datetime.fromisoformat(request.dateIssued.replace('Z', '+00:00'))
@@ -173,6 +206,14 @@ async def get_return_forms(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
         
+        # Check permission - user must have canViewReturnForms to view forms
+        has_permission = await check_permission(user_id, "canViewReturnForms")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to view return forms"
+            )
+        
         where_clause = {}
         if employeeId:
             where_clause["employeeUserId"] = employeeId
@@ -204,6 +245,14 @@ async def create_return_form(
         user_id = auth.get("user", {}).get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageReturnForms to create forms
+        has_permission = await check_permission(user_id, "canManageReturnForms")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create return forms"
+            )
         
         # Parse date
         date_returned = datetime.fromisoformat(request.dateReturned.replace('Z', '+00:00'))
@@ -246,6 +295,9 @@ async def get_form_history(
         user_id = auth.get("user", {}).get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # History list is open - no permission check needed
+        # Individual form details require view permission
         
         skip = (page - 1) * pageSize
         
@@ -374,6 +426,22 @@ async def get_form_by_id(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
         
+        # Check permission based on form type
+        if formType == "return":
+            has_permission = await check_permission(user_id, "canViewReturnForms")
+            if not has_permission:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You do not have permission to view return forms"
+                )
+        else:
+            has_permission = await check_permission(user_id, "canViewAccountabilityForms")
+            if not has_permission:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You do not have permission to view accountability forms"
+                )
+        
         if formType == "return":
             db_form = await prisma.returnform.find_unique(
                 where={"id": form_id},
@@ -394,8 +462,8 @@ async def get_form_by_id(
                         assets = await prisma.assets.find_many(
                             where={"id": {"in": asset_ids}, "isDeleted": False},
                             include={
-                                "category": {"select": {"id": True, "name": True}},
-                                "subCategory": {"select": {"id": True, "name": True}},
+                                "category": True,
+                                "subCategory": True,
                             }
                         )
                         
@@ -429,8 +497,8 @@ async def get_form_by_id(
                         assets = await prisma.assets.find_many(
                             where={"id": {"in": asset_ids}, "isDeleted": False},
                             include={
-                                "category": {"select": {"id": True, "name": True}},
-                                "subCategory": {"select": {"id": True, "name": True}},
+                                "category": True,
+                                "subCategory": True,
                             }
                         )
                         
@@ -463,6 +531,22 @@ async def delete_form(
         user_id = auth.get("user", {}).get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission based on form type
+        if formType == "return":
+            has_permission = await check_permission(user_id, "canManageReturnForms")
+            if not has_permission:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You do not have permission to delete return forms"
+                )
+        else:
+            has_permission = await check_permission(user_id, "canManageAccountabilityForms")
+            if not has_permission:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You do not have permission to delete accountability forms"
+                )
         
         if formType == "return":
             # Check if form exists

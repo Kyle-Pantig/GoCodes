@@ -47,6 +47,7 @@ import { cn } from '@/lib/utils'
 import { useMobileDock } from '@/components/mobile-dock-provider'
 import { useMobilePagination } from '@/components/mobile-pagination-provider'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { usePermissions } from '@/hooks/use-permissions'
 
 export interface InventoryItem {
   id: string
@@ -83,6 +84,8 @@ export default function InventoryTransactionHistoryPage() {
   const isMobile = useIsMobile()
   const { setDockContent } = useMobileDock()
   const { setPaginationContent } = useMobilePagination()
+  const { hasPermission } = usePermissions()
+  const canManageInventory = hasPermission('canManageInventory')
   const itemCode = params.itemCode as string
   const page = parseInt(searchParams.get('page') || '1', 10)
   const pageSize = parseInt(searchParams.get('pageSize') || '20', 10)
@@ -327,11 +330,14 @@ export default function InventoryTransactionHistoryPage() {
             <DropdownMenuContent align="end">
               <DropdownMenuItem
                 onClick={() => {
+                  if (!canManageInventory) {
+                    return // Silent return - button is disabled, but keep as safety net
+                  }
                   setRowSelection({ [row.original.id]: true })
                   setIsBulkDeleteDialogOpen(true)
                 }}
                 className="text-destructive"
-                disabled={isDisabled}
+                disabled={isDisabled || !canManageInventory}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete
@@ -341,7 +347,7 @@ export default function InventoryTransactionHistoryPage() {
         )
       },
     },
-  ], [isSelectionMode, hasSelectedTransactions])
+  ], [isSelectionMode, hasSelectedTransactions, canManageInventory])
 
   // Create table instance
   const table = useReactTable({
@@ -424,6 +430,9 @@ export default function InventoryTransactionHistoryPage() {
   }, [queryClient])
 
   const handleBulkDeleteClick = useCallback(() => {
+    if (!canManageInventory) {
+      return // Silent return - button is disabled, but keep as safety net
+    }
     // If no items are selected, select all items first
     if (selectedTransactions.size === 0) {
       const allTransactionIds = transactions.map((transaction: InventoryTransaction) => transaction.id)
@@ -432,7 +441,7 @@ export default function InventoryTransactionHistoryPage() {
       )
     }
     setIsBulkDeleteDialogOpen(true)
-  }, [selectedTransactions.size, transactions, setRowSelection])
+  }, [canManageInventory, selectedTransactions.size, transactions, setRowSelection])
 
   const bulkDeleteMutation = useBulkDeleteTransactions()
 
@@ -489,7 +498,7 @@ export default function InventoryTransactionHistoryPage() {
               variant="outline"
               size="icon"
               onClick={handleBulkDeleteClick}
-              disabled={!hasSelectedItems}
+              disabled={!hasSelectedItems || !canManageInventory}
               className="h-10 w-10 rounded-full btn-glass-elevated"
               title="Delete Selected"
             >
@@ -731,6 +740,7 @@ export default function InventoryTransactionHistoryPage() {
                   size="sm"
                   onClick={handleBulkDeleteClick}
                   className="hidden md:flex"
+                  disabled={!canManageInventory}
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete ({selectedTransactions.size})

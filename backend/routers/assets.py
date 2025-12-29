@@ -918,6 +918,18 @@ async def import_assets(
 ):
     """Import assets from Excel file"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canManageImport")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to import assets"
+            )
+        
         assets = request.get("assets", [])
         
         # Get user info for history logging
@@ -1426,6 +1438,11 @@ async def check_permission(user_id: str, permission: str) -> bool:
         )
         if not asset_user or not asset_user.isActive:
             return False
+        
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+        
         return getattr(asset_user, permission, False)
     except Exception:
         return False
@@ -2228,10 +2245,10 @@ async def delete_document_by_id(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
         
-        # Check edit permission
-        has_permission = await check_permission(user_id, "canEditAssets")
+        # Check media permission
+        has_permission = await check_permission(user_id, "canManageMedia")
         if not has_permission:
-            raise HTTPException(status_code=403, detail="Permission denied: canEditAssets required")
+            raise HTTPException(status_code=403, detail="Permission denied: canManageMedia required")
         
         if not document_id:
             raise HTTPException(status_code=400, detail="Document ID is required")
@@ -2479,9 +2496,9 @@ async def delete_image_by_id(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        has_permission = await check_permission(user_id, "canEditAssets")
+        has_permission = await check_permission(user_id, "canManageMedia")
         if not has_permission:
-            raise HTTPException(status_code=403, detail="Permission denied: canEditAssets required")
+            raise HTTPException(status_code=403, detail="Permission denied: canManageMedia required")
 
         if not image_id:
             raise HTTPException(status_code=400, detail="Image ID is required")
@@ -3225,9 +3242,9 @@ async def upload_document_to_asset(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        has_permission = await check_permission(user_id, "canCreateAssets")
+        has_permission = await check_permission(user_id, "canManageMedia")
         if not has_permission:
-            raise HTTPException(status_code=403, detail="Permission denied: canCreateAssets required")
+            raise HTTPException(status_code=403, detail="Permission denied: canManageMedia required")
 
         content_type = req.headers.get("content-type", "")
         file: Optional[UploadFile] = None
@@ -3460,9 +3477,9 @@ async def upload_image_to_asset(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        has_permission = await check_permission(user_id, "canCreateAssets")
+        has_permission = await check_permission(user_id, "canManageMedia")
         if not has_permission:
-            raise HTTPException(status_code=403, detail="Permission denied: canCreateAssets required")
+            raise HTTPException(status_code=403, detail="Permission denied: canManageMedia required")
 
         content_type = req.headers.get("content-type", "")
         file: Optional[UploadFile] = None
@@ -4406,6 +4423,18 @@ async def restore_asset(
 ):
     """Restore a soft-deleted asset"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canManageTrash")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to restore assets"
+            )
+        
         # Check if it's a UUID or assetTagId
         is_id_uuid = is_uuid(asset_id)
         
@@ -4446,6 +4475,18 @@ async def bulk_restore_assets(
 ):
     """Bulk restore multiple soft-deleted assets"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canManageTrash")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to restore assets"
+            )
+        
         if not request.ids or len(request.ids) == 0:
             raise HTTPException(status_code=400, detail="Invalid request. Expected an array of asset IDs.")
         
@@ -4482,6 +4523,18 @@ async def empty_trash(
 ):
     """Permanently delete all soft-deleted assets"""
     try:
+        user_id = auth.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission
+        has_permission = await check_permission(user_id, "canManageTrash")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to empty trash"
+            )
+        
         # Permanently delete all soft-deleted assets
         result = await prisma.assets.delete_many(
             where={

@@ -282,16 +282,13 @@ export default function ExportPage() {
         <>
           <Button 
             onClick={() => {
-              if (!canManageExport) {
-                toast.error('You do not have permission to export assets')
-                return
-              }
+              if (!canManageExport) return
               setIsExportDialogOpen(true)
             }}
             variant="outline"
             size="lg"
             className="rounded-full btn-glass-elevated"
-            disabled={permissionsLoading || !canViewAssets || assetsLoading}
+            disabled={permissionsLoading || !canViewAssets || assetsLoading || !canManageExport}
           >
             <Download className="mr-2 h-4 w-4" />
             Configure & Export
@@ -341,10 +338,7 @@ export default function ExportPage() {
   }
 
   const handleExport = async () => {
-    if (!canManageExport) {
-      toast.error('You do not have permission to export assets')
-      return
-    }
+    if (!canManageExport) return
 
     if (selectedExportFields.size === 0) {
       toast.error('Please select at least one field to export')
@@ -635,14 +629,11 @@ export default function ExportPage() {
               <div className={cn("p-3 sm:p-4 md:col-span-2 xl:col-span-1 rounded-lg border bg-muted/30 flex items-center justify-center", isMobile && "hidden")}>
                 <Button 
                   onClick={() => {
-                    if (!canManageExport) {
-                      toast.error('You do not have permission to export assets')
-                      return
-                    }
+                    if (!canManageExport) return
                     setIsExportDialogOpen(true)
                   }}
                   className="w-full h-full min-h-[60px] sm:min-h-[80px] text-xs sm:text-sm md:text-base px-2 sm:px-3 md:px-4 py-2 sm:py-3 flex items-center justify-center gap-1.5 sm:gap-2 whitespace-normal!"
-                  disabled={permissionsLoading || !canViewAssets || assetsLoading}
+                  disabled={permissionsLoading || !canViewAssets || assetsLoading || !canManageExport}
                 >
                   <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4 md:h-5 md:w-5 shrink-0" />
                   <span className="text-center leading-tight">Configure & Export</span>
@@ -808,16 +799,14 @@ export default function ExportPage() {
                                 {history.status === 'success' && (
                                   <DropdownMenuItem
                                     onClick={async () => {
-                                      if (!canManageExport) {
-                                        toast.error('You do not have permission to download export files')
-                                        return
-                                      }
+                                      if (!canManageExport) return
                                       try {
                                         await downloadFileHistory(history.id, history.fileName)
                                       } catch (error) {
                                         // Error already handled in downloadFileHistory
                                       }
                                     }}
+                                    disabled={!canManageExport}
                                     className="cursor-pointer"
                                   >
                                     <Download className="mr-2 h-4 w-4" />
@@ -826,13 +815,10 @@ export default function ExportPage() {
                                 )}
                                 <DropdownMenuItem
                                   onClick={() => {
-                                    if (!canManageExport) {
-                                      toast.error('You do not have permission to delete export history')
-                                      return
-                                    }
+                                    if (!canManageExport) return
                                     handleDelete(history)
                                   }}
-                                        disabled={deleteFileHistoryMutation.isPending}
+                                  disabled={deleteFileHistoryMutation.isPending || !canManageExport}
                                   className="text-destructive focus:text-destructive cursor-pointer"
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" />

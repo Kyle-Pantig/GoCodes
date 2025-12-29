@@ -123,7 +123,7 @@ function InventoryTrashPageContent() {
   const { setDockContent } = useMobileDock()
   
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
-  const canManageTrash = hasPermission('canManageTrash')
+  const canManageInventory = hasPermission('canManageInventory')
   const queryClient = useQueryClient()
   
   // Separate states for search input (immediate UI) and search query (debounced API calls)
@@ -309,22 +309,20 @@ function InventoryTrashPageContent() {
   }
 
   const handleRestore = useCallback((item: DeletedInventoryItem) => {
-    if (!canManageTrash) {
-      toast.error('You do not have permission to restore inventory items')
-      return
+    if (!canManageInventory) {
+      return // Silent return - button is disabled, but keep as safety net
     }
     setSelectedItem(item)
     setIsRestoreDialogOpen(true)
-  }, [canManageTrash])
+  }, [canManageInventory])
 
   const handleDelete = useCallback((item: DeletedInventoryItem) => {
-    if (!canManageTrash) {
-      toast.error('You do not have permission to permanently delete inventory items')
-      return
+    if (!canManageInventory) {
+      return // Silent return - button is disabled, but keep as safety net
     }
     setSelectedItem(item)
     setIsDeleteDialogOpen(true)
-  }, [canManageTrash])
+  }, [canManageInventory])
 
   const confirmRestore = () => {
     if (selectedItem) {
@@ -607,7 +605,7 @@ function InventoryTrashPageContent() {
               <DropdownMenuItem
                 onClick={() => handleRestore(row.original)}
                 className="cursor-pointer"
-                  disabled={isDisabled}
+                  disabled={isDisabled || !canManageInventory}
               >
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Restore
@@ -615,7 +613,7 @@ function InventoryTrashPageContent() {
               <DropdownMenuItem
                 onClick={() => handleDelete(row.original)}
                 className="cursor-pointer text-destructive"
-                  disabled={isDisabled}
+                  disabled={isDisabled || !canManageInventory}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Permanently
@@ -626,7 +624,7 @@ function InventoryTrashPageContent() {
         )
     },
     },
-  ], [handleRestore, handleDelete, hasSelectedItems])
+  ], [handleRestore, handleDelete, hasSelectedItems, canManageInventory])
 
   // Track initial mount for animations - only animate stagger on first load
   useEffect(() => {
@@ -754,29 +752,29 @@ function InventoryTrashPageContent() {
           <>
             <Button
               onClick={() => {
-                if (!canManageTrash) {
-                  toast.error('You do not have permission to restore items')
-                  return
+                if (!canManageInventory) {
+                  return // Silent return - button is disabled, but keep as safety net
                 }
                 setIsBulkRestoreDialogOpen(true)
               }}
               variant="outline"
               size="lg"
               className="rounded-full btn-glass-elevated"
+              disabled={!canManageInventory}
             >
               Recover
             </Button>
             <Button
               onClick={() => {
-                if (!canManageTrash) {
-                  toast.error('You do not have permission to permanently delete items')
-                  return
+                if (!canManageInventory) {
+                  return // Silent return - button is disabled, but keep as safety net
                 }
                 setIsBulkDeleteDialogOpen(true)
               }}
               variant="outline"
               size="icon"
               className="h-10 w-10 rounded-full btn-glass-elevated"
+              disabled={!canManageInventory}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -785,9 +783,8 @@ function InventoryTrashPageContent() {
           <>
             <Button
               onClick={() => {
-                if (!canManageTrash) {
-                  toast.error('You do not have permission to restore items')
-                  return
+                if (!canManageInventory) {
+                  return // Silent return - button is disabled, but keep as safety net
                 }
                 // Select all items and restore them
                 const allItemIds = deletedItems.map((item: DeletedInventoryItem) => item.id)
@@ -796,7 +793,7 @@ function InventoryTrashPageContent() {
                 )
                 setIsBulkRestoreDialogOpen(true)
               }}
-              disabled={!pagination?.total || pagination.total === 0 || !canManageTrash}
+              disabled={!pagination?.total || pagination.total === 0 || !canManageInventory}
               variant="outline"
               size="lg"
               className="rounded-full btn-glass-elevated"
@@ -805,9 +802,8 @@ function InventoryTrashPageContent() {
             </Button>
             <Button
               onClick={() => {
-                if (!canManageTrash) {
-                  toast.error('You do not have permission to permanently delete items')
-                  return
+                if (!canManageInventory) {
+                  return // Silent return - button is disabled, but keep as safety net
                 }
                 if (selectedItems.size > 0) {
                   setIsBulkDeleteDialogOpen(true)
@@ -818,7 +814,7 @@ function InventoryTrashPageContent() {
               variant="outline"
               size="icon"
               className="h-10 w-10 rounded-full btn-glass-elevated"
-              disabled={!pagination?.total || pagination.total === 0}
+              disabled={!pagination?.total || pagination.total === 0 || !canManageInventory}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -832,7 +828,7 @@ function InventoryTrashPageContent() {
     return () => {
       setDockContent(null)
     }
-  }, [isMobile, setDockContent, selectedItems.size, canManageTrash, setIsBulkRestoreDialogOpen, setIsBulkDeleteDialogOpen, setIsEmptyTrashPopoverOpen, deletedItems, pagination?.total, setRowSelection])
+  }, [isMobile, setDockContent, selectedItems.size, canManageInventory, setIsBulkRestoreDialogOpen, setIsBulkDeleteDialogOpen, setIsEmptyTrashPopoverOpen, deletedItems, pagination?.total, setRowSelection])
 
   return (
     <motion.div 
@@ -935,15 +931,15 @@ function InventoryTrashPageContent() {
                 <>
                   <Button
                     onClick={() => {
-                      if (!canManageTrash) {
-                        toast.error('You do not have permission to restore items')
-                        return
+                      if (!canManageInventory) {
+                        return // Silent return - button is disabled, but keep as safety net
                       }
                       setIsBulkRestoreDialogOpen(true)
                     }}
                     variant="default"
                     size="sm"
                     className="flex-1 sm:flex-initial"
+                    disabled={!canManageInventory}
                   >
                     <RotateCcw className="mr-2 h-4 w-4" />
                     <span className="sm:hidden">Restore</span>
@@ -951,15 +947,15 @@ function InventoryTrashPageContent() {
                   </Button>
                   <Button
                     onClick={() => {
-                      if (!canManageTrash) {
-                        toast.error('You do not have permission to permanently delete items')
-                        return
+                      if (!canManageInventory) {
+                        return // Silent return - button is disabled, but keep as safety net
                       }
                       setIsBulkDeleteDialogOpen(true)
                     }}
                     variant="destructive"
                     size="sm"
                     className="flex-1 sm:flex-initial"
+                    disabled={!canManageInventory}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
                     <span className="sm:hidden">Delete</span>
@@ -974,12 +970,11 @@ function InventoryTrashPageContent() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        if (!canManageTrash) {
-                          toast.error('You do not have permission to empty trash')
-                          return
+                        if (!canManageInventory) {
+                          return // Silent return - button is disabled, but keep as safety net
                         }
                       }}
-                      disabled={!pagination?.total || pagination.total === 0 || !canManageTrash}
+                      disabled={!pagination?.total || pagination.total === 0 || !canManageInventory}
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
                       Empty

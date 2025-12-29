@@ -2,7 +2,7 @@
 
 import { use } from "react"
 import { useSearchParams } from "next/navigation"
-import { ArrowLeft, FileText } from "lucide-react"
+import { ArrowLeft, FileText, ClipboardList } from "lucide-react"
 import { useFormById } from '@/hooks/use-forms'
 import { useCompanyInfo } from '@/hooks/use-company-info'
 import { usePermissions } from "@/hooks/use-permissions"
@@ -165,6 +165,63 @@ export default function FormDetailsPage({ params }: { params: Promise<{ id: stri
           <Spinner className="h-8 w-8" />
           <p className="text-sm text-muted-foreground">Loading form details...</p>
         </div>
+      </div>
+    )
+  }
+
+  // Check if user has permission to view this form type
+  const hasPermissionToView = (formType === "return" && canViewReturnForms) || (formType === "accountability" && canViewAccountabilityForms)
+  
+  // Check if error is a permission error (403)
+  const isPermissionError = error && (
+    (error as any)?.response?.status === 403 || 
+    (error as any)?.status === 403 ||
+    (error as any)?.message?.includes("permission") ||
+    (error as any)?.message?.includes("403")
+  )
+
+  // Show access denied if user doesn't have permission (query is disabled, so no loading state)
+  if (!hasPermissionToView && !isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        {formType === "accountability" ? (
+          <ClipboardList className="h-12 w-12 text-muted-foreground opacity-50 mb-4" />
+        ) : (
+          <FileText className="h-12 w-12 text-muted-foreground opacity-50 mb-4" />
+        )}
+        <p className="text-lg font-medium">Access Denied</p>
+        <p className="text-sm text-muted-foreground mb-4">
+          You do not have permission to view {formType === "accountability" ? "accountability forms" : "return forms"}.
+        </p>
+        <Link href="/forms/history">
+          <Button variant="outline">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to History
+          </Button>
+        </Link>
+      </div>
+    )
+  }
+
+  // Show access denied if we got a 403 error from the backend
+  if (error && isPermissionError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        {formType === "accountability" ? (
+          <ClipboardList className="h-12 w-12 text-muted-foreground opacity-50 mb-4" />
+        ) : (
+          <FileText className="h-12 w-12 text-muted-foreground opacity-50 mb-4" />
+        )}
+        <p className="text-lg font-medium">Access Denied</p>
+        <p className="text-sm text-muted-foreground mb-4">
+          You do not have permission to view {formType === "accountability" ? "accountability forms" : "return forms"}.
+        </p>
+        <Link href="/forms/history">
+          <Button variant="outline">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to History
+          </Button>
+        </Link>
       </div>
     )
   }

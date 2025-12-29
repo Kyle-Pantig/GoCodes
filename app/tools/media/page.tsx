@@ -1238,13 +1238,10 @@ function MediaPageContent() {
               variant="outline"
               size="icon"
               onClick={() => {
-                if (!canManageMedia) {
-                  toast.error(`You do not have permission to delete ${activeTab === 'media' ? 'images' : 'documents'}`)
-                  return
-                }
+                if (!canManageMedia) return
                 setIsBulkDeleteDialogOpen(true)
               }}
-              disabled={!hasSelectedItems}
+              disabled={!hasSelectedItems || !canManageMedia}
               className="h-10 w-10 rounded-full btn-glass-elevated"
               title="Delete Selected"
             >
@@ -1300,16 +1297,10 @@ function MediaPageContent() {
                   {activeTab === 'media' && (
                     <DropdownMenuItem
                       onClick={() => {
-                        if (!canManageMedia) {
-                          toast.error('You do not have permission to upload images')
-                          return
-                        }
-                        if (isUploading) {
-                          return
-                        }
+                        if (!canManageMedia || isUploading) return
                         fileInputRef.current?.click()
                       }}
-                      disabled={isUploading}
+                      disabled={isUploading || !canManageMedia}
                     >
                       {isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Upload Images'}
                     </DropdownMenuItem>
@@ -1317,16 +1308,10 @@ function MediaPageContent() {
                   {activeTab === 'documents' && (
                     <DropdownMenuItem
                       onClick={() => {
-                        if (!canManageMedia) {
-                          toast.error('You do not have permission to upload documents')
-                          return
-                        }
-                        if (isUploading) {
-                          return
-                        }
+                        if (!canManageMedia || isUploading) return
                         documentInputRef.current?.click()
                       }}
-                      disabled={isUploading}
+                      disabled={isUploading || !canManageMedia}
                     >
                       {isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Upload Documents'}
                     </DropdownMenuItem>
@@ -1510,12 +1495,10 @@ function MediaPageContent() {
                         variant="destructive"
                         size="sm"
                         onClick={() => {
-                          if (!canManageMedia) {
-                            toast.error('You do not have permission to delete images')
-                            return
-                          }
+                          if (!canManageMedia) return
                           setIsBulkDeleteDialogOpen(true)
                         }}
+                        disabled={!canManageMedia}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Delete ({selectedImages.size})
@@ -1526,12 +1509,10 @@ function MediaPageContent() {
                         variant="destructive"
                         size="sm"
                         onClick={() => {
-                          if (!canManageMedia) {
-                            toast.error('You do not have permission to delete documents')
-                            return
-                          }
+                          if (!canManageMedia) return
                           setIsBulkDeleteDialogOpen(true)
                         }}
+                        disabled={!canManageMedia}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Delete ({selectedDocuments.size})
@@ -1595,16 +1576,10 @@ function MediaPageContent() {
                     {activeTab === 'media' && (
                     <DropdownMenuItem
                       onClick={() => {
-                        if (!canManageMedia) {
-                          toast.error('You do not have permission to upload images')
-                          return
-                        }
-                        if (isUploading) {
-                          return
-                        }
+                        if (!canManageMedia || isUploading) return
                         fileInputRef.current?.click()
                       }}
-                      disabled={isUploading}
+                      disabled={isUploading || !canManageMedia}
                     >
                       {isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Upload Images'}
                     </DropdownMenuItem>
@@ -1612,16 +1587,10 @@ function MediaPageContent() {
                     {activeTab === 'documents' && (
                       <DropdownMenuItem
                         onClick={() => {
-                          if (!canManageMedia) {
-                            toast.error('You do not have permission to upload documents')
-                            return
-                          }
-                          if (isUploading) {
-                            return
-                          }
+                          if (!canManageMedia || isUploading) return
                           documentInputRef.current?.click()
                         }}
-                        disabled={isUploading}
+                        disabled={isUploading || !canManageMedia}
                       >
                         {isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Upload Documents'}
                       </DropdownMenuItem>
@@ -2040,12 +2009,10 @@ function MediaPageContent() {
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
                           onClick={(e) => {
-                            if (!canManageMedia) {
-                              toast.error('You do not have permission to delete images')
-                              return
-                            }
+                            if (!canManageMedia) return
                             handleDeleteClick(e, image)
                           }}
+                          disabled={!canManageMedia}
                         >
                           <Trash2 className="mr-2 h-4 w-4 text-black" />
                           Delete
@@ -2389,12 +2356,10 @@ function MediaPageContent() {
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
                           onClick={(e) => {
-                            if (!canManageMedia) {
-                              toast.error('You do not have permission to delete documents')
-                              return
-                            }
+                            if (!canManageMedia) return
                             handleDocumentDeleteClick(e, document)
                           }}
+                          disabled={!canManageMedia}
                         >
                           <Trash2 className="mr-2 h-4 w-4 text-black" />
                           Delete

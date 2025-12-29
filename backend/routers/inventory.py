@@ -41,13 +41,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
 async def check_permission(user_id: str, permission: str) -> bool:
-    """Check if user has a specific permission"""
+    """Check if user has a specific permission. Admins have all permissions."""
     try:
         asset_user = await prisma.assetuser.find_unique(
             where={"userId": user_id}
         )
         if not asset_user or not asset_user.isActive:
             return False
+        
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+        
         return getattr(asset_user, permission, False)
     except Exception:
         return False
@@ -215,6 +220,14 @@ async def export_inventory(
         user_id = auth.get("user", {}).get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageInventory to export inventory
+        has_permission = await check_permission(user_id, "canManageInventory")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to export inventory items"
+            )
         
         if format not in ["excel", "pdf"]:
             raise HTTPException(status_code=400, detail="Invalid format. Use excel or pdf.")
@@ -599,7 +612,13 @@ async def empty_inventory_trash(auth: dict = Depends(verify_auth)):
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
         
-    
+        # Check permission - user must have canManageTrash to empty trash
+        has_permission = await check_permission(user_id, "canManageTrash")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to empty inventory trash"
+            )
         
         # Find all soft-deleted items
         deleted_items = await prisma.inventoryitem.find_many(
@@ -649,6 +668,14 @@ async def bulk_delete_inventory_items(
         user_id = auth.get("user", {}).get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageInventory to delete items
+        has_permission = await check_permission(user_id, "canManageInventory")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete inventory items"
+            )
         
         if not request.ids or len(request.ids) == 0:
             raise HTTPException(
@@ -833,6 +860,14 @@ async def create_inventory_item(
         user_id = auth.get("user", {}).get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageInventory to create items
+        has_permission = await check_permission(user_id, "canManageInventory")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create inventory items"
+            )
         
         # Validation
         if not item_data.itemCode or not item_data.name:
@@ -1075,6 +1110,14 @@ async def update_inventory_item(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
         
+        # Check permission - user must have canManageInventory to update items
+        has_permission = await check_permission(user_id, "canManageInventory")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to update inventory items"
+            )
+        
         # Check if item exists
         existing_item = await prisma.inventoryitem.find_unique(where={"id": item_id})
         
@@ -1181,6 +1224,14 @@ async def delete_inventory_item(
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
         
+        # Check permission - user must have canManageInventory to delete items
+        has_permission = await check_permission(user_id, "canManageInventory")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete inventory items"
+            )
+        
         if permanent:
             # Hard delete
             await prisma.inventoryitem.delete(where={"id": item_id})
@@ -1216,6 +1267,14 @@ async def restore_inventory_item(
         user_id = auth.get("user", {}).get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageInventory to restore items
+        has_permission = await check_permission(user_id, "canManageInventory")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to restore inventory items"
+            )
         
         # Check if item exists
         item_data = await prisma.inventoryitem.find_unique(where={"id": item_id})
@@ -1286,6 +1345,14 @@ async def bulk_restore_inventory_items(
         user_id = auth.get("user", {}).get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageInventory to restore items
+        has_permission = await check_permission(user_id, "canManageInventory")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to restore inventory items"
+            )
         
         if not request.ids or len(request.ids) == 0:
             raise HTTPException(
@@ -1460,6 +1527,14 @@ async def create_inventory_transaction(
         user_id = auth.get("user", {}).get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageInventory to create transactions
+        has_permission = await check_permission(user_id, "canManageInventory")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to create inventory transactions"
+            )
         
         # Validation
         if not transaction_data.transactionType or not transaction_data.quantity:
@@ -1732,6 +1807,14 @@ async def bulk_delete_transactions(
         user_id = auth.get("user", {}).get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Check permission - user must have canManageInventory to delete transactions
+        has_permission = await check_permission(user_id, "canManageInventory")
+        if not has_permission:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to delete inventory transactions"
+            )
         
         if not request or not request.transactionIds or len(request.transactionIds) == 0:
             raise HTTPException(

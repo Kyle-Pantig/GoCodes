@@ -306,10 +306,7 @@ function FormsHistoryPageContent() {
   const currentForms = activeTab === "accountability" ? accountabilityForms : returnForms
   
   // Check if we're fetching data for the current tab (to show loading when switching tabs)
-  const isFetchingCurrentTab = isFetching && (
-    (activeTab === "accountability" && canViewAccountabilityForms) ||
-    (activeTab === "return" && canViewReturnForms)
-  )
+  const isFetchingCurrentTab = isFetching
 
   return (
     <motion.div 
@@ -333,7 +330,7 @@ function FormsHistoryPageContent() {
             activeTab === "accountability"
               ? "text-primary"
               : "text-muted-foreground hover:text-foreground"
-          } ${!canViewAccountabilityForms ? "opacity-50" : ""}`}
+          }`}
         >
           <div className="flex items-center gap-2">
             <ClipboardList className="h-4 w-4" />
@@ -353,7 +350,7 @@ function FormsHistoryPageContent() {
             activeTab === "return"
               ? "text-primary"
               : "text-muted-foreground hover:text-foreground"
-          } ${!canViewReturnForms ? "opacity-50" : ""}`}
+          }`}
         >
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
@@ -466,26 +463,6 @@ function FormsHistoryPageContent() {
                   <Spinner className="h-8 w-8" />
                   <p className="text-sm text-muted-foreground">Loading...</p>
                 </div>
-                </motion.div>
-            ) : /* Check if user doesn't have permission for active tab - only show after permissions are loaded */
-            (activeTab === "accountability" && !canViewAccountabilityForms) || (activeTab === "return" && !canViewReturnForms) ? (
-                <motion.div
-                  key="access-denied"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.2 }}
-                  className="flex flex-col items-center justify-center py-12 text-center"
-                >
-                {activeTab === "accountability" ? (
-                  <ClipboardList className="h-12 w-12 text-muted-foreground opacity-50 mb-4" />
-                ) : (
-                  <FileText className="h-12 w-12 text-muted-foreground opacity-50 mb-4" />
-                )}
-                <p className="text-lg font-medium">Access Denied</p>
-                <p className="text-sm text-muted-foreground">
-                  You do not have permission to view {activeTab === "accountability" ? "accountability forms" : "return forms"}.
-                </p>
                 </motion.div>
             ) : currentForms.length === 0 ? (
               <motion.div

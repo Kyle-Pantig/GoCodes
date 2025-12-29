@@ -42,6 +42,11 @@ async def check_permission(user_id: str, permission: str) -> bool:
         )
         if not asset_user or not asset_user.isActive:
             return False
+        
+        # Admins have all permissions
+        if asset_user.role == "admin":
+            return True
+        
         return getattr(asset_user, permission, False)
     except Exception:
         return False
@@ -448,9 +453,29 @@ async def download_file(
         if not file_history:
             raise HTTPException(status_code=404, detail="File history not found")
         
-        # Verify user owns this file history
-        if file_history.userId != user_id:
-            raise HTTPException(status_code=403, detail="Unauthorized to access this file")
+        # Fetch user permissions from database
+        asset_user = await prisma.assetuser.find_unique(
+            where={"userId": user_id}
+        )
+        
+        if not asset_user or not asset_user.isActive:
+            raise HTTPException(status_code=403, detail="User not found or inactive")
+        
+        # Check permissions
+        is_admin = asset_user.role == "admin"
+        is_owner = file_history.userId == user_id
+        
+        # Admin can download any file, or user can download their own if they have the appropriate permission
+        can_download = is_admin or (is_owner and (
+            (file_history.operationType == "export" and asset_user.canManageExport) or
+            (file_history.operationType == "import" and asset_user.canManageImport)
+        ))
+        
+        if not can_download:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to download this file"
+            )
         
         # Check if file exists in storage
         if not file_history.filePath:

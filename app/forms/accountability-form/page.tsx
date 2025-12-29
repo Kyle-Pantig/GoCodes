@@ -163,6 +163,7 @@ export default function AccountabilityFormPage() {
   const [qrDialogContext, setQrDialogContext] = useState<'general' | 'table-row'>('general')
   const [targetRowItem, setTargetRowItem] = useState<string | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("")
+  const lastProcessedEmployeeIdRef = useRef<string | null>(null)
   const [dateIssued, setDateIssued] = useState(new Date().toISOString().split('T')[0])
   const [position, setPosition] = useState("")
   const [clientDepartment, setClientDepartment] = useState("")
@@ -204,55 +205,53 @@ export default function AccountabilityFormPage() {
 
   // Auto-fill checked out assets when employee is selected
   useEffect(() => {
-    if (selectedEmployee && selectedEmployee.checkouts) {
-      // Filter active checkouts (those without checkins)
-      const activeCheckouts = selectedEmployee.checkouts.filter(
-        (checkout) => (!checkout.checkins || checkout.checkins.length === 0) && checkout.asset.status === "Checked out"
-      )
-      
-      if (activeCheckouts.length > 0) {
-        // Convert checkouts to AccountabilityAsset format
-        const assetsToAdd: AccountabilityAsset[] = activeCheckouts.map((checkout) => ({
-          id: checkout.asset.id,
-          assetTagId: checkout.asset.assetTagId,
-          description: checkout.asset.description,
-          status: checkout.asset.status || undefined,
-          category: checkout.asset.category ? {
-            id: '',
-            name: checkout.asset.category.name
-          } : null,
-          subCategory: checkout.asset.subCategory ? {
-            id: '',
-            name: checkout.asset.subCategory.name
-          } : null,
-          remarks: '',
-        }))
-        
-        // Only update if the assets are different (avoid infinite loops)
-        setSelectedAssets(prevAssets => {
-          const currentAssetIds = prevAssets.map(a => a.id).sort().join(',')
-          const newAssetIds = assetsToAdd.map(a => a.id).sort().join(',')
-          
-          if (currentAssetIds !== newAssetIds) {
-            toast.success(`Loaded ${assetsToAdd.length} checked out asset(s) for ${selectedEmployee.name}`)
-            return assetsToAdd
-          }
-          return prevAssets
-        })
-      } else {
-        // Clear assets if employee has no active checkouts
-        setSelectedAssets(prevAssets => {
-          if (prevAssets.length > 0) {
-            return []
-          }
-          return prevAssets
-        })
+    if (!selectedEmployeeId || !selectedEmployee || !selectedEmployee.checkouts) {
+      if (!selectedEmployeeId) {
+        lastProcessedEmployeeIdRef.current = null
+        setSelectedAssets([])
       }
-    } else if (!selectedEmployee) {
-      // Clear assets when employee is deselected
+      return
+    }
+    
+    // Skip if we've already processed this employee ID
+    if (lastProcessedEmployeeIdRef.current === selectedEmployeeId) {
+      return
+    }
+    
+    // Mark this employee as being processed immediately to prevent duplicate runs
+    lastProcessedEmployeeIdRef.current = selectedEmployeeId
+    
+    // Filter active checkouts (those without checkins)
+    const activeCheckouts = selectedEmployee.checkouts.filter(
+      (checkout) => (!checkout.checkins || checkout.checkins.length === 0) && checkout.asset.status === "Checked out"
+    )
+    
+    if (activeCheckouts.length > 0) {
+      // Convert checkouts to AccountabilityAsset format
+      const assetsToAdd: AccountabilityAsset[] = activeCheckouts.map((checkout) => ({
+        id: checkout.asset.id,
+        assetTagId: checkout.asset.assetTagId,
+        description: checkout.asset.description,
+        status: checkout.asset.status || undefined,
+        category: checkout.asset.category ? {
+          id: '',
+          name: checkout.asset.category.name
+        } : null,
+        subCategory: checkout.asset.subCategory ? {
+          id: '',
+          name: checkout.asset.subCategory.name
+        } : null,
+        remarks: '',
+      }))
+      
+      // Show toast and set assets directly (not inside setState callback to avoid duplicates)
+      toast.success(`Loaded ${assetsToAdd.length} checked out asset(s) for ${selectedEmployee.name}`)
+      setSelectedAssets(assetsToAdd)
+    } else {
+      // Clear assets if employee has no active checkouts
       setSelectedAssets([])
     }
-  }, [selectedEmployee, selectedEmployeeId]) // Only trigger when employee changes
+  }, [selectedEmployeeId, selectedEmployee])
 
   // Set signature dates to today's date on page load
   useEffect(() => {
@@ -311,7 +310,7 @@ export default function AccountabilityFormPage() {
       
       return filtered.slice(0, 10)
     },
-    enabled: showSuggestions && canViewAccountabilityForms,
+    enabled: showSuggestions,
     staleTime: 300,
   })
 
@@ -668,8 +667,7 @@ export default function AccountabilityFormPage() {
   // Handle PDF download
   const handleDownloadPDF = async () => {
     if (!canManageAccountabilityForms) {
-      toast.error('You do not have permission to download accountability forms')
-      return
+      return // Silent return - button is disabled, but keep as safety net
     }
 
     if (!selectedEmployee) {
@@ -1126,13 +1124,6 @@ export default function AccountabilityFormPage() {
     }
   }
 
-  // Show toast notification if user doesn't have view permission
-  // Only show after permissions are loaded to avoid showing during initial load
-  useEffect(() => {
-    if (!isLoadingPermissions && !canViewAccountabilityForms) {
-      toast.error('You do not have permission to view accountability forms')
-    }
-  }, [canViewAccountabilityForms, isLoadingPermissions])
 
   // Show loading state while permissions are loading
   if (isLoadingPermissions) {
@@ -1167,7 +1158,6 @@ export default function AccountabilityFormPage() {
             onValueChange={setSelectedEmployeeId}
             label="Employee"
             required
-            disabled={!canViewAccountabilityForms}
             placeholder="Select an employee"
           />
         </CardContent>
@@ -1530,7 +1520,6 @@ export default function AccountabilityFormPage() {
                     onFocus={() => setShowSuggestions(true)}
                     className="w-full"
                     autoComplete="off"
-                    disabled={!canViewAccountabilityForms}
                   />
                   
                   {/* Suggestions dropdown */}
@@ -1581,18 +1570,16 @@ export default function AccountabilityFormPage() {
                     </div>
                   )}
                 </div>
-                {canViewAccountabilityForms && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setQrDialogOpen(true)}
-                    title="QR Code"
-                    className="bg-transparent dark:bg-input/30"
-                  >
-                    <QrCode className="h-4 w-4" />
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setQrDialogOpen(true)}
+                  title="QR Code"
+                  className="bg-transparent dark:bg-input/30"
+                >
+                  <QrCode className="h-4 w-4" />
+                </Button>
               </div>
 
               {(selectedAssets.length > 0 || loadingAssets.size > 0) && (
@@ -2367,7 +2354,7 @@ export default function AccountabilityFormPage() {
               type="button"
               size="lg"
               onClick={handleDownloadPDF}
-              disabled={isGeneratingPDF}
+              disabled={isGeneratingPDF || !canManageAccountabilityForms}
               className="min-w-[140px] shadow-lg"
             >
               {isGeneratingPDF ? (

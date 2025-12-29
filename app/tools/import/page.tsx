@@ -150,13 +150,10 @@ export default function ImportPage() {
             variant="outline"
             size="lg"
             className="rounded-full btn-glass-elevated"
-            disabled={permissionsLoading || !canViewAssets}
+            disabled={permissionsLoading || !canViewAssets || !canManageImport}
             onClick={(e) => {
               e.stopPropagation()
-              if (!canManageImport) {
-                toast.error('You do not have permission to import assets')
-                return
-              }
+              if (!canManageImport) return
               fileInputRef.current?.click()
             }}
           >
@@ -188,10 +185,7 @@ export default function ImportPage() {
 
 
   const handleDelete = (history: FileHistory) => {
-    if (!canManageImport) {
-      toast.error('You do not have permission to delete import history')
-      return
-    }
+    if (!canManageImport) return
     setSelectedHistory(history)
     setIsDeleteDialogOpen(true)
   }
@@ -806,22 +800,19 @@ export default function ImportPage() {
                 onDrop={(e) => {
                   if (!canManageImport) {
                     e.preventDefault()
-                    toast.error('You do not have permission to import assets')
                     return
                   }
                   handleDrop(e)
                 }}
                 className={cn(
-                  "relative flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 transition-all duration-200 ease-in-out min-h-[300px] group cursor-pointer",
+                  "relative flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 transition-all duration-200 ease-in-out min-h-[300px] group",
+                  !canManageImport ? "cursor-not-allowed opacity-50" : "cursor-pointer",
                   isDragging
                     ? 'border-primary bg-primary/5 scale-[1.01]'
                     : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30'
                 )}
                 onClick={() => {
-                  if (!canManageImport) {
-                    toast.error('You do not have permission to import assets')
-                    return
-                  }
+                  if (!canManageImport) return
                   fileInputRef.current?.click()
                 }}
               >
@@ -847,13 +838,10 @@ export default function ImportPage() {
                 <Button
                   variant="default"
                   className="mt-8 w-full sm:w-auto min-w-[140px]"
-                  disabled={permissionsLoading || !canViewAssets}
+                  disabled={permissionsLoading || !canViewAssets || !canManageImport}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (!canManageImport) {
-                      toast.error('You do not have permission to import assets')
-                      return
-                    }
+                    if (!canManageImport) return
                     fileInputRef.current?.click()
                   }}
                 >
@@ -1064,8 +1052,11 @@ export default function ImportPage() {
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end">
                                       <DropdownMenuItem
-                                        onClick={() => handleDelete(history)}
-                                        disabled={deleteFileHistoryMutation.isPending}
+                                        onClick={() => {
+                                          if (!canManageImport) return
+                                          handleDelete(history)
+                                        }}
+                                        disabled={deleteFileHistoryMutation.isPending || !canManageImport}
                                         className="text-destructive focus:text-destructive cursor-pointer"
                                       >
                                         <Trash2 className="mr-2 h-4 w-4" />

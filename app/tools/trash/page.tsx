@@ -448,19 +448,13 @@ function TrashPageContent() {
   }
 
   const handleRestore = useCallback((asset: DeletedAsset) => {
-    if (!canManageTrash) {
-      toast.error('You do not have permission to restore assets')
-      return
-    }
+    if (!canManageTrash) return
     setSelectedAsset(asset)
     setIsRestoreDialogOpen(true)
   }, [canManageTrash])
 
   const handleDelete = useCallback((asset: DeletedAsset) => {
-    if (!canManageTrash) {
-      toast.error('You do not have permission to permanently delete assets')
-      return
-    }
+    if (!canManageTrash) return
     setSelectedAsset(asset)
     setIsDeleteDialogOpen(true)
   }, [canManageTrash])
@@ -761,7 +755,7 @@ function TrashPageContent() {
               <DropdownMenuItem
                 onClick={() => handleRestore(row.original)}
                 className="cursor-pointer"
-                  disabled={isDisabled}
+                disabled={isDisabled || !canManageTrash}
               >
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Restore
@@ -769,7 +763,7 @@ function TrashPageContent() {
               <DropdownMenuItem
                 onClick={() => handleDelete(row.original)}
                 className="cursor-pointer text-destructive"
-                  disabled={isDisabled}
+                disabled={isDisabled || !canManageTrash}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Permanently
@@ -966,12 +960,10 @@ function TrashPageContent() {
           <>
             <Button
               onClick={() => {
-                if (!canManageTrash) {
-                  toast.error('You do not have permission to restore assets')
-                  return
-                }
+                if (!canManageTrash) return
                 setIsBulkRestoreDialogOpen(true)
               }}
+              disabled={!canManageTrash}
               variant="outline"
               size="lg"
               className="rounded-full btn-glass-elevated"
@@ -980,12 +972,10 @@ function TrashPageContent() {
             </Button>
             <Button
               onClick={() => {
-                if (!canManageTrash) {
-                  toast.error('You do not have permission to permanently delete assets')
-                  return
-                }
+                if (!canManageTrash) return
                 setIsBulkDeleteDialogOpen(true)
               }}
+              disabled={!canManageTrash}
               variant="outline"
               size="icon"
               className="h-10 w-10 rounded-full btn-glass-elevated"
@@ -997,10 +987,7 @@ function TrashPageContent() {
           <>
             <Button
               onClick={() => {
-                if (!canManageTrash) {
-                  toast.error('You do not have permission to restore assets')
-                  return
-                }
+                if (!canManageTrash) return
                 // Select all assets and restore them
                 const allAssetIds = deletedAssets.map((asset: DeletedAsset) => asset.id)
                 setRowSelection(
@@ -1017,10 +1004,7 @@ function TrashPageContent() {
             </Button>
             <Button
               onClick={() => {
-                if (!canManageTrash) {
-                  toast.error('You do not have permission to permanently delete assets')
-                  return
-                }
+                if (!canManageTrash) return
                 if (selectedAssets.size > 0) {
                   setIsBulkDeleteDialogOpen(true)
                 } else {
@@ -1030,7 +1014,7 @@ function TrashPageContent() {
               variant="outline"
               size="icon"
               className="h-10 w-10 rounded-full btn-glass-elevated"
-              disabled={!pagination?.total || pagination.total === 0}
+              disabled={!pagination?.total || pagination.total === 0 || !canManageTrash}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -1137,12 +1121,10 @@ function TrashPageContent() {
                 <>
                   <Button
                     onClick={() => {
-                      if (!canManageTrash) {
-                        toast.error('You do not have permission to restore assets')
-                        return
-                      }
+                      if (!canManageTrash) return
                       setIsBulkRestoreDialogOpen(true)
                     }}
+                    disabled={!canManageTrash}
                     variant="default"
                     size="sm"
                     className="flex-1 sm:flex-initial"
@@ -1153,12 +1135,10 @@ function TrashPageContent() {
                   </Button>
                   <Button
                     onClick={() => {
-                      if (!canManageTrash) {
-                        toast.error('You do not have permission to permanently delete assets')
-                        return
-                      }
+                      if (!canManageTrash) return
                       setIsBulkDeleteDialogOpen(true)
                     }}
+                    disabled={!canManageTrash}
                     variant="destructive"
                     size="sm"
                     className="flex-1 sm:flex-initial"
@@ -1176,10 +1156,7 @@ function TrashPageContent() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        if (!canManageTrash) {
-                          toast.error('You do not have permission to empty trash')
-                          return
-                        }
+                        if (!canManageTrash) return
                       }}
                       disabled={!pagination?.total || pagination.total === 0 || !canManageTrash}
                     >

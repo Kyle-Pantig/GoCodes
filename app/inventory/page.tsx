@@ -160,7 +160,8 @@ const createColumns = (
   onEdit: (item: InventoryItem) => void,
   onDelete: (item: InventoryItem) => void,
   onAddTransaction: (item: InventoryItem) => void,
-  onViewTransactions: (item: InventoryItem) => void
+  onViewTransactions: (item: InventoryItem) => void,
+  canManageInventory: boolean
 ): ColumnDef<InventoryItem>[] => [
   {
     id: 'itemCode',
@@ -564,12 +565,18 @@ const createColumns = (
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onEdit(item)}>
+              <DropdownMenuItem 
+                onClick={() => onEdit(item)}
+                disabled={!canManageInventory}
+              >
                 <Edit className="mr-2 h-4 w-4" />
                 Edit
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onAddTransaction(item)}>
+              <DropdownMenuItem 
+                onClick={() => onAddTransaction(item)}
+                disabled={!canManageInventory}
+              >
                 <Plus className="mr-2 h-4 w-4" />
                 Add Transaction
               </DropdownMenuItem>
@@ -581,6 +588,7 @@ const createColumns = (
               <DropdownMenuItem
                 onClick={() => onDelete(item)}
                 className="text-red-600"
+                disabled={!canManageInventory}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete
@@ -648,7 +656,6 @@ function InventoryPageContent() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const canManageInventory = hasPermission('canManageInventory')
-  const canManageImport = hasPermission('canManageImport')
 
   // Available export fields
   const exportFields = useMemo(() => [
@@ -908,8 +915,7 @@ function InventoryPageContent() {
 
   const handleAdd = useCallback(() => {
     if (!canManageInventory) {
-      toast.error('You do not have permission to add inventory')
-      return
+      return // Silent return - button is disabled, but keep as safety net
     }
     setSelectedItem(null)
     setIsAddDialogOpen(true)
@@ -917,8 +923,7 @@ function InventoryPageContent() {
 
   const handleEdit = useCallback((item: InventoryItem) => {
     if (!canManageInventory) {
-      toast.error('You do not have permission to edit inventory')
-      return
+      return // Silent return - button is disabled, but keep as safety net
     }
     setSelectedItem(item)
     setIsEditDialogOpen(true)
@@ -926,8 +931,7 @@ function InventoryPageContent() {
 
   const handleDelete = useCallback((item: InventoryItem) => {
     if (!canManageInventory) {
-      toast.error('You do not have permission to delete inventory')
-      return
+      return // Silent return - button is disabled, but keep as safety net
     }
     setSelectedItem(item)
     setIsDeleteDialogOpen(true)
@@ -935,8 +939,7 @@ function InventoryPageContent() {
 
   const handleAddTransaction = useCallback((item: InventoryItem) => {
     if (!canManageInventory) {
-      toast.error('You do not have permission to add inventory transaction')
-      return
+      return // Silent return - button is disabled, but keep as safety net
     }
     setSelectedItem(item)
     setIsTransactionDialogOpen(true)
@@ -1556,10 +1559,9 @@ function InventoryPageContent() {
     const file = event.target.files?.[0]
     if (!file) return
 
-    if (!canManageImport) {
-      toast.error('You do not have permission to import inventory items')
+    if (!canManageInventory) {
       event.target.value = ''
-      return
+      return // Silent return - button is disabled, but keep as safety net
     }
 
     setIsImporting(true)
@@ -1730,11 +1732,11 @@ function InventoryPageContent() {
         fileInputRef.current.value = ''
       }
     }
-  }, [canManageImport, queryClient])
+  }, [canManageInventory, queryClient])
 
   const columns = useMemo(
-    () => createColumns(handleEdit, handleDelete, handleAddTransaction, handleViewTransactions),
-    [handleEdit, handleDelete, handleAddTransaction, handleViewTransactions]
+    () => createColumns(handleEdit, handleDelete, handleAddTransaction, handleViewTransactions, canManageInventory),
+    [handleEdit, handleDelete, handleAddTransaction, handleViewTransactions, canManageInventory]
   )
 
   const items = useMemo(() => data?.items || [], [data?.items])
@@ -1798,6 +1800,7 @@ function InventoryPageContent() {
             variant="outline"
             size="lg"
             className="rounded-full btn-glass-elevated"
+            disabled={!canManageInventory}
           >
             Add Item
           </Button>
@@ -1809,16 +1812,21 @@ function InventoryPageContent() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuSub>
-                <DropdownMenuSubTrigger disabled={!data?.items || data.items.length === 0}>
+                <DropdownMenuSubTrigger 
+                  disabled={!data?.items || data.items.length === 0 || !canManageInventory}
+                  className={cn(
+                    (!data?.items || data.items.length === 0 || !canManageInventory) && "opacity-50 cursor-not-allowed"
+                  )}
+                >
                   <Download className="mr-2 h-4 w-4" />
                   Export
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
-                  <DropdownMenuItem onClick={() => handleExportClick('excel')} disabled={!data?.items || data.items.length === 0}>
+                  <DropdownMenuItem onClick={() => handleExportClick('excel')} disabled={!data?.items || data.items.length === 0 || !canManageInventory}>
                     <FileSpreadsheet className="mr-2 h-4 w-4" />
                     Excel
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExportClick('pdf')} disabled={!data?.items || data.items.length === 0}>
+                  <DropdownMenuItem onClick={() => handleExportClick('pdf')} disabled={!data?.items || data.items.length === 0 || !canManageInventory}>
                     <FileText className="mr-2 h-4 w-4" />
                     PDF
                   </DropdownMenuItem>
@@ -1832,13 +1840,12 @@ function InventoryPageContent() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
                   onClick={() => {
-                    if (!canManageImport) {
-                      toast.error('You do not have permission to import inventory items')
-                      return
+                    if (!canManageInventory) {
+                      return // Silent return - button is disabled, but keep as safety net
                     }
                     fileInputRef.current?.click()
                   }}
-                  disabled={isImporting}
+                  disabled={isImporting || !canManageInventory}
                 >
                   {isImporting ? (
                     <>
@@ -1869,7 +1876,7 @@ function InventoryPageContent() {
     return () => {
       setDockContent(null)
     }
-  }, [isMobile, setDockContent, handleAdd, handleExportClick, handleDownloadTemplate, canManageImport, isImporting, data?.items, router, fileInputRef])
+  }, [isMobile, setDockContent, handleAdd, handleExportClick, handleDownloadTemplate, canManageInventory, isImporting, data?.items, router, fileInputRef])
 
   // Set mobile pagination content
   useEffect(() => {
@@ -1975,6 +1982,7 @@ function InventoryPageContent() {
         <div className="hidden sm:flex items-center gap-2 shrink-0">
           <Button 
             onClick={handleAdd}
+            disabled={!canManageInventory}
           >
             <Plus className="mr-2 h-4 w-4" />
             Add Item
@@ -1987,16 +1995,21 @@ function InventoryPageContent() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuSub>
-                <DropdownMenuSubTrigger disabled={!data?.items || data.items.length === 0}>
+                <DropdownMenuSubTrigger 
+                  disabled={!data?.items || data.items.length === 0 || !canManageInventory}
+                  className={cn(
+                    (!data?.items || data.items.length === 0 || !canManageInventory) && "opacity-50 cursor-not-allowed"
+                  )}
+                >
                   <Download className="mr-2 h-4 w-4" />
                   Export
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
-                  <DropdownMenuItem onClick={() => handleExportClick('excel')} disabled={!data?.items || data.items.length === 0}>
+                  <DropdownMenuItem onClick={() => handleExportClick('excel')} disabled={!data?.items || data.items.length === 0 || !canManageInventory}>
                     <FileSpreadsheet className="mr-2 h-4 w-4" />
                     Excel
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExportClick('pdf')} disabled={!data?.items || data.items.length === 0}>
+                  <DropdownMenuItem onClick={() => handleExportClick('pdf')} disabled={!data?.items || data.items.length === 0 || !canManageInventory}>
                     <FileText className="mr-2 h-4 w-4" />
                     PDF
                   </DropdownMenuItem>
@@ -2010,13 +2023,12 @@ function InventoryPageContent() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
                   onClick={() => {
-                    if (!canManageImport) {
-                      toast.error('You do not have permission to import inventory items')
-                      return
+                    if (!canManageInventory) {
+                      return // Silent return - button is disabled, but keep as safety net
                     }
                     fileInputRef.current?.click()
                   }}
-                  disabled={isImporting}
+                  disabled={isImporting || !canManageInventory}
                 >
                   {isImporting ? (
                     <>

@@ -1696,6 +1696,10 @@ function AssetsPageContent() {
   const { setDockContent } = useMobileDock()
   const isInitialMount = useRef(true)
   
+  // Import/Export permissions
+  const canManageImport = hasPermission('canManageImport')
+  const canManageExport = hasPermission('canManageExport')
+  
   // Initialize state from URL params
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '')
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '') // Local input state for immediate UI updates
@@ -2327,8 +2331,7 @@ function AssetsPageContent() {
     const file = event.target.files?.[0]
     if (!file) return
     
-    if (!hasPermission('canManageImport')) {
-      toast.error('You do not have permission to import assets')
+    if (!canManageImport) {
       // Reset the input
       event.target.value = ''
       return
@@ -2702,24 +2705,20 @@ function AssetsPageContent() {
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem
                   onClick={() => {
-                    if (!hasPermission('canManageExport')) {
-                      toast.error('You do not have permission to export assets')
-                      return
-                    }
+                    if (!canManageExport) return
                     setIsExportDialogOpen(true)
                   }}
+                  disabled={!canManageExport}
                 >
                   <Download className="mr-2 h-4 w-4" />
                   Export
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
-                    if (!hasPermission('canManageImport')) {
-                      toast.error('You do not have permission to import assets')
-                      return
-                    }
+                    if (!canManageImport) return
                     document.getElementById('import-file')?.click()
                   }}
+                  disabled={!canManageImport}
                 >
                   <Upload className="mr-2 h-4 w-4" />
                   Import
@@ -2737,7 +2736,7 @@ function AssetsPageContent() {
       setDockContent(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMobile, setDockContent, isSelectionMode, rowSelection, handleToggleSelectAll, handleToggleSelectionMode, handleBulkDeleteClick])
+  }, [isMobile, setDockContent, isSelectionMode, rowSelection, handleToggleSelectAll, handleToggleSelectionMode, handleBulkDeleteClick, canManageImport, canManageExport])
 
   const getCellValue = (asset: Asset, columnKey: string) => {
     switch (columnKey) {
@@ -3082,12 +3081,10 @@ function AssetsPageContent() {
                 </Button>
               <Button
                 onClick={() => {
-                  if (!hasPermission('canManageExport')) {
-                    toast.error('You do not have permission to export assets')
-                    return
-                  }
+                  if (!canManageExport) return
                   setIsExportDialogOpen(true)
                 }}
+                disabled={!canManageExport}
                 variant="outline"
                 size="sm"
                 className={cn("flex-1 sm:flex-initial bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150", isMobile && "hidden")}
@@ -3098,12 +3095,10 @@ function AssetsPageContent() {
                 <>
               <Button
                   onClick={() => {
-                    if (!hasPermission('canManageImport')) {
-                      toast.error('You do not have permission to import assets')
-                      return
-                    }
+                    if (!canManageImport) return
                     document.getElementById('import-file')?.click()
                   }}
+                disabled={!canManageImport}
                 variant="outline"
                 size="sm"
                 className={cn("flex-1 sm:flex-initial bg-white/10 dark:bg-white/5 backdrop-blur-2xl border-white/30 dark:border-white/10 hover:bg-white/20 dark:hover:bg-white/10 shadow-sm backdrop-saturate-150", isMobile && "hidden")}
