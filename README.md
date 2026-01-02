@@ -1,6 +1,8 @@
-# Shore Agents Asset Dog
+# GoCodes
 
-A Next.js application with Prisma ORM, Supabase, and Tailwind CSS.
+A cloud-based asset tracking system using QR codes to help businesses manage, track, and maintain assets efficiently.
+
+Built with Next.js, Prisma ORM, Supabase, and Tailwind CSS.
 
 ## Getting Started
 
@@ -102,7 +104,7 @@ npm start
 ## Project Structure
 
 ```
-shoreagents-asset-dog/
+gocodes/
 ├── app/                # Next.js App Router pages
 ├── lib/                # Utility functions
 │   ├── prisma.ts      # Prisma client singleton

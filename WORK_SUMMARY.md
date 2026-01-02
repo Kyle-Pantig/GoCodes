@@ -21,6 +21,6 @@ AssetDog Asset Management System is fully functional with all features implement
 
 
 
-url: https://shoreagents-asset-dog.vercel.app/
+url: https://gocodes.vercel.app/
 email: admin@assetdog.com
 password: dQpxU()UH7Zn

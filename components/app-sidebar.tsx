@@ -3,7 +3,6 @@
 import * as React from "react"
 import {
   Boxes,
-  Dog,
   LayoutDashboard,
   Users,
   List,
@@ -62,7 +61,7 @@ import { useSidebar } from "@/components/ui/sidebar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ChevronsUpDown } from "lucide-react"
 
-// Asset Dog sidebar navigation data
+// GoCodes sidebar navigation data
 const data = {
   navMain: [
     {
@@ -363,13 +362,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             size="lg"
             className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
           >
-            <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-full">
-              <Dog className="size-4" />
+            <div className="flex aspect-square size-8 items-center justify-center rounded-full overflow-hidden">
+              <Image
+                src="/GoCodes-Logo-only.png"
+                alt="GoCodes"
+                width={32}
+                height={32}
+                className="object-contain"
+                priority
+              />
             </div>
             <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">Asset Dog</span>
+              <span className="truncate font-medium">GoCodes</span>
               <span className="truncate text-xs">
-                {user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Premium'}
+                {companyInfo?.companyName || (user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Premium')}
               </span>
             </div>
           </SidebarMenuButton>

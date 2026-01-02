@@ -148,8 +148,8 @@ export default function AccountabilityFormPage() {
   // Create accountability form mutation
   const createAccountabilityForm = useCreateAccountabilityForm()
 
-  const primaryLogoUrl = companyInfo?.primaryLogoUrl || '/ShoreAgents-Logo.png'
-  const secondaryLogoUrl = companyInfo?.secondaryLogoUrl || '/ShoreAgents-Logo-only.png'
+  const primaryLogoUrl = companyInfo?.primaryLogoUrl || '/GoCodes-Logo.png'
+  const secondaryLogoUrl = companyInfo?.secondaryLogoUrl || '/GoCodes-Logo-only.png'
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionRef = useRef<HTMLDivElement>(null)
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -1710,7 +1710,7 @@ export default function AccountabilityFormPage() {
                     <div>
                       <Image 
                         src={primaryLogoUrl} 
-                        alt="ShoreAgents Logo" 
+                        alt={`${companyInfo?.companyName || 'GoCodes'} Logo`} 
                         width={200}
                         height={80}
                         className="h-12 sm:h-16 print:h-20 object-contain"

@@ -388,11 +388,12 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                   </CardDescription>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 justify-between">
+                <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-8 w-8 bg-transparent dark:bg-input/30"
                   onClick={() => {
                     const prevDay = new Date(selectedDate)
                     prevDay.setDate(prevDay.getDate() - 1)
@@ -404,7 +405,7 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8"
+                  className="h-8 bg-transparent dark:bg-input/30"
                   onClick={() => setSelectedDate(today)}
                 >
                   Today
@@ -412,7 +413,7 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-8 w-8 bg-transparent dark:bg-input/30"
                   onClick={() => {
                     const nextDay = new Date(selectedDate)
                     nextDay.setDate(nextDay.getDate() + 1)
@@ -421,6 +422,7 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
+                </div>
                 <Button
                   variant="default"
                   size="sm"
@@ -613,7 +615,7 @@ export function CalendarWidget({ data, isLoading }: CalendarWidgetProps) {
                 </p>
                   <Button
                     variant="outline"
-                    className="mt-4 gap-2"
+                    className="mt-4 gap-2 bg-transparent dark:bg-input/30"
                     onClick={() => {
                       setScheduleDate(selectedDate)
                       setIsScheduleDialogOpen(true)

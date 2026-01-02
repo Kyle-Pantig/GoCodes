@@ -17,8 +17,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Shore Agents Asset Dog",
-  description: "Asset management system for Shore Agents",
+  title: "GoCodes",
+  description: "Cloud-based asset tracking system using QR codes to help businesses manage, track, and maintain assets efficiently",
 };
 
 export default function RootLayout({

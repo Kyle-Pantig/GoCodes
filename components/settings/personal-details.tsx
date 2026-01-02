@@ -276,6 +276,7 @@ export default function PersonalDetails() {
                   <Button
                     type="button"
                     variant="outline"
+                    className='bg-transparent dark:bg-input/30'
                     onClick={() => {
                       setIsEditing(false)
                       form.reset({

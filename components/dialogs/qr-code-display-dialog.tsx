@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Spinner } from '@/components/ui/shadcn-io/spinner'
 import { createClient } from '@/lib/supabase-client'
+import { useCompanyInfo } from '@/hooks/use-company-info'
 
 // Get API base URL - use FastAPI if enabled
 const getApiBaseUrl = () => {
@@ -61,6 +62,11 @@ export function QRCodeDisplayDialog({
   const [copied, setCopied] = useState(false)
   const [titleTooltipOpen, setTitleTooltipOpen] = useState<boolean>(false)
   const [textTooltipOpen, setTextTooltipOpen] = useState<boolean>(false)
+  
+  // Fetch company info for dynamic alt text and logo
+  const { data: companyInfo } = useCompanyInfo(true)
+  const secondaryLogoUrl = companyInfo?.secondaryLogoUrl || '/GoCodes-Logo-only.png'
+  const companyNameText = (companyInfo?.companyName || 'GoCodes').toUpperCase()
 
   // Automatically fetch purchase date if not provided
   const { data: assetData, isLoading: isLoadingPurchaseDate } = useQuery({
@@ -140,7 +146,7 @@ export function QRCodeDisplayDialog({
 
       // Measure text to calculate exact height and width with 36px font
       ctx.font = 'bold 36px Arial'
-      const textMetrics = ctx.measureText('SHORE AGENTS')
+      const textMetrics = ctx.measureText(companyNameText)
       const topTextHeight = 50 // Height for text + underline (increased for larger text)
 
       canvas.width = img.width + (padding * 2)
@@ -176,10 +182,10 @@ export function QRCodeDisplayDialog({
       // Draw the QR code image with padding offset
       ctx.drawImage(img, padding, qrY)
 
-      // Load and draw the shoreagents.ico logo in the center of the QR code
+      // Load and draw the company secondary logo in the center of the QR code
       const logoImg = document.createElement('img')
       logoImg.crossOrigin = 'anonymous'
-      logoImg.src = '/shoreagents.ico'
+      logoImg.src = secondaryLogoUrl
       logoImg.onload = () => {
         // Calculate logo size to match preview (40px equivalent, scaled to QR code size)
         // Preview shows 40px (w-10 h-10), QR code is 256px, so ratio is 40/256 ≈ 0.156
@@ -231,12 +237,12 @@ export function QRCodeDisplayDialog({
         }
         ctx.putImageData(logoImageData, logoX, logoY)
 
-        // Draw "SHORE AGENTS" text at the top with underline
+        // Draw company name text at the top with underline
         ctx.fillStyle = 'black'
         ctx.font = 'bold 36px Arial'
         ctx.textAlign = 'center'
         const topTextY = 40
-        ctx.fillText('SHORE AGENTS', canvas.width / 2, topTextY)
+        ctx.fillText(companyNameText, canvas.width / 2, topTextY)
 
         // Draw underline
         ctx.strokeStyle = 'black'
@@ -270,12 +276,12 @@ export function QRCodeDisplayDialog({
       }
       logoImg.onerror = () => {
         // If logo fails to load, continue without it
-        // Draw "SHORE AGENTS" text at the top with underline
+        // Draw company name text at the top with underline
         ctx.fillStyle = 'black'
         ctx.font = 'bold 36px Arial'
         ctx.textAlign = 'center'
         const topTextY = 40
-        ctx.fillText('SHORE AGENTS', canvas.width / 2, topTextY)
+        ctx.fillText(companyNameText, canvas.width / 2, topTextY)
 
         // Draw underline
         ctx.strokeStyle = 'black'
@@ -579,8 +585,8 @@ export function QRCodeDisplayDialog({
             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
               <div className="bg-white p-1 shadow-lg">
                 <img
-                  src="/shoreagents.ico"
-                  alt="Shore Agents Logo"
+                  src={secondaryLogoUrl}
+                  alt={`${companyInfo?.companyName || 'GoCodes'} Logo`}
                   width={40}
                   height={40}
                   className="w-10 h-10"

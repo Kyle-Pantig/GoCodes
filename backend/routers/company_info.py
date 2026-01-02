@@ -251,41 +251,52 @@ async def upload_logo(
         public_url = None
         final_file_path = file_path
         
+        # Try assets bucket first (preferred location for company logos)
         try:
-            # Try assets bucket first
             response = supabase_admin.storage.from_('assets').upload(
                 file_path,
                 file_content,
-                file_options={"content-type": file.content_type or "image/png"}
+                file_options={"content-type": file.content_type or "image/png", "upsert": "true"}
             )
             
-            if response:
+            # Check if upload was successful
+            if response and (not isinstance(response, dict) or not response.get('error')):
                 url_data = supabase_admin.storage.from_('assets').get_public_url(file_path)
                 public_url = url_data.get('publicUrl', '') if isinstance(url_data, dict) else str(url_data)
+            else:
+                raise Exception(f"Upload failed: {response}")
         except Exception as upload_error:
-            # If assets bucket doesn't exist, try file-history bucket
+            # Log the error to understand what happened
             error_msg = str(upload_error).lower()
-            if 'bucket not found' in error_msg or 'not found' in error_msg:
+            logger.warning(f"Failed to upload to 'assets' bucket: {upload_error}")
+            
+            # Only fallback to file-history if it's a bucket not found error
+            # RLS errors should be fixed, not worked around
+            if 'bucket not found' in error_msg or 'does not exist' in error_msg:
+                logger.info("Falling back to 'file-history' bucket")
                 try:
                     response = supabase_admin.storage.from_('file-history').upload(
                         file_path,
                         file_content,
-                        file_options={"content-type": file.content_type or "image/png"}
+                        file_options={"content-type": file.content_type or "image/png", "upsert": "true"}
                     )
-                    if response:
+                    if response and (not isinstance(response, dict) or not response.get('error')):
                         url_data = supabase_admin.storage.from_('file-history').get_public_url(file_path)
                         public_url = url_data.get('publicUrl', '') if isinstance(url_data, dict) else str(url_data)
+                    else:
+                        raise Exception(f"Fallback upload failed: {response}")
                 except Exception as fallback_error:
-                    logger.error(f"Storage upload error: {fallback_error}")
+                    logger.error(f"Storage upload error (both buckets failed): {fallback_error}")
                     raise HTTPException(
                         status_code=500,
-                        detail=f"Failed to upload logo to storage: {fallback_error}"
+                        detail=f"Failed to upload logo to storage. Please check Supabase storage bucket RLS policies. Error: {fallback_error}"
                     )
             else:
-                logger.error(f"Storage upload error: {upload_error}")
+                # RLS or other permission errors - don't fallback, fix the root cause
+                logger.error(f"Storage upload error (RLS/permission issue): {upload_error}")
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Failed to upload logo to storage: {upload_error}"
+                    detail=f"Failed to upload logo to storage. Row-level security policy violation. Please ensure the 'assets' storage bucket has proper RLS policies or the service role key is configured correctly. Error: {upload_error}"
                 )
         
         if not public_url:

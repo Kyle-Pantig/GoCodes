@@ -5,14 +5,14 @@ import { verifyAuth } from '@/lib/auth-utils'
 /**
  * Extract company initials from company name
  * Handles:
- * - Multiple words: "Shore Agents" -> "SA"
- * - CamelCase/combined words: "ShoreAgents" -> "SA", "ABCCompany" -> "AC"
+ * - Multiple words: "Go Codes" -> "GC"
+ * - CamelCase/combined words: "GoCodes" -> "GC", "ABCCompany" -> "AC"
  * - Single word: "XYZ" -> "XY"
- * Examples: "Shore Agents" -> "SA", "ShoreAgents" -> "SA", "ABC Company" -> "AC", "XYZ" -> "XY"
+ * Examples: "Go Codes" -> "GC", "GoCodes" -> "GC", "ABC Company" -> "AC", "XYZ" -> "XY"
  */
 function getCompanyInitials(companyName: string | null): string {
   if (!companyName || companyName.trim().length === 0) {
-    return 'SA' // Default fallback
+    return 'GC' // Default fallback (GoCodes)
   }
 
   const trimmed = companyName.trim()
@@ -29,22 +29,22 @@ function getCompanyInitials(companyName: string | null): string {
     // Single word: try to detect camelCase or combined words
     const word = words[0]
     
-    // Check for camelCase pattern - handles both "ShoreAgents" and "shoreAgents"
-    // Pattern 1: Uppercase letter followed by lowercase, then uppercase (e.g., "ShoreAgents")
+    // Check for camelCase pattern - handles both "GoCodes" and "goCodes"
+    // Pattern 1: Uppercase letter followed by lowercase, then uppercase (e.g., "GoCodes")
     const camelCaseMatch1 = word.match(/^([A-Z][a-z]+)([A-Z][a-z]*)/)
     if (camelCaseMatch1) {
-      const firstPart = camelCaseMatch1[1] // "Shore"
-      const secondPart = camelCaseMatch1[2] // "Agents"
+      const firstPart = camelCaseMatch1[1] // "Go"
+      const secondPart = camelCaseMatch1[2] // "Codes"
       const first = firstPart.charAt(0).toUpperCase()
       const second = secondPart.charAt(0).toUpperCase()
       return `${first}${second}`
     }
     
-    // Pattern 2: Lowercase followed by uppercase (e.g., "shoreAgents")
+    // Pattern 2: Lowercase followed by uppercase (e.g., "goCodes")
     const camelCaseMatch2 = word.match(/^([a-z]+)([A-Z][a-z]*)/)
     if (camelCaseMatch2) {
-      const firstPart = camelCaseMatch2[1] // "shore"
-      const secondPart = camelCaseMatch2[2] // "Agents"
+      const firstPart = camelCaseMatch2[1] // "go"
+      const secondPart = camelCaseMatch2[2] // "Codes"
       const first = firstPart.charAt(0).toUpperCase()
       const second = secondPart.charAt(0).toUpperCase()
       return `${first}${second}`
@@ -67,7 +67,7 @@ function getCompanyInitials(companyName: string | null): string {
   }
   
   // Fallback
-  return 'SA'
+  return 'GC'
 }
 
 export async function GET(request: NextRequest) {
@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // Get company initials (e.g., "Shore Agents" -> "SA")
+    // Get company initials (e.g., "Go Codes" -> "GC")
     const companySuffix = getCompanyInitials(companyInfo?.companyName || null)
 
     // Get all item codes that match the pattern INV-XXX-[SUFFIX]

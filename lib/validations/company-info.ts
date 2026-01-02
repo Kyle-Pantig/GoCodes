@@ -72,7 +72,7 @@ export const companyInfoSchema = z.object({
         }
       },
       {
-        message: 'Website must start with www. or https:// (e.g., www.shoreagents.com or https://shoreagents.com)',
+        message: 'Website must start with www. or https:// (e.g., www.gocodes.com or https://gocodes.com)',
       }
     ),
 })

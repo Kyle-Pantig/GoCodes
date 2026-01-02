@@ -11,6 +11,8 @@ import os
 import re
 import random
 from supabase import create_client, Client
+import httpx
+from urllib.parse import urlparse
 
 from models.assets import (
     Asset,
@@ -52,12 +54,12 @@ def get_company_initials(company_name: Optional[str]) -> str:
     """
     Extract company initials from company name
     Handles:
-    - Multiple words: "Shore Agents" -> "SA"
-    - CamelCase/combined words: "ShoreAgents" -> "SA", "ABCCompany" -> "AC"
+    - Multiple words: "Go Codes" -> "GC"
+    - CamelCase/combined words: "GoCodes" -> "GC", "ABCCompany" -> "AC"
     - Single word: "XYZ" -> "XY"
     """
     if not company_name or not company_name.strip():
-        return 'AD'  # Default fallback (Asset Dog)
+        return 'GC'  # Default fallback (GoCodes)
     
     trimmed = company_name.strip()
     
@@ -72,15 +74,15 @@ def get_company_initials(company_name: Optional[str]) -> str:
     elif len(words) == 1:
         word = words[0]
         
-        # Check for camelCase pattern - handles both "ShoreAgents" and "shoreAgents"
-        # Pattern 1: Uppercase letter followed by lowercase, then uppercase (e.g., "ShoreAgents")
+        # Check for camelCase pattern - handles both "GoCodes" and "goCodes"
+        # Pattern 1: Uppercase letter followed by lowercase, then uppercase (e.g., "GoCodes")
         match1 = re.match(r'^([A-Z][a-z]+)([A-Z][a-z]*)', word)
         if match1:
             first_part = match1.group(1)
             second_part = match1.group(2)
             return f"{first_part[0].upper()}{second_part[0].upper()}"
         
-        # Pattern 2: Lowercase followed by uppercase (e.g., "shoreAgents")
+        # Pattern 2: Lowercase followed by uppercase (e.g., "goCodes")
         match2 = re.match(r'^([a-z]+)([A-Z][a-z]*)', word)
         if match2:
             first_part = match2.group(1)
@@ -288,7 +290,7 @@ async def generate_asset_tag(
             order={"createdAt": "desc"}
         )
         
-        # Get company initials (e.g., "Shore Agents" -> "SA")
+        # Get company initials (e.g., "Go Codes" -> "GC")
         company_suffix = get_company_initials(company_info.companyName if company_info else None)
         
         # Get year (from purchase date or current year)
@@ -924,7 +926,7 @@ async def get_asset_history(
 
 @router.post("/import")
 async def import_assets(
-    request: Dict[str, Any],
+    request: Request,
     auth: dict = Depends(verify_auth)
 ):
     """Import assets from Excel file"""
@@ -941,7 +943,9 @@ async def import_assets(
                 detail="You do not have permission to import assets"
             )
         
-        assets = request.get("assets", [])
+        # Parse JSON body manually to ensure all fields are received
+        body = await request.json()
+        assets = body.get("assets", [])
         
         # Get user info for history logging
         user_metadata = auth.get("user_metadata", {})
@@ -1004,18 +1008,35 @@ async def import_assets(
             
             missing_categories = [name for name in category_names_list if name not in category_map]
             if missing_categories:
-                # Create missing categories
-                for name in missing_categories:
-                    try:
-                        new_cat = await prisma.category.create(
-                            data={"name": name, "description": "Auto-created during import"}
-                        )
-                        category_map[name] = str(new_cat.id)
-                    except Exception:
-                        # Category might have been created by another request, try to fetch it
-                        existing = await prisma.category.find_first(where={"name": name})
-                        if existing:
-                            category_map[name] = str(existing.id)
+                # Batch create missing categories
+                try:
+                    categories_to_create = [
+                        {"name": name, "description": "Auto-created during import"}
+                        for name in missing_categories
+                    ]
+                    await prisma.category.create_many(
+                        data=categories_to_create,
+                        skip_duplicates=True
+                    )
+                    # Fetch all created categories (including ones that might have existed)
+                    created_categories = await prisma.category.find_many(
+                        where={"name": {"in": missing_categories}}
+                    )
+                    for cat in created_categories:
+                        category_map[cat.name] = str(cat.id)
+                except Exception as e:
+                    logger.warning(f"Error batch creating categories: {e}, falling back to individual creates")
+                    # Fallback: create one by one
+                    for name in missing_categories:
+                        try:
+                            new_cat = await prisma.category.create(
+                                data={"name": name, "description": "Auto-created during import"}
+                            )
+                            category_map[name] = str(new_cat.id)
+                        except Exception:
+                            existing = await prisma.category.find_first(where={"name": name})
+                            if existing:
+                                category_map[name] = str(existing.id)
         
         # Batch create subcategories
         subcategory_map = {}
@@ -1059,25 +1080,46 @@ async def import_assets(
                         )
                     default_category_id = str(default_category.id)
                 
-                # Create subcategories
+                # Batch create subcategories by category
                 for category_id_or_default, subcat_names in subcategories_by_category.items():
                     parent_id = default_category_id if category_id_or_default == "default" else category_id_or_default
-                    if parent_id:
-                        for subcat_name in subcat_names:
-                            try:
-                                new_subcat = await prisma.subcategory.create(
-                                    data={
-                                        "name": subcat_name,
-                                        "description": "Auto-created during import",
-                                        "categoryId": parent_id
-                                    }
-                                )
-                                subcategory_map[subcat_name] = str(new_subcat.id)
-                            except Exception:
-                                # Subcategory might exist, try to fetch it
-                                existing = await prisma.subcategory.find_first(where={"name": subcat_name})
-                                if existing:
-                                    subcategory_map[subcat_name] = str(existing.id)
+                    if parent_id and subcat_names:
+                        try:
+                            subcategories_to_create = [
+                                {
+                                    "name": subcat_name,
+                                    "description": "Auto-created during import",
+                                    "categoryId": parent_id
+                                }
+                                for subcat_name in subcat_names
+                            ]
+                            await prisma.subcategory.create_many(
+                                data=subcategories_to_create,
+                                skip_duplicates=True
+                            )
+                            # Fetch all created subcategories
+                            created_subcats = await prisma.subcategory.find_many(
+                                where={"name": {"in": subcat_names}}
+                            )
+                            for subcat in created_subcats:
+                                subcategory_map[subcat.name] = str(subcat.id)
+                        except Exception as e:
+                            logger.warning(f"Error batch creating subcategories: {e}, falling back to individual creates")
+                            # Fallback: create one by one
+                            for subcat_name in subcat_names:
+                                try:
+                                    new_subcat = await prisma.subcategory.create(
+                                        data={
+                                            "name": subcat_name,
+                                            "description": "Auto-created during import",
+                                            "categoryId": parent_id
+                                        }
+                                    )
+                                    subcategory_map[subcat_name] = str(new_subcat.id)
+                                except Exception:
+                                    existing = await prisma.subcategory.find_first(where={"name": subcat_name})
+                                    if existing:
+                                        subcategory_map[subcat_name] = str(existing.id)
         
         # Batch create locations
         location_map = {}
@@ -1091,16 +1133,32 @@ async def import_assets(
             
             missing_locations = [name for name in location_names_list if name not in location_map]
             if missing_locations:
-                for name in missing_locations:
-                    try:
-                        new_loc = await prisma.assetslocation.create(
-                            data={"name": name, "description": "Auto-created during import"}
-                        )
-                        location_map[name] = str(new_loc.id)
-                    except Exception:
-                        existing = await prisma.assetslocation.find_first(where={"name": name})
-                        if existing:
-                            location_map[name] = str(existing.id)
+                try:
+                    locations_to_create = [
+                        {"name": name, "description": "Auto-created during import"}
+                        for name in missing_locations
+                    ]
+                    await prisma.assetslocation.create_many(
+                        data=locations_to_create,
+                        skip_duplicates=True
+                    )
+                    created_locations = await prisma.assetslocation.find_many(
+                        where={"name": {"in": missing_locations}}
+                    )
+                    for loc in created_locations:
+                        location_map[loc.name] = str(loc.id)
+                except Exception as e:
+                    logger.warning(f"Error batch creating locations: {e}, falling back to individual creates")
+                    for name in missing_locations:
+                        try:
+                            new_loc = await prisma.assetslocation.create(
+                                data={"name": name, "description": "Auto-created during import"}
+                            )
+                            location_map[name] = str(new_loc.id)
+                        except Exception:
+                            existing = await prisma.assetslocation.find_first(where={"name": name})
+                            if existing:
+                                location_map[name] = str(existing.id)
         
         # Batch create departments
         department_map = {}
@@ -1114,16 +1172,32 @@ async def import_assets(
             
             missing_departments = [name for name in department_names_list if name not in department_map]
             if missing_departments:
-                for name in missing_departments:
-                    try:
-                        new_dept = await prisma.assetsdepartment.create(
-                            data={"name": name, "description": "Auto-created during import"}
-                        )
-                        department_map[name] = str(new_dept.id)
-                    except Exception:
-                        existing = await prisma.assetsdepartment.find_first(where={"name": name})
-                        if existing:
-                            department_map[name] = str(existing.id)
+                try:
+                    departments_to_create = [
+                        {"name": name, "description": "Auto-created during import"}
+                        for name in missing_departments
+                    ]
+                    await prisma.assetsdepartment.create_many(
+                        data=departments_to_create,
+                        skip_duplicates=True
+                    )
+                    created_departments = await prisma.assetsdepartment.find_many(
+                        where={"name": {"in": missing_departments}}
+                    )
+                    for dept in created_departments:
+                        department_map[dept.name] = str(dept.id)
+                except Exception as e:
+                    logger.warning(f"Error batch creating departments: {e}, falling back to individual creates")
+                    for name in missing_departments:
+                        try:
+                            new_dept = await prisma.assetsdepartment.create(
+                                data={"name": name, "description": "Auto-created during import"}
+                            )
+                            department_map[name] = str(new_dept.id)
+                        except Exception:
+                            existing = await prisma.assetsdepartment.find_first(where={"name": name})
+                            if existing:
+                                department_map[name] = str(existing.id)
         
         # Batch create sites
         site_map = {}
@@ -1137,16 +1211,32 @@ async def import_assets(
             
             missing_sites = [name for name in site_names_list if name not in site_map]
             if missing_sites:
-                for name in missing_sites:
-                    try:
-                        new_site = await prisma.assetssite.create(
-                            data={"name": name, "description": "Auto-created during import"}
-                        )
-                        site_map[name] = str(new_site.id)
-                    except Exception:
-                        existing = await prisma.assetssite.find_first(where={"name": name})
-                        if existing:
-                            site_map[name] = str(existing.id)
+                try:
+                    sites_to_create = [
+                        {"name": name, "description": "Auto-created during import"}
+                        for name in missing_sites
+                    ]
+                    await prisma.assetssite.create_many(
+                        data=sites_to_create,
+                        skip_duplicates=True
+                    )
+                    created_sites = await prisma.assetssite.find_many(
+                        where={"name": {"in": missing_sites}}
+                    )
+                    for site in created_sites:
+                        site_map[site.name] = str(site.id)
+                except Exception as e:
+                    logger.warning(f"Error batch creating sites: {e}, falling back to individual creates")
+                    for name in missing_sites:
+                        try:
+                            new_site = await prisma.assetssite.create(
+                                data={"name": name, "description": "Auto-created during import"}
+                            )
+                            site_map[name] = str(new_site.id)
+                        except Exception:
+                            existing = await prisma.assetssite.find_first(where={"name": name})
+                            if existing:
+                                site_map[name] = str(existing.id)
         
         # Check for existing assets
         asset_tag_ids = [asset.get("assetTagId") for asset in assets if asset.get("assetTagId") and isinstance(asset.get("assetTagId"), str)]
@@ -1155,8 +1245,7 @@ async def import_assets(
             raise HTTPException(status_code=400, detail="No valid Asset Tag IDs found in the import file. Please check your Excel file format.")
         
         existing_assets = await prisma.assets.find_many(
-            where={"assetTagId": {"in": asset_tag_ids}},
-            select={"assetTagId": True, "isDeleted": True}
+            where={"assetTagId": {"in": asset_tag_ids}}
         )
         
         existing_asset_tags = {asset.assetTagId for asset in existing_assets}
@@ -1243,147 +1332,423 @@ async def import_assets(
             }
             assets_to_create.append(asset_data)
         
-        # Batch insert assets
+        # Prepare all related data before transaction
+        # Map asset tag IDs to their data for quick lookup
+        asset_data_map = {a["assetTagId"]: a for a in assets_to_create}
+        
+        # Pre-process audit and checkout data
+        assets_with_audit = [
+            asset for asset in assets
+            if asset.get("assetTagId") and asset.get("assetTagId") not in existing_asset_tags
+            and (asset.get("lastAuditDate") or asset.get("lastAuditType") or asset.get("lastAuditor"))
+        ]
+        audit_data_map = {a.get("assetTagId"): a for a in assets_with_audit}
+        
+        checkout_statuses = ["checked out", "checked-out", "checkedout", "in use"]
+        checkout_asset_tag_ids = {
+            a["assetTagId"] for a in assets_to_create
+            if a.get("status") and a.get("status", "").lower().strip() in checkout_statuses
+        }
+        
+        # Batch insert assets and all related records in a single transaction
         created_count = 0
         if assets_to_create:
-            # Use create_many for better performance
             try:
-                # Note: create_many returns an integer count in Prisma Python
-                created_count = await prisma.assets.create_many(
-                    data=assets_to_create,
-                    skip_duplicates=True
-                )
-            except Exception as e:
-                logger.error(f"Error creating assets: {e}", exc_info=True)
-                # Fallback: create one by one
-                for asset_data in assets_to_create:
-                    try:
-                        await prisma.assets.create(data=asset_data)
-                        created_count += 1
-                    except Exception:
-                        pass
-            
-            # Create history logs for imported assets
-            created_asset_tag_ids = [a["assetTagId"] for a in assets_to_create]
-            created_assets = await prisma.assets.find_many(
-                where={"assetTagId": {"in": created_asset_tag_ids}},
-                select={"id": True, "assetTagId": True, "createdAt": True}
-            )
-            
-            # Check for existing history logs
-            existing_history_logs = await prisma.assetshistorylogs.find_many(
-                where={
-                    "assetId": {"in": [str(a.id) for a in created_assets]},
-                    "eventType": "added"
-                },
-                select={"assetId": True}
-            )
-            
-            existing_asset_ids = {log.assetId for log in existing_history_logs}
-            assets_needing_history = [a for a in created_assets if str(a.id) not in existing_asset_ids]
-            
-            if assets_needing_history:
-                history_logs_to_create = [
-                    {
-                        "assetId": str(asset.id),
-                        "eventType": "added",
-                        "actionBy": user_name,
-                        "eventDate": asset.createdAt,
-                    }
-                    for asset in assets_needing_history
-                ]
-                await prisma.assetshistorylogs.create_many(
-                    data=history_logs_to_create,
-                    skip_duplicates=True
-                )
-            
-            # Process audit history records
-            assets_with_audit = [
-                asset for asset in assets
-                if asset.get("assetTagId") and asset.get("assetTagId") not in existing_asset_tags
-                and (asset.get("lastAuditDate") or asset.get("lastAuditType") or asset.get("lastAuditor"))
-            ]
-            
-            if assets_with_audit:
-                audit_asset_tag_ids = [asset.get("assetTagId") for asset in assets_with_audit]
-                audit_created_assets = await prisma.assets.find_many(
-                    where={"assetTagId": {"in": audit_asset_tag_ids}},
-                    select={"id": True, "assetTagId": True}
-                )
-                
-                asset_id_map = {a.assetTagId: str(a.id) for a in audit_created_assets}
-                
-                audit_records_to_create = []
-                for asset in assets_with_audit:
-                    asset_id = asset_id_map.get(asset.get("assetTagId"))
-                    if not asset_id:
-                        continue
+                # Use transaction to batch everything together
+                async with prisma.tx() as transaction:
+                    # 1. Batch create assets
+                    created_count = await transaction.assets.create_many(
+                        data=assets_to_create,
+                        skip_duplicates=True
+                    )
                     
-                    audit_date = None
-                    if asset.get("lastAuditDate"):
-                        if isinstance(asset.get("lastAuditDate"), datetime):
-                            audit_date = asset.get("lastAuditDate")
+                    # 2. Fetch created assets once (needed for IDs)
+                    created_asset_tag_ids = [a["assetTagId"] for a in assets_to_create]
+                    created_assets = await transaction.assets.find_many(
+                        where={"assetTagId": {"in": created_asset_tag_ids}}
+                    )
+                    
+                    # Build lookup maps
+                    asset_id_map = {a.assetTagId: str(a.id) for a in created_assets}
+                    asset_created_at_map = {a.assetTagId: a.createdAt for a in created_assets}
+                    
+                    # 3. Batch create history logs (all at once)
+                    history_logs_to_create = [
+                        {
+                            "assetId": asset_id_map[tag_id],
+                            "eventType": "added",
+                            "actionBy": user_name,
+                            "eventDate": asset_created_at_map[tag_id],
+                        }
+                        for tag_id in asset_id_map.keys()
+                    ]
+                    if history_logs_to_create:
+                        await transaction.assetshistorylogs.create_many(
+                            data=history_logs_to_create,
+                            skip_duplicates=True
+                        )
+                    
+                    # 4. Batch create audit records (all at once)
+                    audit_records_to_create = []
+                    for tag_id, asset in audit_data_map.items():
+                        asset_id = asset_id_map.get(tag_id)
+                        if not asset_id:
+                            continue
+                        
+                        audit_date = None
+                        if asset.get("lastAuditDate"):
+                            if isinstance(asset.get("lastAuditDate"), datetime):
+                                audit_date = asset.get("lastAuditDate")
+                            else:
+                                audit_date = parse_date(asset.get("lastAuditDate")) or datetime.now()
                         else:
-                            audit_date = parse_date(asset.get("lastAuditDate")) or datetime.now()
-                    else:
-                        audit_date = datetime.now()
+                            audit_date = datetime.now()
+                        
+                        if not asset.get("lastAuditDate") and not asset.get("lastAuditType"):
+                            continue
+                        
+                        audit_records_to_create.append({
+                            "assetId": asset_id,
+                            "auditType": asset.get("lastAuditType") or "Imported Audit",
+                            "auditDate": audit_date,
+                            "auditor": asset.get("lastAuditor"),
+                            "status": "Completed",
+                            "notes": "Imported from Excel file",
+                        })
                     
-                    if not asset.get("lastAuditDate") and not asset.get("lastAuditType"):
-                        continue
+                    if audit_records_to_create:
+                        await transaction.assetsaudithistory.create_many(
+                            data=audit_records_to_create,
+                            skip_duplicates=True
+                        )
                     
-                    audit_records_to_create.append({
-                        "assetId": asset_id,
-                        "auditType": asset.get("lastAuditType") or "Imported Audit",
-                        "auditDate": audit_date,
-                        "auditor": asset.get("lastAuditor"),
-                        "status": "Completed",
-                        "notes": "Imported from Excel file",
-                    })
-                
-                if audit_records_to_create:
-                    await prisma.assetsaudithistory.create_many(
-                        data=audit_records_to_create,
+                    # 5. Batch create checkout records (all at once)
+                    checkout_records_to_create = []
+                    for tag_id in checkout_asset_tag_ids:
+                        asset_id = asset_id_map.get(tag_id)
+                        if not asset_id:
+                            continue
+                        
+                        asset_data = asset_data_map.get(tag_id, {})
+                        checkout_date = asset_data.get("deliveryDate") or asset_data.get("purchaseDate") or datetime.now()
+                        if not isinstance(checkout_date, datetime):
+                            checkout_date = parse_date(checkout_date) or datetime.now()
+                        
+                        checkout_records_to_create.append({
+                            "assetId": asset_id,
+                            "employeeUserId": None,
+                            "checkoutDate": checkout_date,
+                            "expectedReturnDate": None,
+                        })
+                    
+                    if checkout_records_to_create:
+                        await transaction.assetscheckout.create_many(
+                            data=checkout_records_to_create,
+                            skip_duplicates=True
+                        )
+                    
+            except Exception as e:
+                logger.error(f"Error in transaction batch create: {e}", exc_info=True)
+                # Fallback: try without transaction (slower but works)
+                try:
+                    created_count = await prisma.assets.create_many(
+                        data=assets_to_create,
                         skip_duplicates=True
                     )
-            
-            # Process checkout records
-            checkout_statuses = ["checked out", "checked-out", "checkedout", "in use"]
-            checkout_assets = [
-                asset_data for asset_data in assets_to_create
-                if asset_data.get("status") and asset_data.get("status", "").lower().strip() in checkout_statuses
-            ]
-            
-            if checkout_assets:
-                checkout_asset_tag_ids = [a["assetTagId"] for a in checkout_assets]
-                checkout_created_assets = await prisma.assets.find_many(
-                    where={"assetTagId": {"in": checkout_asset_tag_ids}},
-                    select={"id": True, "assetTagId": True}
+                    
+                    # Fetch created assets once
+                    created_asset_tag_ids = [a["assetTagId"] for a in assets_to_create]
+                    created_assets = await prisma.assets.find_many(
+                        where={"assetTagId": {"in": created_asset_tag_ids}}
+                    )
+                    asset_id_map = {a.assetTagId: str(a.id) for a in created_assets}
+                    asset_created_at_map = {a.assetTagId: a.createdAt for a in created_assets}
+                    
+                    # Create history logs
+                    history_logs_to_create = [
+                        {
+                            "assetId": asset_id_map[tag_id],
+                            "eventType": "added",
+                            "actionBy": user_name,
+                            "eventDate": asset_created_at_map[tag_id],
+                        }
+                        for tag_id in asset_id_map.keys()
+                    ]
+                    if history_logs_to_create:
+                        await prisma.assetshistorylogs.create_many(
+                            data=history_logs_to_create,
+                            skip_duplicates=True
+                        )
+                    
+                    # Create audit records
+                    audit_records_to_create = []
+                    for tag_id, asset in audit_data_map.items():
+                        asset_id = asset_id_map.get(tag_id)
+                        if not asset_id:
+                            continue
+                        audit_date = parse_date(asset.get("lastAuditDate")) if asset.get("lastAuditDate") else datetime.now()
+                        if asset.get("lastAuditDate") or asset.get("lastAuditType"):
+                            audit_records_to_create.append({
+                                "assetId": asset_id,
+                                "auditType": asset.get("lastAuditType") or "Imported Audit",
+                                "auditDate": audit_date,
+                                "auditor": asset.get("lastAuditor"),
+                                "status": "Completed",
+                                "notes": "Imported from Excel file",
+                            })
+                    if audit_records_to_create:
+                        await prisma.assetsaudithistory.create_many(
+                            data=audit_records_to_create,
+                            skip_duplicates=True
+                        )
+                    
+                    # Create checkout records
+                    checkout_records_to_create = []
+                    for tag_id in checkout_asset_tag_ids:
+                        asset_id = asset_id_map.get(tag_id)
+                        if not asset_id:
+                            continue
+                        asset_data = asset_data_map.get(tag_id, {})
+                        checkout_date = asset_data.get("deliveryDate") or asset_data.get("purchaseDate") or datetime.now()
+                        if not isinstance(checkout_date, datetime):
+                            checkout_date = parse_date(checkout_date) or datetime.now()
+                        checkout_records_to_create.append({
+                            "assetId": asset_id,
+                            "employeeUserId": None,
+                            "checkoutDate": checkout_date,
+                            "expectedReturnDate": None,
+                        })
+                    if checkout_records_to_create:
+                        await prisma.assetscheckout.create_many(
+                            data=checkout_records_to_create,
+                            skip_duplicates=True
+                        )
+                except Exception as fallback_error:
+                    logger.error(f"Error in fallback batch create: {fallback_error}", exc_info=True)
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to import assets: {str(fallback_error)}"
+                    )
+        
+        # Process image and document URLs from import
+        # Download and upload to Supabase storage, then create records
+        if created_count > 0:
+            try:
+                # Get created assets for URL processing
+                created_asset_tag_ids = [a["assetTagId"] for a in assets_to_create]
+                created_assets_for_urls = await prisma.assets.find_many(
+                    where={"assetTagId": {"in": created_asset_tag_ids}}
                 )
+                asset_tag_to_id_map = {a.assetTagId: str(a.id) for a in created_assets_for_urls}
                 
-                checkout_asset_id_map = {a.assetTagId: str(a.id) for a in checkout_created_assets}
+                # Process images and documents
+                supabase_admin = get_supabase_admin_client()
+                images_to_create = []
+                documents_to_create = []
                 
-                checkout_records_to_create = []
-                for asset_data in checkout_assets:
-                    asset_id = checkout_asset_id_map.get(asset_data["assetTagId"])
-                    if not asset_id:
+                async def download_and_upload_file(url: str, asset_tag_id: str, file_type: str) -> Optional[str]:
+                    """Download file from URL and upload to Supabase storage"""
+                    try:
+                        # Validate URL
+                        if not url or not isinstance(url, str) or not url.startswith('http'):
+                            return None
+                        
+                        # Check if URL is already in our Supabase storage
+                        if 'supabase.co/storage/v1/object/public' in url:
+                            # Extract path from existing Supabase URL
+                            url_match = re.search(r'/storage/v1/object/public/([^/]+)/(.+)', url)
+                            if url_match:
+                                bucket = url_match.group(1)
+                                existing_path = url_match.group(2)
+                                
+                                # Check if file exists in storage
+                                try:
+                                    folder_path = existing_path.rsplit('/', 1)[0] if '/' in existing_path else ''
+                                    file_info = supabase_admin.storage.from_(bucket).list(
+                                        folder_path,
+                                        {"limit": 1000}
+                                    )
+                                    file_name = existing_path.split('/')[-1]
+                                    if file_info:
+                                        for f in file_info:
+                                            if f.get('name') == file_name:
+                                                # File exists, return the URL
+                                                return url
+                                except Exception:
+                                    pass
+                        
+                        # Download file
+                        async with httpx.AsyncClient(timeout=30.0) as client:
+                            response = await client.get(url)
+                            if response.status_code != 200:
+                                logger.warning(f"Failed to download file from {url}: Status {response.status_code}")
+                                return None
+                            
+                            file_content = response.content
+                            file_size = len(file_content)
+                            
+                            # Validate file size (max 5MB)
+                            max_size = 5 * 1024 * 1024
+                            if file_size > max_size:
+                                logger.warning(f"File from {url} is too large: {file_size} bytes")
+                                return None
+                            
+                            # Determine content type
+                            content_type = response.headers.get('content-type', 'application/octet-stream')
+                            
+                            # Extract file extension from URL
+                            parsed_url = urlparse(url)
+                            file_name_from_url = os.path.basename(parsed_url.path)
+                            file_extension = os.path.splitext(file_name_from_url)[1] or ('.jpg' if 'image' in content_type else '.pdf')
+                            sanitized_extension = file_extension.lower().lstrip('.')
+                            
+                            # Generate unique file path
+                            timestamp = datetime.now().isoformat().replace(':', '-').replace('.', '-')
+                            
+                            if file_type == 'image':
+                                folder = 'assets_images'
+                                file_name = f"{asset_tag_id}-{timestamp}.{sanitized_extension}"
+                            else:  # document
+                                folder = 'assets_documents'
+                                file_name = f"{asset_tag_id}-{timestamp}.{sanitized_extension}"
+                            
+                            file_path = f"{folder}/{file_name}"
+                            
+                            # Upload to Supabase storage
+                            try:
+                                upload_response = supabase_admin.storage.from_('assets').upload(
+                                    file_path,
+                                    file_content,
+                                    file_options={"content-type": content_type, "upsert": "false"}
+                                )
+                                
+                                if upload_response and (not isinstance(upload_response, dict) or not upload_response.get('error')):
+                                    url_data = supabase_admin.storage.from_('assets').get_public_url(file_path)
+                                    public_url = url_data.get('publicUrl', '') if isinstance(url_data, dict) else str(url_data)
+                                    return public_url
+                                else:
+                                    logger.warning(f"Failed to upload file to storage: {upload_response}")
+                                    return None
+                            except Exception as upload_error:
+                                logger.warning(f"Error uploading file to storage: {upload_error}")
+                                return None
+                    
+                    except Exception as e:
+                        logger.warning(f"Error downloading/uploading file from {url}: {e}")
+                        return None
+                
+                # Process images and documents from import data
+                for asset in assets:
+                    asset_tag_id = asset.get("assetTagId")
+                    if not asset_tag_id or asset_tag_id not in asset_tag_to_id_map:
                         continue
                     
-                    checkout_date = asset_data.get("deliveryDate") or asset_data.get("purchaseDate") or datetime.now()
-                    if not isinstance(checkout_date, datetime):
-                        checkout_date = parse_date(checkout_date) or datetime.now()
+                    # Check for image URLs (try multiple field names, handle comma/semicolon separated)
+                    images_field = asset.get("images") or asset.get("imageUrl") or asset.get("image") or asset.get("imageURL") or asset.get("image_url")
+                    if images_field:
+                        # Handle multiple URLs separated by comma or semicolon
+                        image_urls = []
+                        if isinstance(images_field, str):
+                            # Split by comma or semicolon
+                            image_urls = [url.strip() for url in re.split(r'[,;]', images_field) if url.strip()]
+                        elif isinstance(images_field, list):
+                            image_urls = [str(url).strip() for url in images_field if url]
+                        
+                        for image_url in image_urls:
+                            if not image_url or not image_url.startswith('http'):
+                                continue
+                            
+                            uploaded_url = await download_and_upload_file(image_url, asset_tag_id, 'image')
+                            if uploaded_url:
+                                # Determine image type
+                                url_extension = uploaded_url.split('.')[-1].split('?')[0].lower() if '.' in uploaded_url else None
+                                image_type = f"image/{url_extension}" if url_extension else "image/jpeg"
+                                if image_type == "image/jpg":
+                                    image_type = "image/jpeg"
+                                
+                                images_to_create.append({
+                                    "assetTagId": asset_tag_id,
+                                    "imageUrl": uploaded_url,
+                                    "imageType": image_type,
+                                    "imageSize": None,  # Could fetch from storage if needed
+                                })
+                            else:
+                                logger.warning(f"Failed to upload image for {asset_tag_id} from {image_url[:100]}...")
                     
-                    checkout_records_to_create.append({
-                        "assetId": asset_id,
-                        "employeeUserId": None,
-                        "checkoutDate": checkout_date,
-                        "expectedReturnDate": None,
-                    })
+                    # Check for document URLs (try multiple field names, handle comma/semicolon separated)
+                    # Try various field name variations (case-insensitive check)
+                    documents_field = None
+                    for key in asset.keys():
+                        key_lower = key.lower()
+                        if key_lower in ['documents', 'documenturl', 'document', 'document_url']:
+                            value = asset.get(key)
+                            if value and (isinstance(value, str) and value.strip()) or isinstance(value, list) and value:
+                                documents_field = value
+                                break
+                    
+                    # Handle multiple document URLs separated by comma or semicolon
+                    document_urls = []
+                    if documents_field:
+                        if isinstance(documents_field, str):
+                            # Split by comma or semicolon
+                            document_urls = [url.strip() for url in re.split(r'[,;]', documents_field) if url.strip()]
+                        elif isinstance(documents_field, list):
+                            document_urls = [str(url).strip() for url in documents_field if url]
+                    
+                    for document_url in document_urls:
+                        if not document_url or not document_url.startswith('http'):
+                            continue
+                        
+                        uploaded_url = await download_and_upload_file(document_url, asset_tag_id, 'document')
+                        if uploaded_url:
+                            # Determine document type
+                            url_extension = uploaded_url.split('.')[-1].split('?')[0].lower() if '.' in uploaded_url else None
+                            mime_type_map = {
+                                'pdf': 'application/pdf',
+                                'doc': 'application/msword',
+                                'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                'xls': 'application/vnd.ms-excel',
+                                'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'txt': 'text/plain',
+                                'csv': 'text/csv',
+                                'rtf': 'application/rtf',
+                            }
+                            mime_type = mime_type_map.get(url_extension, 'application/octet-stream')
+                            
+                            documents_to_create.append({
+                                "assetTagId": asset_tag_id,
+                                "documentUrl": uploaded_url,
+                                "documentType": asset.get("documentType"),
+                                "fileName": os.path.basename(urlparse(uploaded_url).path),
+                                "mimeType": mime_type,
+                            })
+                        else:
+                            logger.warning(f"Failed to upload document for {asset_tag_id} from {document_url[:100]}...")
                 
-                if checkout_records_to_create:
-                    await prisma.assetscheckout.create_many(
-                        data=checkout_records_to_create,
-                        skip_duplicates=True
-                    )
+                # Batch create image and document records
+                if images_to_create:
+                    try:
+                        result = await prisma.assetsimage.create_many(
+                            data=images_to_create,
+                            skip_duplicates=True
+                        )
+                        logger.info(f"Created {result} image records")
+                    except Exception as e:
+                        logger.error(f"Error creating image records: {e}", exc_info=True)
+                
+                if documents_to_create:
+                    try:
+                        result = await prisma.assetsdocument.create_many(
+                            data=documents_to_create,
+                            skip_duplicates=True
+                        )
+                        logger.info(f"Created {result} document records")
+                    except Exception as e:
+                        logger.error(f"Error creating document records: {e}", exc_info=True)
+            
+            except Exception as url_error:
+                # Don't fail the import if URL processing fails
+                logger.warning(f"Error processing image/document URLs during import: {url_error}")
         
         # Prepare results
         results = []

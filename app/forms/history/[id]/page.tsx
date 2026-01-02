@@ -292,8 +292,8 @@ function ReturnFormDetails({ form, formData }: { form: ReturnForm; formData: For
   // Fetch company info for logos
   const { data: companyInfo } = useCompanyInfo(true)
 
-  const primaryLogoUrl = companyInfo?.primaryLogoUrl || '/ShoreAgents-Logo.png'
-  const secondaryLogoUrl = companyInfo?.secondaryLogoUrl || '/ShoreAgents-Logo-only.png'
+  const primaryLogoUrl = companyInfo?.primaryLogoUrl || '/GoCodes-Logo.png'
+  const secondaryLogoUrl = companyInfo?.secondaryLogoUrl || '/GoCodes-Logo-only.png'
   const selectedAssets = formData.selectedAssets || []
   
   // Group assets by category - use subCategory name if available, otherwise fall back to description
@@ -370,7 +370,7 @@ function ReturnFormDetails({ form, formData }: { form: ReturnForm; formData: For
               <div>
                 <Image
                   src={primaryLogoUrl}
-                  alt="ShoreAgents Logo"
+                  alt={`${companyInfo?.companyName || 'GoCodes'} Logo`}
                   width={200}
                   height={80}
                   className="h-12 sm:h-16 print:h-20 object-contain"
@@ -743,7 +743,7 @@ function ReturnFormDetails({ form, formData }: { form: ReturnForm; formData: For
               <div>
                 <Image
                   src={primaryLogoUrl}
-                  alt="ShoreAgents Logo"
+                  alt={`${companyInfo?.companyName || 'GoCodes'} Logo`}
                   width={200}
                   height={80}
                   className="h-12 sm:h-16 print:h-20 object-contain"
@@ -1103,8 +1103,8 @@ function AccountabilityFormDetails({ form, formData }: { form: AccountabilityFor
   // Fetch company info for logos
   const { data: companyInfo } = useCompanyInfo(true)
 
-  const primaryLogoUrl = companyInfo?.primaryLogoUrl || '/ShoreAgents-Logo.png'
-  const secondaryLogoUrl = companyInfo?.secondaryLogoUrl || '/ShoreAgents-Logo-only.png'
+  const primaryLogoUrl = companyInfo?.primaryLogoUrl || '/GoCodes-Logo.png'
+  const secondaryLogoUrl = companyInfo?.secondaryLogoUrl || '/GoCodes-Logo-only.png'
   const selectedAssets = formData.selectedAssets || []
   
   // Group assets - use subCategory name if available, otherwise fall back to description
@@ -1149,7 +1149,7 @@ function AccountabilityFormDetails({ form, formData }: { form: AccountabilityFor
                 <div>
                   <Image
                     src={primaryLogoUrl}
-                    alt="ShoreAgents Logo"
+                    alt={`${companyInfo?.companyName || 'GoCodes'} Logo`}
                     width={200}
                     height={80}
                     className="h-12 sm:h-16 print:h-20 object-contain"

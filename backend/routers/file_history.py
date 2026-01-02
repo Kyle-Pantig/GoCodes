@@ -278,7 +278,7 @@ async def upload_file(
                 file_content,
                 file_options={
                     "content-type": file.content_type or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    "upsert": False,
+                    "upsert": "false",
                 }
             )
             

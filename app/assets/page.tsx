@@ -2324,10 +2324,12 @@ function AssetsPageContent() {
         if (value === null || value === undefined || value === '') {
           return null
         }
-        // Handle string values (remove commas, spaces)
+        // Handle string values (remove currency symbols, commas, spaces)
         if (typeof value === 'string') {
-          const cleaned = value.replace(/,/g, '').trim()
-          if (cleaned === '') return null
+          // Remove currency symbols (₱, $, €, £, ¥, etc.), commas, spaces, and other non-numeric chars
+          // Keep only digits, decimal point, and minus sign
+          const cleaned = value.replace(/[^0-9.-]/g, '').trim()
+          if (cleaned === '' || cleaned === '-' || cleaned === '.') return null
           const num = parseFloat(cleaned)
           return isNaN(num) ? null : num
         }
@@ -2375,8 +2377,15 @@ function AssetsPageContent() {
             department: row['Department'] || row['department'] || null,
             site: row['Site'] || row['site'] || null,
             location: row['Location'] || row['location'] || null,
+          // Audit fields - these will create audit history records
+          lastAuditDate: row['Last Audit Date'] || row['lastAuditDate'] || null,
+          lastAuditType: row['Last Audit Type'] || row['lastAuditType'] || null,
+          lastAuditor: row['Last Auditor'] || row['lastAuditor'] || null,
+          auditCount: row['Audit Count'] || row['auditCount'] || null,
           // Images field - comma or semicolon separated URLs
-          images: row['Images'] || row['images'] || null,
+          images: row['Images'] || row['images'] || row['Image'] || row['image'] || row['Image URL'] || row['ImageURL'] || row['Image Url'] || row['imageUrl'] || null,
+          // Documents field - comma or semicolon separated URLs
+          documents: row['Documents'] || row['documents'] || row['Document'] || row['document'] || row['Document URL'] || row['DocumentURL'] || row['Document Url'] || row['documentUrl'] || row['Files'] || row['files'] || row['File'] || row['file'] || row['Attachments'] || row['attachments'] || row['Attachment'] || row['attachment'] || null,
         }
         
         return assetData
@@ -2424,7 +2433,7 @@ function AssetsPageContent() {
       const toastId = toast.loading(`Importing assets... 0% (0/${totalAssets})`)
       
       // Import assets in batches to show progress
-      const batchSize = 10
+      const batchSize = 100
       const batches = []
       for (let i = 0; i < uniqueAssets.length; i += batchSize) {
         batches.push(uniqueAssets.slice(i, i + batchSize))

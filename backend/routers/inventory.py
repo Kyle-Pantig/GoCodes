@@ -67,12 +67,12 @@ def get_company_initials(company_name: Optional[str]) -> str:
     """
     Extract company initials from company name
     Handles:
-    - Multiple words: "Shore Agents" -> "SA"
-    - CamelCase/combined words: "ShoreAgents" -> "SA", "ABCCompany" -> "AC"
+    - Multiple words: "Go Codes" -> "GC"
+    - CamelCase/combined words: "GoCodes" -> "GC", "ABCCompany" -> "AC"
     - Single word: "XYZ" -> "XY"
     """
     if not company_name or not company_name.strip():
-        return 'AD'  # Default fallback (Asset Dog)
+        return 'GC'  # Default fallback (GoCodes)
     
     trimmed = company_name.strip()
     
@@ -87,15 +87,15 @@ def get_company_initials(company_name: Optional[str]) -> str:
     elif len(words) == 1:
         word = words[0]
         
-        # Check for camelCase pattern - handles both "ShoreAgents" and "shoreAgents"
-        # Pattern 1: Uppercase letter followed by lowercase, then uppercase (e.g., "ShoreAgents")
+        # Check for camelCase pattern - handles both "GoCodes" and "goCodes"
+        # Pattern 1: Uppercase letter followed by lowercase, then uppercase (e.g., "GoCodes")
         match1 = re.match(r'^([A-Z][a-z]+)([A-Z][a-z]*)', word)
         if match1:
             first_part = match1.group(1)
             second_part = match1.group(2)
             return f"{first_part[0].upper()}{second_part[0].upper()}"
         
-        # Pattern 2: Lowercase followed by uppercase (e.g., "shoreAgents")
+        # Pattern 2: Lowercase followed by uppercase (e.g., "goCodes")
         match2 = re.match(r'^([a-z]+)([A-Z][a-z]*)', word)
         if match2:
             first_part = match2.group(1)
@@ -112,7 +112,7 @@ def get_company_initials(company_name: Optional[str]) -> str:
         # No camelCase detected: take first 2 letters
         return trimmed[:2].upper().ljust(2, 'X')
     
-    return 'AD'  # Default fallback (Asset Dog)
+    return 'GC'  # Default fallback (GoCodes)
 
 @router.get("/generate-code", response_model=GenerateCodeResponse)
 async def generate_item_code(auth: dict = Depends(verify_auth)):
@@ -127,7 +127,7 @@ async def generate_item_code(auth: dict = Depends(verify_auth)):
             order={"createdAt": "desc"}
         )
         
-        # Get company initials (e.g., "Shore Agents" -> "SA")
+        # Get company initials (e.g., "Go Codes" -> "GC")
         company_suffix = get_company_initials(company_info.companyName if company_info else None)
         
         # Get all item codes that match the pattern INV-XXX-[SUFFIX]
