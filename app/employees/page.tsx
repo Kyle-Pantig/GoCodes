@@ -856,51 +856,38 @@ function EmployeesPageContent() {
                     ))}
                   </TableHeader>
                   <TableBody>
-                    <AnimatePresence mode='popLayout'>
                     {table.getRowModel().rows?.length ? (
-                        table.getRowModel().rows.map((row, index) => {
+                        table.getRowModel().rows.map((row) => {
                         const checkouts = row.original.checkouts || []
                         const hasCheckouts = checkouts.length > 0
                         return (
-                            <motion.tr
-                            key={row.id} 
-                              layout
-                              initial={{ opacity: 0, y: 20 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: -20 }}
-                              transition={{ 
-                                duration: 0.2, 
-                                delay: isInitialMount.current ? index * 0.05 : 0,
-                                layout: {
-                                  duration: 0.15,
-                                  ease: [0.4, 0, 0.2, 1]
+                            <TableRow
+                              key={row.id} 
+                              data-state={row.getIsSelected() && 'selected'}
+                              className={cn(
+                                hasCheckouts ? 'cursor-pointer hover:bg-muted/50' : '',
+                                "group relative border-b transition-colors"
+                              )}
+                              onClick={() => {
+                                if (hasCheckouts) {
+                                  handleViewCheckouts(row.original)
                                 }
                               }}
-                            data-state={row.getIsSelected() && 'selected'}
-                            className={cn(
-                              hasCheckouts ? 'cursor-pointer hover:bg-muted/50' : '',
-                                "group relative border-b transition-colors"
-                            )}
-                            onClick={() => {
-                              if (hasCheckouts) {
-                                handleViewCheckouts(row.original)
-                              }
-                            }}
-                          >
-                            {row.getVisibleCells().map((cell) => {
-                              const isActionsColumn = cell.column.id === 'actions'
-                              return (
-                                <TableCell 
-                                  key={cell.id}
-                                  className={cn(
-                                    isActionsColumn && "sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 rounded-br-2xl"
-                                  )}
-                                >
-                                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                </TableCell>
-                              )
-                            })}
-                            </motion.tr>
+                            >
+                              {row.getVisibleCells().map((cell) => {
+                                const isActionsColumn = cell.column.id === 'actions'
+                                return (
+                                  <TableCell 
+                                    key={cell.id}
+                                    className={cn(
+                                      isActionsColumn && "sticky text-center right-0 bg-card z-10 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border before:z-50 rounded-br-2xl"
+                                    )}
+                                  >
+                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                  </TableCell>
+                                )
+                              })}
+                            </TableRow>
                         )
                       })
                     ) : (
@@ -910,7 +897,6 @@ function EmployeesPageContent() {
                         </TableCell>
                       </TableRow>
                     )}
-                    </AnimatePresence>
                   </TableBody>
                 </Table>
                 </div>

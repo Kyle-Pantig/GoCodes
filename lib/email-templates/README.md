@@ -1,4 +1,4 @@
-# Email Templates for Asset Dog
+# Email Templates for GoCodes
 
 This directory contains email templates that can be used with Supabase email customization.
 
@@ -32,7 +32,7 @@ Supabase provides the following variables that are automatically replaced:
 
 ## Customization
 
-The templates use Asset Dog branding with:
+The templates use GoCodes branding with:
 - Primary color: #2563eb (blue)
 - Clean, modern design
 - Responsive layout

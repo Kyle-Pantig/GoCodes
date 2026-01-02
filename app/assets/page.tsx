@@ -2750,49 +2750,7 @@ function AssetsPageContent() {
       case 'pbiNumber':
         return asset.pbiNumber || '-'
       case 'status':
-        if (!asset.status) return '-'
-        const statusLC = asset.status.toLowerCase()
-        let statusVariant: 'default' | 'secondary' | 'destructive' | 'outline' = 'outline'
-        let statusColor = ''
-        
-        if (statusLC === 'active' || statusLC === 'available') {
-          statusVariant = 'default'
-          statusColor = 'bg-green-500'
-        } else if (statusLC === 'checked out' || statusLC === 'in use') {
-          statusVariant = 'destructive'
-          statusColor = ''
-        } else if (statusLC === 'leased') {
-          statusVariant = 'secondary'
-          statusColor = 'bg-yellow-500'
-        } else if (statusLC === 'inactive' || statusLC === 'unavailable') {
-          statusVariant = 'secondary'
-          statusColor = 'bg-gray-500'
-        } else if (statusLC === 'maintenance' || statusLC === 'repair') {
-          statusColor = 'bg-red-600 text-white'
-        } else if (statusLC === 'lost' || statusLC === 'missing') {
-          statusVariant = 'destructive'
-          statusColor = 'bg-orange-500'
-        } else if (statusLC === 'disposed' || statusLC === 'disposal') {
-          statusVariant = 'secondary'
-          statusColor = 'bg-purple-500'
-        } else if (statusLC === 'sold') {
-          statusVariant = 'default'
-          statusColor = 'bg-teal-500 text-white border-0'
-        } else if (statusLC === 'donated') {
-          statusVariant = 'default'
-          statusColor = 'bg-blue-500 text-white border-0'
-        } else if (statusLC === 'scrapped') {
-          statusVariant = 'default'
-          statusColor = 'bg-orange-500 text-white border-0'
-        } else if (statusLC === 'lost/missing' || statusLC.replace(/\s+/g, '').replace('/', '').toLowerCase() === 'lostmissing') {
-          statusVariant = 'default'
-          statusColor = 'bg-yellow-500 text-white border-0'
-        } else if (statusLC === 'destroyed') {
-          statusVariant = 'default'
-          statusColor = 'bg-red-500 text-white border-0'
-        }
-        
-        return <Badge variant={statusVariant} className={statusColor}>{asset.status}</Badge>
+        return asset.status || '-'
       case 'issuedTo':
         return asset.issuedTo || '-'
       case 'poNumber':

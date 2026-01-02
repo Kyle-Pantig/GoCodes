@@ -1,5 +1,5 @@
 /**
- * Asset Dog Scheduler Service
+ * GoCodes Scheduler Service
  * 
  * Runs multiple scheduled tasks:
  * - Every 5 minutes: Trigger automated reports
@@ -41,7 +41,7 @@ const REPORTS_ENDPOINT = `${FASTAPI_BASE_URL}/api/cron/send-scheduled-reports`;
 const CLEANUP_ASSETS_ENDPOINT = `${FASTAPI_BASE_URL}/api/cron/cleanup-deleted-assets`;
 const CLEANUP_INVENTORY_ENDPOINT = `${FASTAPI_BASE_URL}/api/cron/cleanup-deleted-inventory`;
 
-console.log('🚀 Asset Dog Scheduler Started');
+console.log('🚀 GoCodes Scheduler Started');
 console.log(`📍 Reports endpoint: ${REPORTS_ENDPOINT}`);
 console.log(`📍 Cleanup assets endpoint: ${CLEANUP_ASSETS_ENDPOINT}`);
 console.log(`📍 Cleanup inventory endpoint: ${CLEANUP_INVENTORY_ENDPOINT}`);

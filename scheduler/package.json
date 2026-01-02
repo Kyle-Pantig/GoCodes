@@ -1,7 +1,7 @@
 {
   "name": "asset-dog-scheduler",
   "version": "1.0.0",
-  "description": "Scheduler service for Asset Dog automated reports",
+  "description": "Scheduler service for GoCodes automated reports",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

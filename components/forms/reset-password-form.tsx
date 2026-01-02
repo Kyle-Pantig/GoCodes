@@ -4,7 +4,8 @@ import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Dog, Eye, EyeOff } from "lucide-react"
+import { Eye, EyeOff } from "lucide-react"
+import Image from "next/image"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -97,8 +98,15 @@ export function ResetPasswordForm({
     return (
       <div className={cn("flex flex-col gap-6", className)} {...props}>
         <div className="flex flex-col items-center gap-2 text-center">
-          <div className="flex size-12 items-center justify-center rounded-full bg-primary">
-            <Dog className="size-10" />
+          <div className="flex size-12 items-center justify-center overflow-hidden">
+            <Image
+              src="/GoCodes-Logo-only.png"
+              alt="GoCodes"
+              width={48}
+              height={48}
+              className="object-contain"
+              priority
+            />
           </div>
           <h1 className="text-xl font-bold">Invalid Reset Link</h1>
           <p className="text-sm text-muted-foreground">The password reset link is invalid or has expired.</p>
@@ -119,10 +127,17 @@ export function ResetPasswordForm({
               href="#"
               className="flex flex-col items-center gap-2 font-medium"
             >
-              <div className="flex size-12 items-center justify-center rounded-full bg-primary">
-                <Dog className="size-10" />
+              <div className="flex size-12 items-center justify-center overflow-hidden">
+                <Image
+                  src="/GoCodes-Logo-only.png"
+                  alt="GoCodes"
+                  width={48}
+                  height={48}
+                  className="object-contain"
+                  priority
+                />
               </div>
-              <span className="sr-only">Asset Dog</span>
+              <span className="sr-only">GoCodes</span>
             </a>
             <h1 className="text-xl font-bold">Reset Your Password</h1>
             <p className="text-sm text-muted-foreground">Enter your new password below</p>

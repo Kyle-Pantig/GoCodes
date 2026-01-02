@@ -165,7 +165,7 @@ async def _send_report_email(
     try:
         resend.api_key = resend_api_key
         from_email = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
-        site_name = os.getenv("NEXT_PUBLIC_SITE_NAME", "Asset Dog")
+        site_name = os.getenv("NEXT_PUBLIC_SITE_NAME", "GoCodes")
         
         # Use local timezone for generated timestamp
         now_utc = datetime.now(timezone.utc)

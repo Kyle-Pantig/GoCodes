@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import Link from "next/link"
-import { Dog, Eye, EyeOff } from "lucide-react"
+import { Eye, EyeOff } from "lucide-react"
+import Image from "next/image"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -81,13 +82,20 @@ export function SignUpForm({
               href="#"
               className="flex flex-col items-center gap-2 font-medium"
             >
-              <div className="flex size-12 items-center justify-center rounded-full bg-primary ">
-                <Dog className="size-10" />
+              <div className="flex size-12 items-center justify-center overflow-hidden">
+                <Image
+                  src="/GoCodes-Logo-only.png"
+                  alt="GoCodes"
+                  width={48}
+                  height={48}
+                  className="object-contain"
+                  priority
+                />
               </div>
-              <span className="sr-only">Asset Dog</span>
+              <span className="sr-only">GoCodes</span>
             </a>
             <h1 className="text-xl font-bold">Create Account</h1>
-            <p className="text-sm text-muted-foreground">Sign up for Asset Dog</p>
+            <p className="text-sm text-muted-foreground">Sign up for GoCodes</p>
           </div>
 
           <Field>

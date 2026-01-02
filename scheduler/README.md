@@ -1,4 +1,4 @@
-# Asset Dog Scheduler Service
+# GoCodes Scheduler Service
 
 A lightweight scheduler service that handles automated tasks:
 - **Automated Reports**: Triggers every 5 minutes to send scheduled reports

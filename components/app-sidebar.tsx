@@ -342,7 +342,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }, [])
 
   // Fetch company info for logo
-  const { data: companyInfo } = useCompanyInfo(true)
+  const { data: companyInfo, isLoading: isLoadingCompanyInfo } = useCompanyInfo(true)
 
   const user = profile ? {
     name: profile?.name || '',
@@ -374,23 +374,31 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             </div>
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">GoCodes</span>
-              <span className="truncate text-xs">
-                {companyInfo?.companyName || (user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Premium')}
-              </span>
+              {isLoadingCompanyInfo ? (
+                <Skeleton className="h-3 w-20" />
+              ) : (
+                <span className="truncate text-xs">
+                  {companyInfo?.companyName || (user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Premium')}
+                </span>
+              )}
             </div>
           </SidebarMenuButton>
-          {primaryLogoUrl && !isCollapsed && !isMobile && (
+          {!isCollapsed && !isMobile && (
             <div className="mt-2 w-full">
-              <div className="relative w-full h-16 overflow-hidden">
-                <Image
-                  src={primaryLogoUrl}
-                  alt="Company Logo"
-                  fill
-                  className="object-contain p-2"
-                  unoptimized
-                  priority
-                />
-              </div>
+              {isLoadingCompanyInfo ? (
+                <Skeleton className="w-full h-16 rounded-lg" />
+              ) : primaryLogoUrl ? (
+                <div className="relative w-full h-16 glass-shine rounded-lg border border-border">
+                  <Image
+                    src={primaryLogoUrl}
+                    alt="Company Logo"
+                    fill
+                    className="object-contain p-2"
+                    unoptimized
+                    priority
+                  />
+                </div>
+              ) : null}
             </div>
           )}
         </SidebarMenu>

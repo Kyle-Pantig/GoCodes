@@ -3,7 +3,7 @@ Assets API router
 """
 from fastapi import APIRouter, HTTPException, Query, Depends, UploadFile, File, Form, Request, Path
 from typing import Optional, List, Dict, Any, Union
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 import logging
 import asyncio
@@ -99,7 +99,7 @@ def get_company_initials(company_name: Optional[str]) -> str:
         # No camelCase detected: take first 2 letters
         return trimmed[:2].upper().ljust(2, 'X')
     
-    return 'AD'  # Default fallback (Asset Dog)
+    return 'GC'  # Default fallback (GoCodes)
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
@@ -107,19 +107,69 @@ def parse_date(date_str: Optional[str]) -> Optional[datetime]:
     """Parse date string to datetime"""
     if not date_str:
         return None
+    
+    # Handle Excel serial numbers (numbers or numeric strings)
+    try:
+        # Check if it's a number (Excel serial number)
+        if isinstance(date_str, (int, float)):
+            excel_serial = float(date_str)
+        else:
+            # Try to parse as number
+            excel_serial = float(str(date_str).strip())
+        
+        # Valid Excel serial numbers are typically > 1 and < 100000
+        if 1 < excel_serial < 100000:
+            # Excel date conversion
+            # Excel serial number 1 = January 1, 1900
+            # Excel incorrectly treats 1900 as a leap year, so we need to adjust
+            days_since_1900 = excel_serial - 1
+            
+            # Excel's leap year bug: for dates after Feb 28, 1900, subtract 1 day
+            if days_since_1900 > 59:
+                days_since_1900 = days_since_1900 - 1
+            
+            # Calculate the date
+            base_date = datetime(1900, 1, 1)
+            result = base_date + timedelta(days=days_since_1900)
+            return result
+    except (ValueError, TypeError):
+        pass
+    
+    # Convert to string for string-based parsing
+    date_str = str(date_str).strip()
+    
     try:
         # Try ISO format first
         return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
     except:
+        pass
+    
+    # Try MM/DD/YYYY format (common Excel format)
+    import re
+    mm_dd_yyyy_match = re.match(r'^(\d{1,2})/(\d{1,2})/(\d{4})$', date_str)
+    if mm_dd_yyyy_match:
+        month, day, year = mm_dd_yyyy_match.groups()
         try:
-            # Try common formats
-            for fmt in ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f']:
-                try:
-                    return datetime.strptime(date_str, fmt)
-                except:
-                    continue
-        except:
+            return datetime(int(year), int(month), int(day))
+        except ValueError:
             pass
+    
+    # Try DD/MM/YYYY format
+    dd_mm_yyyy_match = re.match(r'^(\d{1,2})-(\d{1,2})-(\d{4})$', date_str)
+    if dd_mm_yyyy_match:
+        day, month, year = dd_mm_yyyy_match.groups()
+        try:
+            return datetime(int(year), int(month), int(day))
+        except ValueError:
+            pass
+    
+    # Try common formats
+    for fmt in ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f', '%m/%d/%Y', '%d/%m/%Y', '%m-%d-%Y']:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except:
+            continue
+    
     return None
 
 def build_search_conditions(search: str, search_fields: Optional[List[str]] = None) -> List[Dict[str, Any]]:

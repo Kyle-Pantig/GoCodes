@@ -31,7 +31,7 @@ export async function sendAutomatedReportEmail(params: {
 
     const { to, reportName, reportType, format, attachment } = params
     const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
-    const siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'Asset Dog'
+    const siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'GoCodes'
 
     const emailPayload: any = {
       from: fromEmail,

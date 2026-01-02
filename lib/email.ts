@@ -29,7 +29,7 @@ export async function sendWelcomeEmail(
     // 1. Verify a domain at https://resend.com/domains
     // 2. Set RESEND_FROM_EMAIL to an email using that verified domain (e.g., noreply@yourdomain.com)
     const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
-    const siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'Asset Dog'
+    const siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'GoCodes'
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
 
     const emailPayload = {

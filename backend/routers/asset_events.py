@@ -50,7 +50,7 @@ async def get_asset_events(
     eventType: Optional[str] = Query(None, description="Filter by event type"),
     field: Optional[str] = Query(None, description="Filter by field"),
     page: int = Query(1, ge=1, description="Page number"),
-    pageSize: int = Query(50, ge=1, le=100, description="Page size"),
+    pageSize: int = Query(50, ge=1, le=500, description="Page size"),
     auth: dict = Depends(verify_auth)
 ):
     """Get all asset events with pagination and filtering"""

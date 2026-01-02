@@ -1881,7 +1881,7 @@ function UsersPageContent() {
                     sendPasswordResetMutation.mutate(selectedUser.id)
                   }}
                   disabled={sendPasswordResetMutation.isPending || !selectedUser || !canManageUsers}
-                  className="w-full"
+                  className="w-full bg-transparent dark:bg-input/30"
                 >
                   {sendPasswordResetMutation.isPending ? (
                     <>
@@ -1907,6 +1907,7 @@ function UsersPageContent() {
                     variant="outline"
                     size="sm"
                     onClick={handleToggleAllPermissions}
+                    className="bg-transparent dark:bg-input/30"
                   >
                     {formData.permissions.canDeleteAssets &&
                     formData.permissions.canManageImport &&
@@ -2269,7 +2270,7 @@ function UsersPageContent() {
           </div>
           </ScrollArea>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+            <Button variant="outline" className="btn-glass" onClick={() => setIsEditDialogOpen(false)}>
               Cancel
             </Button>
             <Button onClick={handleUpdate} disabled={updateMutation.isPending || !canManageUsers}>

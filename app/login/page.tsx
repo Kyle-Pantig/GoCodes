@@ -26,7 +26,7 @@ export default function LoginPage() {
           <div className="flex flex-col gap-6">
             <div className="flex flex-col items-center gap-2 text-center">
               <div className="flex size-12 items-center justify-center rounded-full bg-primary animate-pulse" />
-              <h1 className="text-xl font-bold">Welcome to Asset Dog</h1>
+              <h1 className="text-xl font-bold">Welcome to GoCodes</h1>
               <p className="text-sm text-muted-foreground">Your comprehensive asset management solution</p>
             </div>
             <div className="h-10 bg-muted animate-pulse rounded-md" />
