@@ -534,15 +534,16 @@ export function ScheduleDialog({
                                   selectedSuggestionIndex === index && 'bg-gray-400/20 bg-clip-padding backdrop-filter backdrop-blur-sm'
                                 )}
                               >
-                                <div className="flex items-center justify-between">
-                                  <div>
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex-1 min-w-0">
                                     <div className="font-medium">{asset.assetTagId}</div>
-                                    <div className="text-sm text-muted-foreground">
-                                      {asset.category?.name || 'No Category'}
-                                      {asset.subCategory?.name && ` - ${asset.subCategory.name}`}
+                                    <div className="text-sm text-muted-foreground break-words line-clamp-2">
+                                      {asset.description || 'No description'}
                                     </div>
                                   </div>
-                                  {getStatusBadge(asset.status)}
+                                  <div className="flex-shrink-0">
+                                    {getStatusBadge(asset.status)}
+                                  </div>
                                 </div>
                               </motion.div>
                             ))
@@ -580,7 +581,7 @@ export function ScheduleDialog({
                           </span>
                           {getStatusBadge(selectedAsset.status)}
                         </div>
-                        <p className="text-xs text-muted-foreground truncate max-w-[300px]">
+                        <p className="text-xs text-muted-foreground truncate max-w-[150px] sm:max-w-[300px]">
                           {selectedAsset.description || 'No description'}
                         </p>
                       </div>
